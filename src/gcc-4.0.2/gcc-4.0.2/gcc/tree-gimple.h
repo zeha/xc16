@@ -54,6 +54,7 @@ extern bool is_gimple_hard_reg_r (tree);
 extern bool is_gimple_formal_tmp_var (tree);
 /* Returns true if T is a GIMPLE temporary register variable.  */
 extern bool is_gimple_formal_tmp_reg (tree);
+extern bool is_gimple_formal_tmp_asm_reg (tree);
 /* Returns true iff T is any sort of variable.  */
 extern bool is_gimple_variable (tree);
 /* Returns true iff T is any sort of symbol.  */

@@ -543,15 +543,21 @@ get_alias_set (tree t)
 
   /* Variant qualifiers don't affect the alias set, so get the main
      variant. If this is a type with a known alias set, return it.  */
-  t = TYPE_MAIN_VARIANT (t);
+  /* only true if the qualifiers don't change the mode */
+  if (TYPE_MODE(t) == TYPE_MODE(TYPE_MAIN_VARIANT(t))) 
+    t = TYPE_MAIN_VARIANT (t);
   if (TYPE_ALIAS_SET_KNOWN_P (t))
     return TYPE_ALIAS_SET (t);
 
   /* See if the language has special handling for this type.  */
   set = lang_hooks.get_alias_set (t);
+#if 0
   if (set != -1)
     return set;
+#endif
 
+  if (set != -1)
+    (void) 0;
   /* There are no objects of FUNCTION_TYPE, so there's no point in
      using up an alias set for them.  (There are, of course, pointers
      and references to functions, but that's different.)  */

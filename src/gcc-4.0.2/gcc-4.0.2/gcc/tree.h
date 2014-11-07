@@ -3195,10 +3195,17 @@ enum size_type_kind
 
 extern GTY(()) tree sizetype_tab[(int) TYPE_KIND_LAST];
 
+#if 0
+#define sizetype(T) (TARGET_POINTER_MODE((T),0) == Pmode ? sizetype_tab[(int) SIZETYPE] : target_sizetype_tab[TARGET_POINTER_MODE((T),0)][(int) SIZETYPE])
+#define bitsizetype(T) (TARGET_POINTER_MODE(T,0) == Pmode ? sizetype_tab[(int) BITSIZETYPE] : target_sizetype_tab[TARGET_POINTER_MODE((T),0)][(int) BITSIZETYPE])
+#define ssizetype(T) (TARGET_POINTER_MODE(T,0) == Pmode ? sizetype_tab[(int) SSIZETYPE]: target_sizetype_tab[TARGET_POINTER_MODE((T),0)][(int) SSIZETYPE])
+#define sbitsizetype(T) (TARGET_POINTER_MODE(T,0) == Pmode ? sizetype_tab[(int) SBITSIZETYPE]: target_sizetype_tab[TARGET_POINTER_MODE((T),0)][(int) SBITSIZETYPE])
+#else
 #define sizetype sizetype_tab[(int) SIZETYPE]
 #define bitsizetype sizetype_tab[(int) BITSIZETYPE]
 #define ssizetype sizetype_tab[(int) SSIZETYPE]
 #define sbitsizetype sizetype_tab[(int) SBITSIZETYPE]
+#endif
 
 extern tree size_int_kind (HOST_WIDE_INT, enum size_type_kind);
 extern tree size_binop (enum tree_code, tree, tree);

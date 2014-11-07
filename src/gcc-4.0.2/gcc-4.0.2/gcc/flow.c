@@ -3607,29 +3607,29 @@ find_auto_inc (struct propagate_block_info *pbi, rtx x, rtx insn)
     {
       if (HAVE_POST_INCREMENT
 	  && (INTVAL (inc_val) == size && offset == 0))
-	attempt_auto_inc (pbi, gen_rtx_POST_INC (Pmode, addr), insn, x,
+	attempt_auto_inc (pbi, gen_rtx_POST_INC (GET_MODE(addr), addr), insn, x,
 			  incr, addr);
       else if (HAVE_POST_DECREMENT
 	       && (INTVAL (inc_val) == -size && offset == 0))
-	attempt_auto_inc (pbi, gen_rtx_POST_DEC (Pmode, addr), insn, x,
+	attempt_auto_inc (pbi, gen_rtx_POST_DEC (GET_MODE(addr), addr), insn, x,
 			  incr, addr);
       else if (HAVE_PRE_INCREMENT
 	       && (INTVAL (inc_val) == size && offset == size))
-	attempt_auto_inc (pbi, gen_rtx_PRE_INC (Pmode, addr), insn, x,
+	attempt_auto_inc (pbi, gen_rtx_PRE_INC (GET_MODE(addr), addr), insn, x,
 			  incr, addr);
       else if (HAVE_PRE_DECREMENT
 	       && (INTVAL (inc_val) == -size && offset == -size))
-	attempt_auto_inc (pbi, gen_rtx_PRE_DEC (Pmode, addr), insn, x,
+	attempt_auto_inc (pbi, gen_rtx_PRE_DEC (GET_MODE(addr), addr), insn, x,
 			  incr, addr);
       else if (HAVE_POST_MODIFY_DISP && offset == 0)
-	attempt_auto_inc (pbi, gen_rtx_POST_MODIFY (Pmode, addr,
-						    gen_rtx_PLUS (Pmode,
+	attempt_auto_inc (pbi, gen_rtx_POST_MODIFY (GET_MODE(addr), addr,
+						    gen_rtx_PLUS (GET_MODE(addr),
 								  addr,
 								  inc_val)),
 			  insn, x, incr, addr);
       else if (HAVE_PRE_MODIFY_DISP && offset == INTVAL (inc_val))
-	attempt_auto_inc (pbi, gen_rtx_PRE_MODIFY (Pmode, addr,
-						    gen_rtx_PLUS (Pmode,
+	attempt_auto_inc (pbi, gen_rtx_PRE_MODIFY (GET_MODE(addr), addr,
+						    gen_rtx_PLUS (GET_MODE(addr),
 								  addr,
 								  inc_val)),
 			  insn, x, incr, addr);
@@ -3640,8 +3640,8 @@ find_auto_inc (struct propagate_block_info *pbi, rtx x, rtx insn)
 
     {
       if (HAVE_POST_MODIFY_REG && offset == 0)
-	attempt_auto_inc (pbi, gen_rtx_POST_MODIFY (Pmode, addr,
-						    gen_rtx_PLUS (Pmode,
+	attempt_auto_inc (pbi, gen_rtx_POST_MODIFY (GET_MODE(addr), addr,
+						    gen_rtx_PLUS (GET_MODE(addr),
 								  addr,
 								  inc_val)),
 			  insn, x, incr, addr);
@@ -4210,7 +4210,7 @@ try_pre_increment (rtx insn, rtx reg, HOST_WIDE_INT amount)
 			 gen_rtx_fmt_e (amount > 0
 					? (do_post ? POST_INC : PRE_INC)
 					: (do_post ? POST_DEC : PRE_DEC),
-					Pmode, reg), 0))
+					GET_MODE(reg), reg), 0))
     return 0;
 
   /* Record that this insn now has an implicit side effect on X.  */

@@ -44,6 +44,10 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #include "except.h"
 #include "tree.h"
 
+#ifndef STACK_Pmode
+#define STACK_Pmode Pmode
+#endif
+
 /* This file contains the reload pass of the compiler, which is
    run after register allocation has been done.  It checks that
    each insn is valid (operands required to be in registers really
@@ -445,9 +449,9 @@ init_reload (void)
      permitted, zero if it is not permitted at all.  */
 
   rtx tem
-    = gen_rtx_MEM (Pmode,
-		   gen_rtx_PLUS (Pmode,
-				 gen_rtx_REG (Pmode,
+    = gen_rtx_MEM (STACK_Pmode,
+		   gen_rtx_PLUS (STACK_Pmode,
+				 gen_rtx_REG (STACK_Pmode,
 					      LAST_VIRTUAL_REGISTER + 1),
 				 GEN_INT (4)));
   spill_indirect_levels = 0;
@@ -455,21 +459,21 @@ init_reload (void)
   while (memory_address_p (QImode, tem))
     {
       spill_indirect_levels++;
-      tem = gen_rtx_MEM (Pmode, tem);
+      tem = gen_rtx_MEM (STACK_Pmode, tem);
     }
 
   /* See if indirect addressing is valid for (MEM (SYMBOL_REF ...)).  */
 
-  tem = gen_rtx_MEM (Pmode, gen_rtx_SYMBOL_REF (Pmode, "foo"));
+  tem = gen_rtx_MEM (STACK_Pmode, gen_rtx_SYMBOL_REF (STACK_Pmode, "foo"));
   indirect_symref_ok = memory_address_p (QImode, tem);
 
   /* See if reg+reg is a valid (and offsettable) address.  */
 
   for (i = 0; i < FIRST_PSEUDO_REGISTER; i++)
     {
-      tem = gen_rtx_PLUS (Pmode,
-			  gen_rtx_REG (Pmode, HARD_FRAME_POINTER_REGNUM),
-			  gen_rtx_REG (Pmode, i));
+      tem = gen_rtx_PLUS (STACK_Pmode,
+			  gen_rtx_REG (STACK_Pmode, HARD_FRAME_POINTER_REGNUM),
+			  gen_rtx_REG (STACK_Pmode, i));
 
       /* This way, we make sure that reg+reg is an offsettable address.  */
       tem = plus_constant (tem, 4);
@@ -1102,6 +1106,38 @@ reload (rtx first, int global)
 
   CLEAR_REG_SET (&spilled_pseudos);
   reload_in_progress = 0;
+  for (insn = first; insn; insn = NEXT_INSN (insn)) {
+    int i;
+
+    if (INSN_P(insn)) {
+      rtx p;
+
+      p = PATTERN(insn);
+      if (GET_CODE(p) != SET) continue;
+      for (i = 0; i < rtx_length[GET_CODE(p)]; i++) {
+        rtx reg = 0;
+        rtx x;
+
+        if (rtx_format[GET_CODE(p)][i] != 'e') continue;
+        x = XEXP(p,i);
+        if (GET_CODE(x) == SUBREG) {
+          reg = XEXP(x,0);
+          if (GET_CODE(reg) != REG) reg = 0;
+        } else if (GET_CODE(x) == REG) {
+          reg = x;
+        }
+        if ((reg && REGNO(reg) >= FIRST_PSEUDO_REGISTER) &&
+            (reg_equiv_address[REGNO(reg)])) {
+          fprintf(stderr,"Pseudos still in use\n");
+          debug_rtx(insn);
+          reload_in_progress = 1;  /* still pseudos in instructions; redo */
+#if 0
+          break;
+#endif
+        }
+      }
+    }
+  }
 
   /* Now eliminate all pseudo regs by modifying them into
      their equivalent memory references.
@@ -1120,6 +1156,7 @@ reload (rtx first, int global)
       if (reg_equiv_mem[i])
 	addr = XEXP (reg_equiv_mem[i], 0);
 
+      if (reload_in_progress == 0)
       if (reg_equiv_address[i])
 	addr = reg_equiv_address[i];
 
@@ -1145,9 +1182,11 @@ reload (rtx first, int global)
 	}
     }
 
+
   /* We must set reload_completed now since the cleanup_subreg_operands call
      below will re-recognize each insn and reload may have generated insns
      which are only valid during and after reload.  */
+  if (reload_in_progress == 0)
   reload_completed = 1;
 
   /* Make a pass over all the insns and delete all USEs which we inserted
@@ -1239,8 +1278,10 @@ reload (rtx first, int global)
   if (reg_equiv_constant)
     free (reg_equiv_constant);
   reg_equiv_constant = 0;
-  VARRAY_GROW (reg_equiv_memory_loc_varray, 0);
-  reg_equiv_memory_loc = 0;
+  if (reload_in_progress == 0) {
+    VARRAY_GROW (reg_equiv_memory_loc_varray, 0);
+    reg_equiv_memory_loc = 0;
+  }
 
   if (offsets_known_at)
     free (offsets_known_at);
@@ -2339,7 +2380,7 @@ eliminate_regs (rtx x, enum machine_mode mem_mode, rtx insn)
 		    && INTVAL (XEXP (x, 1)) == - ep->previous_offset)
 		  return ep->to_rtx;
 		else
-		  return gen_rtx_PLUS (Pmode, ep->to_rtx,
+		  return gen_rtx_PLUS (STACK_Pmode, ep->to_rtx,
 				       plus_constant (XEXP (x, 1),
 						      ep->previous_offset));
 	      }
@@ -2413,7 +2454,7 @@ eliminate_regs (rtx x, enum machine_mode mem_mode, rtx insn)
 		ep->ref_outside_mem = 1;
 
 	      return
-		plus_constant (gen_rtx_MULT (Pmode, ep->to_rtx, XEXP (x, 1)),
+		plus_constant (gen_rtx_MULT (STACK_Pmode, ep->to_rtx, XEXP (x, 1)),
 			       ep->previous_offset * INTVAL (XEXP (x, 1)));
 	    }
 
@@ -3539,13 +3580,13 @@ init_elim_table (void)
 
   /* Count the number of eliminable registers and build the FROM and TO
      REG rtx's.  Note that code in gen_rtx_REG will cause, e.g.,
-     gen_rtx_REG (Pmode, STACK_POINTER_REGNUM) to equal stack_pointer_rtx.
+     gen_rtx_REG (STACK_Pmode, STACK_POINTER_REGNUM) to equal stack_pointer_rtx.
      We depend on this.  */
   for (ep = reg_eliminate; ep < &reg_eliminate[NUM_ELIMINABLE_REGS]; ep++)
     {
       num_eliminable += ep->can_eliminate;
-      ep->from_rtx = gen_rtx_REG (Pmode, ep->from);
-      ep->to_rtx = gen_rtx_REG (Pmode, ep->to);
+      ep->from_rtx = gen_rtx_REG (STACK_Pmode, ep->from);
+      ep->to_rtx = gen_rtx_REG (STACK_Pmode, ep->to);
     }
 }
 
@@ -7151,8 +7192,9 @@ do_input_reload (struct insn_chain *chain, struct reload *rl, int j)
       /* The insn might have already some references to stackslots
 	 replaced by MEMs, while reload_out_reg still names the
 	 original pseudo.  */
-      && (dead_or_set_p (insn,
-			 spill_reg_stored_to[REGNO (rl->reg_rtx)])
+      
+      && ((REG_P(spill_reg_stored_to[REGNO (rl->reg_rtx)])
+           && dead_or_set_p (insn, spill_reg_stored_to[REGNO (rl->reg_rtx)]))
 	  || rtx_equal_p (spill_reg_stored_to[REGNO (rl->reg_rtx)],
 			  rl->out_reg)))
     delete_output_reload (insn, j, REGNO (rl->reg_rtx));

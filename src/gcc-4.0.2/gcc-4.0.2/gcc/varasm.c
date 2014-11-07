@@ -2641,6 +2641,10 @@ copy_constant (tree exp)
    constant's location in memory.
    Caller is responsible for updating the hash table.  */
 
+#ifndef TARGET_CONSTANT_PMODE
+#define TARGET_CONSTANT_PMODE Pmode
+#endif
+
 static struct constant_descriptor_tree *
 build_constant_desc (tree exp)
 {
@@ -2662,7 +2666,7 @@ build_constant_desc (tree exp)
   ASM_GENERATE_INTERNAL_LABEL (label, "LC", labelno);
 
   /* We have a symbol name; construct the SYMBOL_REF and the MEM.  */
-  symbol = gen_rtx_SYMBOL_REF (Pmode, ggc_strdup (label));
+  symbol = gen_rtx_SYMBOL_REF (TARGET_CONSTANT_PMODE, ggc_strdup (label));
   SYMBOL_REF_FLAGS (symbol) = SYMBOL_FLAG_LOCAL;
   SYMBOL_REF_DECL (symbol) = desc->value;
   TREE_CONSTANT_POOL_ADDRESS_P (symbol) = 1;

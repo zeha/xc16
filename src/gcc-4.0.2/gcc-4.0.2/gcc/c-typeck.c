@@ -1430,11 +1430,6 @@ default_conversion (tree exp)
 	 c_promoting_integer_type_p, otherwise leave it alone.  */
       && 0 > compare_tree_int (DECL_SIZE (TREE_OPERAND (exp, 1)),
 			       TYPE_PRECISION (integer_type_node))) {
-    /* no idea why we don't preserve sign here, according to the standard
-       we can have an unsigned bit-field... (CW) */
-    if (TYPE_UNSIGNED (type))
-      return convert (unsigned_type_node, exp);
-
     return convert (integer_type_node, exp);
   }
 

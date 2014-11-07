@@ -2,7 +2,7 @@
 #define _C30_FLAG_DEFS_H
 
 /*
- *  Copyright 2006 Microchip Technology Inc
+ *  Copyright 2009 Microchip Technology Inc
  */
 
 /*
@@ -40,6 +40,8 @@
 #define HAS_DMA    1<<10
 #define HAS_CODEGUARD 1<<11
 #define HAS_PMP    1<<12
+#define HAS_EDS    1<<13
+#define HAS_PMPV2  1<<14
 
 /* IS_CODEGUARD_ID flags */
 #define FLASH         1<<8
@@ -93,46 +95,36 @@
  *   '/' is converted to the correct directory separator for the OS
  */
 #define MPLABC30_COMMON_INCLUDE_PATH ".." DIR_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      "include" PATH_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "generic" DIR_SEPARATOR_STR \
                                      "h"
 #define MPLABC30_PIC24F_INCLUDE_PATH ".." DIR_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "PIC24F" DIR_SEPARATOR_STR \
                                      "h" PATH_SEPARATOR_STR \
                                      ".." DIR_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "peripheral_24F"
 #define MPLABC30_PIC24H_INCLUDE_PATH ".." DIR_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "PIC24H" DIR_SEPARATOR_STR \
                                      "h" PATH_SEPARATOR_STR \
                                      ".." DIR_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "peripheral_30F_24H_33F"
 #define MPLABC30_PIC30F_INCLUDE_PATH ".." DIR_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "dsPIC30F" DIR_SEPARATOR_STR \
                                      "h" PATH_SEPARATOR_STR \
                                      ".." DIR_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "peripheral_30F_24H_33F"
 #define MPLABC30_PIC33F_INCLUDE_PATH ".." DIR_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "dsPIC33F" DIR_SEPARATOR_STR \
                                      "h" PATH_SEPARATOR_STR \
-                                     ".." DIR_SEPARATOR_STR \
                                      ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "peripheral_30F_24H_33F"
@@ -142,62 +134,48 @@
  *   '/' is converted to the correct directory separator for the OS
  */
 #define MPLABC30_COMMON_LIB_PATH ".." DIR_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  "lib" PATH_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  ".." DIR_SEPARATOR_STR \
                                  "support" DIR_SEPARATOR_STR \
                                  "generic" DIR_SEPARATOR_STR \
                                  "gld"
 #define MPLABC30_PIC24F_LIB_PATH ".." DIR_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  "lib" DIR_SEPARATOR_STR \
                                  "PIC24F" PATH_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  ".." DIR_SEPARATOR_STR \
                                  "support" DIR_SEPARATOR_STR \
                                  "PIC24F" DIR_SEPARATOR_STR \
                                  "gld" PATH_SEPARATOR_STR \
                                  ".." DIR_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  "lib" DIR_SEPARATOR_STR \
                                  "peripheral_24F"
 #define MPLABC30_PIC24H_LIB_PATH ".." DIR_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  "lib" DIR_SEPARATOR_STR \
                                  "PIC24H" PATH_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  ".." DIR_SEPARATOR_STR \
                                  "support" DIR_SEPARATOR_STR \
                                  "PIC24H" DIR_SEPARATOR_STR \
                                  "gld" PATH_SEPARATOR_STR \
                                  ".." DIR_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  "lib" DIR_SEPARATOR_STR \
                                  "peripheral_30F_24H_33F"
 #define MPLABC30_PIC30F_LIB_PATH ".." DIR_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  "lib" DIR_SEPARATOR_STR \
                                  "dsPIC30F" PATH_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  ".." DIR_SEPARATOR_STR \
                                  "support" DIR_SEPARATOR_STR \
                                  "dsPIC30F" DIR_SEPARATOR_STR \
                                  "gld" PATH_SEPARATOR_STR \
                                  ".." DIR_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  "lib" DIR_SEPARATOR_STR \
                                  "peripheral_30F_24H_33F"
 #define MPLABC30_PIC33F_LIB_PATH ".." DIR_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  "lib" DIR_SEPARATOR_STR \
                                  "dsPIC33F" PATH_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  ".." DIR_SEPARATOR_STR \
                                  "support" DIR_SEPARATOR_STR \
                                  "dsPIC33F" DIR_SEPARATOR_STR \
                                  "gld" PATH_SEPARATOR_STR \
-                                 ".." DIR_SEPARATOR_STR \
                                  ".." DIR_SEPARATOR_STR \
                                  "lib" DIR_SEPARATOR_STR \
                                  "peripheral_30F_24H_33F"

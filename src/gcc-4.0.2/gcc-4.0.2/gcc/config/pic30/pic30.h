@@ -176,7 +176,9 @@ enum pic30_builtins
    PIC30_BUILTIN_TBLWTHB,
    PIC30_BUILTIN_DIVF,
    PIC30_BUILTIN_READ_EXT8,
-   PIC30_BUILTIN_WRITE_EXT8
+   PIC30_BUILTIN_WRITE_EXT8,
+   PIC30_BUILTIN_EDSPAGE,
+   PIC30_BUILTIN_EDSOFFSET,
 };
 
 #define       TARGET_USE_PA   1
@@ -238,7 +240,7 @@ enum pic30_builtins
 "%{pipe: %e-pipe and -mpa are incompatible} "\
 "%{!mpa: %{save-temps: -o %b.s} %{!save-temps: %{!S:-o %g.s} %{S:%{!o*:-o %b.s}%{o*:%{o*}}}}\n}"  \
 "%{mpa: %{save-temps: -o %b.p} %{!save-temps: %{S: -o %b.p\n} %{!S:-o %g.p}}\n" \
-    "%(program_prefix)pa %{mcpu=*:--mcpu=%*} %{mpa=*:-n%*} %{v:-v} "\
+    "%(program_prefix)pa -omf=%(omf) %{mcpu=*:--mcpu=%*} %{mpa=*:-n%*} %{v:-v} "\
        "%{save-temps: -o%b.s}" \
        "%{!save-temps: %{!S:-o%g.s} %{S:%{!o*:-o%b.s}%{o*:%{o*}}}} "  \
        "%{save-temps: %b.p} %{!save-temps: %{S: %b.p} %{!S: %g.p}}\n}"
@@ -279,9 +281,9 @@ enum pic30_builtins
    gcc executable's directory.  */
 #undef STANDARD_EXEC_PREFIX
 #undef STANDARD_BINDIR_PREFIX
-#define STANDARD_EXEC_PREFIX "/bin"
-#define STANDARD_LIBEXEC_PREFIX "/bin"
-#define STANDARD_BINDIR_PREFIX "/bin"
+#define STANDARD_EXEC_PREFIX "/bin/"
+#define STANDARD_LIBEXEC_PREFIX "/bin/"
+#define STANDARD_BINDIR_PREFIX "/bin/bin"
 
 /* By default, the GCC_EXEC_PREFIX_ENV prefix is "GCC_EXEC_PREFIX", however
    in a cross compiler, another environment variable might want to be used
@@ -357,31 +359,36 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 /*----------------------------------------------------------------------*/
 /* Run-time compilation parameters selecting different hardware subsets.*/
 /*----------------------------------------------------------------------*/
-#define   TARGET_MASK_LARGE_CODE        0x0001
-#define   TARGET_MASK_CONST_IN_DATA     0x0002
-#define   TARGET_MASK_LARGE_AGG         0x0004
-#define   TARGET_MASK_LARGE_SCALAR      0x0008
+#define   TARGET_MASK_LARGE_CODE        0x00000001
+#define   TARGET_MASK_CONST_IN_DATA     0x00000002
+#define   TARGET_MASK_LARGE_AGG         0x00000004
+#define   TARGET_MASK_LARGE_SCALAR      0x00000008
 #if TARGET_USE_PA
-#define TARGET_MASK_PA                  0x0010
+#define TARGET_MASK_PA                  0x00000010
 #endif
 #define TARGET_MASK_ARCH_PIC30          (TARGET_MASK_ARCH_PIC30FXXXX | \
                                          TARGET_MASK_ARCH_PIC30F202X)
-#define TARGET_MASK_ARCH_PIC30FXXXX     0x0040  /* does not include future
+#define TARGET_MASK_ARCH_PIC30FXXXX     0x00000040  /* does not include future
                                                    TARGET_MASK_ARCH_PIC30F<>
                                                    devices */
-#define TARGET_MASK_SMART_IO            0x0080  /* -msmart-io enabled */
-#define TARGET_MASK_NO_ISRW             0x0100
-#define TARGET_MASK_OLD_OMF             0x0200
-#define TARGET_MASK_ARCH_PIC24F         0x0400
-#define TARGET_MASK_ARCH_PIC33          0x0800
-#define TARGET_MASK_ARCH_PIC30F202X     0x2000
-#define TARGET_MASK_ARCH_PIC24H         0x4000
-#define TARGET_MASK_ARCH_GENERIC        0x8000
-#define TARGET_MASK_CONST_IN_PSV        0x10000
-#define TARGET_MASK_CONST_IN_PROG       0x20000
-#define TARGET_MASK_SKIP_DOT_FILE       0x40000
-#define TARGET_MASK_ARCH_PIC24FK        0x80000
-#define TARGET_MASK_ABI_CHECK           0xC0000
+#define TARGET_MASK_SMART_IO            0x00000080  /* -msmart-io enabled */
+#define TARGET_MASK_NO_ISRW             0x00000100
+#define TARGET_MASK_OLD_OMF             0x00000200
+#define TARGET_MASK_ARCH_PIC24F         0x00000400
+#define TARGET_MASK_ARCH_PIC33          0x00000800
+#define TARGET_MASK_ARCH_PIC30F202X     0x00002000
+#define TARGET_MASK_ARCH_PIC24H         0x00004000
+#define TARGET_MASK_ARCH_GENERIC        0x00008000
+#define TARGET_MASK_CONST_IN_PSV        0x00010000
+#define TARGET_MASK_CONST_IN_PROG       0x00020000
+#define TARGET_MASK_SKIP_DOT_FILE       0x00040000
+#define TARGET_MASK_ARCH_PIC24FK        0x00080000
+#define TARGET_MASK_ABI_CHECK           0x00100000
+#define TARGET_MASK_EDS                 0x00200000
+#define TARGET_TRACK_PSVPAG             0x00400000
+#define TARGET_MASK_NCHAR               0x00800000
+#define TARGET_MASK_BIG                 0x01000000
+#define TARGET_MASK_ARCH_DA_GENERIC     0x02000000
 
 /*
 ** Small data model means that data objects can be
@@ -419,6 +426,11 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 */
 #define TARGET_LARGE_CODE   ((target_flags & TARGET_MASK_LARGE_CODE) != 0)
 
+#define TARGET_SMALL_CHAR ((TARGET_SMALL_SCALAR) || \
+                           (target_flags & TARGET_MASK_NCHAR))
+
+#define TARGET_BIG_ARRAYS (target_flags & TARGET_MASK_BIG)
+
 /*
 ** Constants in data means that the .const section is in a chosen space.
 */
@@ -427,6 +439,7 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 #define TARGET_CONST_IN_PROG ((target_flags & TARGET_MASK_CONST_IN_PROG) != 0)
 #define TARGET_CONST_IN_CODE ((!TARGET_CONST_IN_DATA) && \
                               (!TARGET_CONST_IN_PSV) && (!TARGET_CONST_IN_PROG))
+#define TARGET_EDS ((target_flags & TARGET_MASK_EDS))
 
 #if TARGET_USE_PA
 /*
@@ -482,67 +495,6 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 ** number in this grouping is the default value for target_flags. Any target
 ** options act starting with that value.
 */
-#ifdef __C30_BETA__
-#define TARGET_SWITCHES \
-{ \
- {"abi-check", \
-    TARGET_MASK_ABI_CHECK, \
-    "Instrument functions calls to validate register save requiremetns"}, \
- {"small-data", \
-    -(TARGET_MASK_LARGE_AGG | TARGET_MASK_LARGE_SCALAR), \
-    "Use small data model"}, \
- {"large-data", \
-    (TARGET_MASK_LARGE_AGG | TARGET_MASK_LARGE_SCALAR), \
-    "Use large data model"}, \
- {"small-scalar", \
-    -TARGET_MASK_LARGE_SCALAR, \
-    "Use small scalar data model"}, \
- {"large-scalar", \
-    TARGET_MASK_LARGE_SCALAR, \
-    "Use large scalar data model"}, \
- {"small-aggregate", \
-    -TARGET_MASK_LARGE_AGG, \
-    "Use small aggregate data model"}, \
- {"large-aggregate", \
-    TARGET_MASK_LARGE_AGG, \
-    "Use large aggregate data model"}, \
- {"small-code", \
-    -TARGET_MASK_LARGE_CODE, \
-    "Use small code model"}, \
- {"large-code", \
-    TARGET_MASK_LARGE_CODE, \
-    "Use large code model"}, \
- {"const-in-data", \
-    TARGET_MASK_CONST_IN_DATA, \
-    "Put constants in data space"}, \
- {"const-in-code", \
-    -(TARGET_MASK_CONST_IN_DATA | TARGET_MASK_CONST_IN_PSV | \
-      TARGET_MASK_CONST_IN_PROG), \
-    "Put constants in code space"}, \
- {"const-in-psv", \
-    TARGET_MASK_CONST_IN_PSV, \
-    "Beta" }, \
- {"const-in-prog", \
-    TARGET_MASK_CONST_IN_PROG, \
-    "Beta" }, \
- {"pa", \
-    TARGET_MASK_PA, \
-    "Run procedural abstraction stage"}, \
- {"no-pa", \
-    ~TARGET_MASK_PA, \
-    "Do not run procedural abstraction stage"}, \
- {"smart-io", \
-    TARGET_MASK_SMART_IO, \
-    "Enable smart IO library call forwarding"}, \
- {"no-isr-warn", \
-    TARGET_MASK_NO_ISRW, \
-    "Disable warning for inappropriate use of ISR function names"}, \
- { "no-file", \
-    TARGET_MASK_SKIP_DOT_FILE, \
-    "Disable placing file directive in assembly output"}, \
- { "", TARGET_DEFAULT,NULL} \
-}
-#else
 #define TARGET_SWITCHES                                               \
 { \
  {"small-data", \
@@ -591,9 +543,23 @@ extern void pic30_system_include_paths(const char *root, const char *system,
  { "no-file", \
     TARGET_MASK_SKIP_DOT_FILE, \
     "Disable placing file directive in assembly output"}, \
+ { "unified", \
+   (TARGET_MASK_EDS), \
+   "Use unified data model\n"}, \
+ { "near-chars", \
+   (TARGET_MASK_NCHAR), \
+   "Place 'char' variables into near data space, regardless of memory model\n"}, \
+ { "enable-large-arrays", \
+   (TARGET_MASK_BIG), \
+   "Allow arrays larger than 32K\n"}, \
+ { "large-arrays", \
+   (TARGET_MASK_BIG), \
+   "Allow arrays larger than 32K\n"}, \
+ { "track", \
+   (TARGET_TRACK_PSVPAG), \
+   "Track auto psv page\n"}, \
  { "", TARGET_DEFAULT,NULL} \
 }
-#endif
 
 extern int target_flags;
 
@@ -621,7 +587,7 @@ enum errata_mask {
   retfie_errata_disi = 2,
   psv_errata = 4,
   exch_errata = 8,
-  psv_address_errata = 16,
+  psv_address_errata = 16
 };
 extern int pic30_errata_mask;
 
@@ -686,12 +652,6 @@ extern int         pic30_clear_fn_list;
 #define UNITS_PER_WORD      2
 
 /*
-** Width in bits of a pointer.
-** See also the macro `Pmode' defined below.
-*/
-#define POINTER_SIZE      16
-
-/*
 ** A C expression for a string describing the name of the data type to use for
 ** the result of subtracting two pointers. The typedef name ptrdiff_t is
 ** defined using the contents of the string.
@@ -701,7 +661,9 @@ extern int         pic30_clear_fn_list;
 /*
 ** Type to use for `size_t'. If undefined, uses `long unsigned int'.
 */
-#define SIZE_TYPE      "unsigned int"
+#define SIZE_TYPE      ((TARGET_BIG_ARRAYS || TARGET_EDS) ? \
+                           "long unsigned int" :            \
+                           "unsigned int")
 
 /*
 ** The name of the data type to use for wide characters.
@@ -853,10 +815,12 @@ extern int         pic30_clear_fn_list;
 #define A_REGNO      17
 #define B_REGNO      18
 #define PSVPAG       19
+#define DSRPAG       19
 #define PMADDR       20
 #define PMMODE       21
 #define PMDIN1       22
 #define PMDIN2       23
+#define DSWPAG       24
 
 /*
 ** Number of actual hardware registers.
@@ -865,7 +829,7 @@ extern int         pic30_clear_fn_list;
 ** All registers that the compiler knows about must be given numbers,
 ** even those that are not normally considered general registers.
 */
-#define FIRST_PSEUDO_REGISTER 24
+#define FIRST_PSEUDO_REGISTER 25
 
 /* Mappings for dsPIC registers */
 
@@ -890,7 +854,8 @@ extern int         pic30_clear_fn_list;
 { \
    /* WREG0 */  0, 0, 0, 0, 0, 0, 0, 0,   \
    /* WREG8 */  0, 0, 0, 0, 0, 0, 0, 1,   \
-   /* RCOUNT */ 1, 0, 0, 0, 0, 0, 0, 0    \
+   /* RCOUNT */ 1, 0, 0, 1, 0, 0, 0, 0,   \
+   /* DSWPAG */ 1                         \
 }
 
 /*
@@ -920,7 +885,8 @@ extern int         pic30_clear_fn_list;
 { \
  /* WREG0 */  1, 1, 1, 1, 1, 1, 1, 1,   \
  /* WREG8 */  0, 0, 0, 0, 0, 0, 0, 1,   \
- /* RCOUNT */ 1, 0, 0, 0, 0, 0, 0, 0    \
+ /* RCOUNT */ 1, 0, 0, 1, 0, 0, 0, 0,   \
+ /* DSWPAG */ 1                         \
 }
 
 /*
@@ -1138,25 +1104,25 @@ enum reg_class
 
 #define REG_CLASS_CONTENTS   \
 { \
-        { 0x00000 }, \
-        { 0x00001 }, \
-        { 0x00002 }, \
-        { 0x00004 }, \
-/*AWB*/ { 0x02000 }, \
-/*PSV*/ { 0x80000 }, \
-        { 0x0000C }, \
-        { 0x00007 }, \
-/*XPF*/ { 0x00300 }, \
-/*YPF*/ { 0x00C00 }, \
-/*ACC*/ { 0x60000 }, \
-/*VRP*/ { 0x00080 }, \
-/* RP*/ { 0x00070 }, \
-/*PRG*/ { 0x000F0 }, \
-        { 0x0fffc }, \
-        { 0x0fffd }, \
-        { 0x0fffe }, \
-        { 0x0ffff }, \
-        { 0x0ffff }  \
+        { 0x0000000 }, \
+        { 0x0000001 }, \
+        { 0x0000002 }, \
+        { 0x0000004 }, \
+/*AWB*/ { 0x0002000 }, \
+/*PSV*/ { 0x1080000 }, \
+        { 0x000000C }, \
+        { 0x0000007 }, \
+/*XPF*/ { 0x0000300 }, \
+/*YPF*/ { 0x0000C00 }, \
+/*ACC*/ { 0x0060000 }, \
+/*VRP*/ { 0x0000080 }, \
+/* RP*/ { 0x0000070 }, \
+/*PRG*/ { 0x00000F0 }, \
+        { 0x000fffc }, \
+        { 0x000fffd }, \
+        { 0x000fffe }, \
+        { 0x000ffff }, \
+        { 0x000ffff }  \
 }
 
 /*
@@ -1172,8 +1138,8 @@ enum reg_class
 #define IS_BREG_REG(r)              ((r) == WR1_REGNO)
 #define IS_CREG_REG(r)              ((r) == WR2_REGNO)
 #define IS_AWB_REG(r)               ((r) == WR13_REGNO)
-#define IS_DREG_REG(r)              ((r) >= WR1_REGNO)
-#define IS_EREG_REG(r)              ((r) >= WR2_REGNO)
+#define IS_DREG_REG(r)              (((r) >= WR1_REGNO) && IS_WREG_REG(r))
+#define IS_EREG_REG(r)              (((r) >= WR2_REGNO) && IS_WREG_REG(r))
 #define IS_WREG_REG(r)              ((r) <= WR15_REGNO)
 #define IS_AREG_OR_PSEUDO_REG(r)    (IS_AREG_REG(r) || IS_PSEUDO_REG(r))
 #define IS_BREG_OR_PSEUDO_REG(r)    (IS_BREG_REG(r) || IS_PSEUDO_REG(r))
@@ -1188,6 +1154,12 @@ enum reg_class
 #define IS_PRODUCT_REG(r)           (((r) >= WR4_REGNO) && ((r) <= WR7_REGNO))
 #define IS_XPREFETCH_REG(r)         (((r) == WR8_REGNO) || ((r) == WR9_REGNO))
 #define IS_YPREFETCH_REG(r)         (((r) == WR10_REGNO) || ((r) == WR11_REGNO))
+#define IS_PSV_REG(r)               (((r) == PSVPAG) || ((r) == DSWPAG))
+#ifdef IGNORE_ACCUM_CHECK
+#define MAYBE_IS_ACCUM_REG(r)       (1)
+#else
+#define MAYBE_IS_ACCUM_REG(r)       (((r) == A_REGNO) || ((r) == B_REGNO))
+#endif
 #define IS_ACCUM_REG(r)             (((r) == A_REGNO) || ((r) == B_REGNO))
 #define OTHER_ACCUM_REG(r)          ((r == A_REGNO) ? B_REGNO : A_REGNO)
 
@@ -1206,6 +1178,7 @@ enum reg_class
    IS_EREG_REG(REGNO) ? E_REGS :   \
    IS_DREG_REG(REGNO) ? D_REGS :   \
    IS_WREG_REG(REGNO) ? W_REGS :   \
+   IS_PSV_REG(REGNO) ? PSV_REGS :  \
    ALL_REGS)
 
 /*
@@ -1326,7 +1299,7 @@ enum reg_class
  "w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7",   \
  "w8", "w9","w10","w11","w12","w13","w14","w15",   \
  "_RCOUNT", "A", "B", "PSVPAG", "PMADDR", "PMMODE",\
- "PMDIN1", "PMDIN2" \
+ "PMDIN1", "PMDIN2", "DSWPAG" \
 }
 
 /*
@@ -2000,6 +1973,8 @@ typedef struct pic30_args
 
 #define PIC30_FCNN_FLAG       PIC30_EXTENDED_FLAG "Nf" PIC30_EXTENDED_FLAG
 #define PIC30_FCNS_FLAG       PIC30_EXTENDED_FLAG "Sf" PIC30_EXTENDED_FLAG
+#define PIC30_EDS_FLAG        PIC30_EXTENDED_FLAG "eds" PIC30_EXTENDED_FLAG
+#define PIC30_PAGE_FLAG       PIC30_EXTENDED_FLAG "pge" PIC30_EXTENDED_FLAG
 #define PIC30_SFR_FLAG        PIC30_EXTENDED_FLAG "sfr" PIC30_EXTENDED_FLAG
 #define PIC30_NEAR_FLAG       PIC30_EXTENDED_FLAG "near" PIC30_EXTENDED_FLAG
 #define PIC30_DMA_FLAG        PIC30_EXTENDED_FLAG "dma" PIC30_EXTENDED_FLAG
@@ -2137,7 +2112,18 @@ enum pic30_memory_space {
 ** After generation of rtl, the compiler makes no further distinction
 ** between pointers and any other objects of this machine mode.
 */
-#define Pmode HImode
+/*
+** Width in bits of a pointer.
+** See also the macro `Pmode' defined below.
+*/
+#define POINTER_SIZE      (TARGET_EDS ? 32 : 16)
+
+#define Pmode (TARGET_EDS ? P32EDSmode : HImode )
+#if 1
+#define STACK_Pmode HImode
+#endif
+#define TARGET_CONSTANT_PMODE P16APSVmode
+
 
 /*
 ** A function address in a call instruction is a byte address
@@ -2151,118 +2137,9 @@ enum pic30_memory_space {
   c_register_pragma(0, "idata", pic30_handle_idata_pragma); \
   c_register_pragma(0, "udata", pic30_handle_udata_pragma); }
 
-#if (PIC30_DWARF2)
+extern void pic30_cpu_cpp_builtins(void *);
 
-#define TARGET_CPU_CPP_BUILTINS() { \
-  char buffer[80]; \
-  extern const char *pic30_it_option; \
-  extern const char *pic30_it_option_arg; \
-  extern int flag_lang_asm; \
-  \
-  if (pic30_target_family) cpp_define(pfile, pic30_target_family); \
-  if (pic30_target_cpu) cpp_define(pfile, pic30_target_cpu); \
-  sprintf(buffer,"__BUILTIN_ITTYPE"); \
-  cpp_define(pfile,buffer); \
-  if (pic30_it_option) { \
-    sprintf(buffer,"__IT_TRANSPORT=%s",pic30_it_option); \
-    cpp_define(pfile,buffer); \
-    if (pic30_it_option_arg) { \
-      int i=1; \
-      char *s,*c; \
- \
-      c = pic30_it_option_arg; \
-      do { \
-        s = c; \
-        for (; *c && *c != ','; c++); \
-        if (*c) *c++ = 0; \
-        sprintf(buffer,"__IT_TRANSPORT_OPTION%d=%s",i++,s); \
-        cpp_define(pfile,buffer); \
-      } while (*c); \
-    } \
-  }\
-  {\
-    sprintf(buffer,"__C30_VERSION__=%d", pic30_compiler_version);\
-    cpp_define(pfile,buffer);\
-  }\
-  if (flag_lang_asm == 0) { \
-    builtin_define("__C30"); \
-    builtin_define("__C30ELF"); \
-    builtin_define("__dsPIC30"); \
-    builtin_define("__dsPIC30ELF"); \
-    builtin_define("__C30__"); \
-    builtin_define("__C30ELF__"); \
-    builtin_define("__dsPIC30__"); \
-    builtin_define("__dsPIC30ELF__"); \
-    if (!flag_iso) {\
-      builtin_define("C30"); \
-      builtin_define("C30ELF"); \
-      builtin_define("dsPIC30"); \
-      builtin_define("dsPIC30ELF"); \
-    } \
-  } else { \
-    builtin_define("__ASM30"); \
-    builtin_define("__ASM30__"); \
-    if (!flag_iso) {\
-      builtin_define("ASM30"); \
-    } \
-  } \
-}
-#else
-#define TARGET_CPU_CPP_BUILTINS() { \
-  char buffer[80]; \
-  extern const char *pic30_it_option; \
-  extern const char *pic30_it_option_arg; \
-  extern int flag_lang_asm; \
-  \
-  if (pic30_target_family) cpp_define(pfile, pic30_target_family); \
-  if (pic30_target_cpu) cpp_define(pfile, pic30_target_cpu); \
-  {\
-    sprintf(buffer,"__C30_VERSION__=%d", pic30_compiler_version);\
-    cpp_define(pfile,buffer);\
-  }\
-  sprintf(buffer,"__BUILTIN_ITTYPE"); \
-  cpp_define(pfile,buffer); \
-  if (pic30_it_option) { \
-    sprintf(buffer,"__IT_TRANSPORT=%s",pic30_it_option); \
-    cpp_define(pfile,buffer); \
-    if (pic30_it_option_arg) { \
-      int i=1; \
-      char *s,*c; \
- \
-      c = pic30_it_option_arg; \
-      do { \
-        s = c; \
-        for (; *c && *c != ','; c++); \
-        if (*c) *c++ = 0; \
-        sprintf(buffer,"__IT_TRANSPORT_OPTION%d=%s",i++,s); \
-        cpp_define(pfile,buffer); \
-      } while (*c); \
-    } \
-  }\
-  if (flag_lang_asm == 0) { \
-    builtin_define("__C30"); \
-    builtin_define("__C30COFF"); \
-    builtin_define("__dsPIC30"); \
-    builtin_define("__dsPIC30COFF"); \
-    builtin_define("__C30__"); \
-    builtin_define("__C30COFF__"); \
-    builtin_define("__dsPIC30__"); \
-    builtin_define("__dsPIC30COFF__"); \
-    if (!flag_iso) {\
-      builtin_define("C30"); \
-      builtin_define("C30COFF"); \
-      builtin_define("dsPIC30"); \
-      builtin_define("dsPIC30COFF"); \
-    } \
-  } else { \
-    builtin_define("__ASM30"); \
-    builtin_define("__ASM30__"); \
-    if (!flag_iso) {\
-      builtin_define("ASM30"); \
-    } \
-  } \
-}
-#endif
+#define TARGET_CPU_CPP_BUILTINS() pic30_cpu_cpp_builtins(pfile)
 
 
 #if 0
@@ -3321,6 +3198,8 @@ extern int pic30_license_valid;
                                       (MODE == P24PROGmode) || \
                                       (MODE == P16PMPmode) || \
                                       (MODE == P32EXTmode) || \
+                                      (MODE == P32EDSmode) || \
+                                      (MODE == P16APSVmode) || \
                                       (MODE == P24PSVmode))
 
 
@@ -3328,7 +3207,8 @@ extern int pic30_license_valid;
 #define TARGET_RESERVED_WORDS { "__psv__", RID_TARGET_QUAL, 0 }, \
                               { "__prog__", RID_TARGET_QUAL, 0 }, \
                               { "__pmp__", RID_TARGET_QUAL, 0}, \
-                              { "__external__", RID_TARGET_QUAL, 0 },
+                              { "__external__", RID_TARGET_QUAL, 0 }, \
+                              { "__eds__", RID_TARGET_QUAL, 0}, 
 
 #define TARGET_PARSE_TARGET_RID(qual, x)  pic30_parse_target_rid(qual,x)
 
@@ -3367,7 +3247,37 @@ extern tree pic30_write_externals(enum pic30_special_trees);
 extern void pic30_target_bind(tree name, tree decl);
 #define TARGET_BIND pic30_target_bind
 
-extern int pic30_emit_block_move(rtx x, rtx y, rtx size);
+extern int pic30_emit_block_move(rtx x, rtx *y, rtx size, unsigned int align);
 #define TARGET_EMIT_BLOCK_MOVE pic30_emit_block_move
+
+#define EXTRA_RTL_FILE "config/pic30/pic30-rtl.def"
+
+/*
+ *   object file signatures
+ */
+
+typedef union {
+  unsigned int mask;
+  struct {
+    unsigned int unsigned_long_size_t:1;  /* true if size_t is unsigned long */
+    unsigned int dummy1:1;                /* place holder */
+    unsigned int dummy2:1;                /* place holder */
+    unsigned int dummy3:1;                /* place holder */
+    unsigned int dummy4:1;                /* place holder */
+    unsigned int dummy5:1;                /* place holder */
+    unsigned int dummy6:1;                /* place holder */
+    unsigned int dummy7:1;                /* place holder */
+    unsigned int dummy8:1;                /* place holder */
+    unsigned int dummy9:1;                /* place holder */
+    unsigned int dummy10:1;               /* place holder */
+    unsigned int dummy11:1;               /* place holder */
+    unsigned int dummy12:1;               /* place holder */
+    unsigned int dummy13:1;               /* place holder */
+    unsigned int dummy14:1;               /* place holder */
+    unsigned int dummy15:1;               /* place holder */
+  } bits;
+} object_signature_t;
+
+extern object_signature_t options_set, external_options_mask;
 
 #endif

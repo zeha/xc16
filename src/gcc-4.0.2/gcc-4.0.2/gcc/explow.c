@@ -38,6 +38,10 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #include "recog.h"
 #include "langhooks.h"
 
+#ifndef STACK_Pmode
+#define STACK_Pmode Pmode
+#endif
+
 static rtx break_out_memory_refs (rtx);
 static void emit_stack_probe (rtx);
 
@@ -794,7 +798,7 @@ adjust_stack (rtx adjust)
   if (GET_CODE (adjust) == CONST_INT)
     stack_pointer_delta -= INTVAL (adjust);
 
-  temp = expand_binop (Pmode,
+  temp = expand_binop (STACK_Pmode,
 #ifdef STACK_GROWS_DOWNWARD
 		       add_optab,
 #else
@@ -823,7 +827,7 @@ anti_adjust_stack (rtx adjust)
   if (GET_CODE (adjust) == CONST_INT)
     stack_pointer_delta += INTVAL (adjust);
 
-  temp = expand_binop (Pmode,
+  temp = expand_binop (STACK_Pmode,
 #ifdef STACK_GROWS_DOWNWARD
 		       sub_optab,
 #else
@@ -1181,7 +1185,7 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
      of the old save area.  */
   {
     rtx dynamic_offset
-      = expand_binop (Pmode, sub_optab, virtual_stack_dynamic_rtx,
+      = expand_binop (STACK_Pmode, sub_optab, virtual_stack_dynamic_rtx,
 		      stack_pointer_rtx, NULL_RTX, 1, OPTAB_LIB_WIDEN);
 
     if (!current_function_calls_setjmp)
@@ -1301,11 +1305,11 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
 	  rtx available;
 	  rtx space_available = gen_label_rtx ();
 #ifdef STACK_GROWS_DOWNWARD
-	  available = expand_binop (Pmode, sub_optab,
+	  available = expand_binop (STACK_Pmode, sub_optab,
 				    stack_pointer_rtx, stack_limit_rtx,
 				    NULL_RTX, 1, OPTAB_WIDEN);
 #else
-	  available = expand_binop (Pmode, sub_optab,
+	  available = expand_binop (STACK_Pmode, sub_optab,
 				    stack_limit_rtx, stack_pointer_rtx,
 				    NULL_RTX, 1, OPTAB_WIDEN);
 #endif
@@ -1412,7 +1416,7 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
   if (stack_check_libfunc != 0)
     {
       rtx addr = memory_address (QImode,
-				 gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+				 gen_rtx_fmt_ee (STACK_GROW_OP, STACK_Pmode,
 					         stack_pointer_rtx,
 					         plus_constant (size, first)));
 
@@ -1427,7 +1431,7 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
     {
       insn_operand_predicate_fn pred;
       rtx last_addr
-	= force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+	= force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, STACK_Pmode,
 					 stack_pointer_rtx,
 					 plus_constant (size, first)),
 			 NULL_RTX);
@@ -1454,11 +1458,11 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
       for (offset = first + STACK_CHECK_PROBE_INTERVAL;
 	   offset < INTVAL (size);
 	   offset = offset + STACK_CHECK_PROBE_INTERVAL)
-	emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+	emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, STACK_Pmode,
 					  stack_pointer_rtx,
 					  GEN_INT (offset)));
 
-      emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+      emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, STACK_Pmode,
 					stack_pointer_rtx,
 					plus_constant (size, first)));
     }
@@ -1468,12 +1472,12 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
   else
     {
       rtx test_addr
-	= force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+	= force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, STACK_Pmode,
 					 stack_pointer_rtx,
 					 GEN_INT (first + STACK_CHECK_PROBE_INTERVAL)),
 			 NULL_RTX);
       rtx last_addr
-	= force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+	= force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, STACK_Pmode,
 					 stack_pointer_rtx,
 					 plus_constant (size, first)),
 			 NULL_RTX);

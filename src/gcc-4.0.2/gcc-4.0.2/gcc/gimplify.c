@@ -1547,7 +1547,7 @@ gimplify_compound_lval (tree *expr_p, tree *pre_p,
 	  if (!is_gimple_min_invariant (TREE_OPERAND (t, 1)))
 	    {
 	      tret = gimplify_expr (&TREE_OPERAND (t, 1), pre_p, post_p,
-				    is_gimple_formal_tmp_reg, fb_rvalue);
+				    is_gimple_formal_tmp_asm_reg, fb_rvalue);
 	      ret = MIN (ret, tret);
 	    }
 	}
@@ -2871,6 +2871,7 @@ gimplify_modify_expr_rhs (tree *expr_p, tree *from_p, tree *to_p, tree *pre_p,
   while (ret != GS_UNHANDLED)
     switch (TREE_CODE (*from_p))
       {
+#if 0
       case VAR_DECL:
         {
           /* if the lhs is a register variable, the rhs also better be
@@ -2883,6 +2884,7 @@ gimplify_modify_expr_rhs (tree *expr_p, tree *from_p, tree *to_p, tree *pre_p,
           ret = GS_UNHANDLED;
           break;
         }   
+#endif
 
       case INDIRECT_REF:
 	{

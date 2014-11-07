@@ -532,6 +532,8 @@ divide (unsigned bits, unsigned HOST_WIDE_INT a, unsigned HOST_WIDE_INT b,
   unsigned HOST_WIDE_INT inv, ex, val;
   unsigned i;
 
+  if (b > a) return false;
+
   a &= mask;
   b &= mask;
 

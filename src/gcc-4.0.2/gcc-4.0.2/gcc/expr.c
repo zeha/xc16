@@ -459,14 +459,14 @@ convert_move (rtx to, rtx from, int unsignedp)
 #ifdef TARGET_CONVERT_POINTER
   if (targetm.valid_pointer_mode(to_mode) ||
       targetm.valid_pointer_mode(from_mode)) {
-     if (TARGET_CONVERT_POINTER(to,from)) return;
+     if (TARGET_CONVERT_POINTER(to,from,unsignedp)) return;
   }
 #endif
 
   /* Now both modes are integers.  */
 
   /* Handle expanding beyond a word.  */
-  if (GET_MODE_BITSIZE (from_mode) < GET_MODE_BITSIZE (to_mode)
+  if (GET_MODE_BITSIZE (from_mode) <= GET_MODE_BITSIZE (to_mode)
       && GET_MODE_BITSIZE (to_mode) > BITS_PER_WORD)
     {
       rtx insns;
@@ -592,7 +592,7 @@ convert_move (rtx to, rtx from, int unsignedp)
      no more than a word long.  */
 
   /* For truncation, usually we can just refer to FROM in a narrower mode.  */
-  if (GET_MODE_BITSIZE (to_mode) < GET_MODE_BITSIZE (from_mode)
+  if (GET_MODE_BITSIZE (to_mode) <= GET_MODE_BITSIZE (from_mode)
       && TRULY_NOOP_TRUNCATION (GET_MODE_BITSIZE (to_mode),
 				GET_MODE_BITSIZE (from_mode)))
     {
@@ -1127,8 +1127,10 @@ emit_block_move (rtx x, rtx y, rtx size, enum block_op_methods method)
   rtx retval = 0;
   unsigned int align;
 
+  align = MIN (MEM_ALIGN (x), MEM_ALIGN (y));
+
 #ifdef TARGET_EMIT_BLOCK_MOVE
-  if (TARGET_EMIT_BLOCK_MOVE(x,y,size)) { 
+  if (TARGET_EMIT_BLOCK_MOVE(x,&y,size,align)) { 
     return 0;
   }
 #endif
@@ -1155,8 +1157,6 @@ emit_block_move (rtx x, rtx y, rtx size, enum block_op_methods method)
     default:
       gcc_unreachable ();
     }
-
-  align = MIN (MEM_ALIGN (x), MEM_ALIGN (y));
 
   gcc_assert (MEM_P (x));
   gcc_assert (MEM_P (y));
@@ -3860,7 +3860,7 @@ expand_assignment (tree to, tree from)
 
       if (offset != 0)
 	{
-	  rtx offset_rtx = expand_expr (offset, NULL_RTX, VOIDmode, EXPAND_SUM);
+	  rtx offset_rtx = expand_expr (offset, NULL_RTX, VOIDmode, EXPAND_NORMAL);
 
 	  gcc_assert (MEM_P (to_rtx));
 

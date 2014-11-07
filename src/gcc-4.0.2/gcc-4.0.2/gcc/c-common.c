@@ -1566,6 +1566,10 @@ c_common_type_for_mode (enum machine_mode mode, int unsignedp)
 {
   tree t;
 
+  for (t = registered_builtin_types; t; t = TREE_CHAIN (t))
+    if (TYPE_MODE (TREE_VALUE (t)) == mode)
+      return TREE_VALUE (t);
+
   if (mode == TYPE_MODE (integer_type_node))
     return unsignedp ? unsigned_type_node : integer_type_node;
 
@@ -1651,10 +1655,6 @@ c_common_type_for_mode (enum machine_mode mode, int unsignedp)
       if (inner_type != NULL_TREE)
 	return build_vector_type_for_mode (inner_type, mode);
     }
-
-  for (t = registered_builtin_types; t; t = TREE_CHAIN (t))
-    if (TYPE_MODE (TREE_VALUE (t)) == mode)
-      return TREE_VALUE (t);
 
   return 0;
 }
@@ -2297,7 +2297,17 @@ pointer_int_sum (enum tree_code resultcode, tree ptrop, tree intop)
   /* Convert the integer argument to a type the same size as sizetype
      so the multiply won't overflow spuriously.  */
 
-  if (TYPE_PRECISION (TREE_TYPE (intop)) != TYPE_PRECISION (sizetype)
+  /* C30 has different sized pointers but size_t is usually unsigned int
+     to keep the code efficient for the normal case - 
+    
+     if the precision of the result type is bigger than size_t use it instead */
+  if (TYPE_PRECISION (result_type) > TYPE_PRECISION(sizetype)) {
+  
+    if (TYPE_PRECISION (TREE_TYPE (intop)) != TYPE_PRECISION (result_type)
+        || TYPE_UNSIGNED (TREE_TYPE (intop)) != TYPE_UNSIGNED (result_type))
+      intop = convert(c_common_type_for_size(TYPE_PRECISION(result_type),
+					     TYPE_UNSIGNED(result_type)),intop);
+  } else if (TYPE_PRECISION (TREE_TYPE (intop)) != TYPE_PRECISION (sizetype)
       || TYPE_UNSIGNED (TREE_TYPE (intop)) != TYPE_UNSIGNED (sizetype))
     intop = convert (c_common_type_for_size (TYPE_PRECISION (sizetype),
 					     TYPE_UNSIGNED (sizetype)), intop);

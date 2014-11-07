@@ -56,6 +56,10 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #include "debug.h"
 #include "langhooks.h"
 
+#ifndef STACK_Pmode
+#define STACK_Pmode Pmode
+#endif
+
 /* Commonly used modes.  */
 
 enum machine_mode byte_mode;	/* Mode whose width is BITS_PER_UNIT.  */
@@ -3310,6 +3314,10 @@ make_insn_raw (rtx pattern)
     }
 #endif
 
+  /* make it so that insn can be printed safely */
+  NEXT_INSN(insn) = 0;
+  PREV_INSN(insn) = 0;
+
   return insn;
 }
 
@@ -5204,7 +5212,8 @@ init_emit_once (int line_numbers)
 	double_mode = mode;
     }
 
-  ptr_mode = mode_for_size (POINTER_SIZE, GET_MODE_CLASS (Pmode), 0);
+  // ptr_mode = mode_for_size (POINTER_SIZE, GET_MODE_CLASS (Pmode), 0);
+  ptr_mode = Pmode;
 
   /* Assign register numbers to the globally defined register rtx.
      This must be done at runtime because the register number field
@@ -5212,21 +5221,21 @@ init_emit_once (int line_numbers)
 
   pc_rtx = gen_rtx_PC (VOIDmode);
   cc0_rtx = gen_rtx_CC0 (VOIDmode);
-  stack_pointer_rtx = gen_raw_REG (Pmode, STACK_POINTER_REGNUM);
-  frame_pointer_rtx = gen_raw_REG (Pmode, FRAME_POINTER_REGNUM);
+  stack_pointer_rtx = gen_raw_REG (STACK_Pmode, STACK_POINTER_REGNUM);
+  frame_pointer_rtx = gen_raw_REG (STACK_Pmode, FRAME_POINTER_REGNUM);
   if (hard_frame_pointer_rtx == 0)
-    hard_frame_pointer_rtx = gen_raw_REG (Pmode,
+    hard_frame_pointer_rtx = gen_raw_REG (STACK_Pmode,
 					  HARD_FRAME_POINTER_REGNUM);
   if (arg_pointer_rtx == 0)
-    arg_pointer_rtx = gen_raw_REG (Pmode, ARG_POINTER_REGNUM);
+    arg_pointer_rtx = gen_raw_REG (STACK_Pmode, ARG_POINTER_REGNUM);
   virtual_incoming_args_rtx =
-    gen_raw_REG (Pmode, VIRTUAL_INCOMING_ARGS_REGNUM);
+    gen_raw_REG (STACK_Pmode, VIRTUAL_INCOMING_ARGS_REGNUM);
   virtual_stack_vars_rtx =
-    gen_raw_REG (Pmode, VIRTUAL_STACK_VARS_REGNUM);
+    gen_raw_REG (STACK_Pmode, VIRTUAL_STACK_VARS_REGNUM);
   virtual_stack_dynamic_rtx =
-    gen_raw_REG (Pmode, VIRTUAL_STACK_DYNAMIC_REGNUM);
+    gen_raw_REG (STACK_Pmode, VIRTUAL_STACK_DYNAMIC_REGNUM);
   virtual_outgoing_args_rtx =
-    gen_raw_REG (Pmode, VIRTUAL_OUTGOING_ARGS_REGNUM);
+    gen_raw_REG (STACK_Pmode, VIRTUAL_OUTGOING_ARGS_REGNUM);
   virtual_cfa_rtx = gen_raw_REG (Pmode, VIRTUAL_CFA_REGNUM);
 
   /* Initialize RTL for commonly used hard registers.  These are
@@ -5302,6 +5311,9 @@ init_emit_once (int line_numbers)
       const_tiny_rtx[i][P32EXTmode] = GEN_INT(i);
       const_tiny_rtx[i][P24PSVmode] = GEN_INT(i);
       const_tiny_rtx[i][P24PROGmode] = GEN_INT(i);
+      const_tiny_rtx[i][P32PEDSmode] = GEN_INT(i);
+      const_tiny_rtx[i][P32EDSmode] = GEN_INT(i);
+      const_tiny_rtx[i][P16APSVmode] = GEN_INT(i);
 #endif
     }
 

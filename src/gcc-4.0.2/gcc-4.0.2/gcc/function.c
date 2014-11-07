@@ -70,6 +70,10 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #define STACK_ALIGNMENT_NEEDED 1
 #endif
 
+#ifndef STACK_Pmode
+#define STACK_Pmode Pmode
+#endif
+
 #define STACK_BYTES (STACK_BOUNDARY / BITS_PER_UNIT)
 
 /* Some systems use __main in a way incompatible with its use in gcc, in these
@@ -473,12 +477,12 @@ assign_stack_local_1 (enum machine_mode mode, HOST_WIDE_INT size, int align,
     addr = plus_constant (frame_pointer_rtx,
 			  trunc_int_for_mode
 			  (frame_offset + bigend_correction
-			   + STARTING_FRAME_OFFSET, Pmode));
+			   + STARTING_FRAME_OFFSET, STACK_Pmode));
   else
     addr = plus_constant (virtual_stack_vars_rtx,
 			  trunc_int_for_mode
 			  (function->x_frame_offset + bigend_correction,
-			   Pmode));
+			   STACK_Pmode));
 
 #ifndef FRAME_GROWS_DOWNWARD
   function->x_frame_offset += size;
@@ -1558,7 +1562,7 @@ instantiate_virtual_regs_1 (rtx *loc, rtx object, int extra_insns)
 		{
 		  instantiate_virtual_regs_1 (&XEXP (XEXP (x, 0), 1), object,
 					      extra_insns);
-		  new = gen_rtx_PLUS (Pmode, new, XEXP (XEXP (x, 0), 1));
+		  new = gen_rtx_PLUS (STACK_Pmode, new, XEXP (XEXP (x, 0), 1));
 		}
 	      else
 		{
@@ -1626,7 +1630,7 @@ instantiate_virtual_regs_1 (rtx *loc, rtx object, int extra_insns)
 
 	      /* Otherwise copy the new constant into a register and replace
 		 constant with that register.  */
-	      temp = gen_reg_rtx (Pmode);
+	      temp = gen_reg_rtx (STACK_Pmode);
 	      XEXP (x, 0) = new;
 	      if (validate_change (object, &XEXP (x, 1), temp, 0))
 		emit_insn_before (gen_move_insn (temp, new_offset), object);
@@ -1636,7 +1640,7 @@ instantiate_virtual_regs_1 (rtx *loc, rtx object, int extra_insns)
 		     register containing the sum.  */
 
 		  XEXP (x, 0) = old;
-		  new = gen_rtx_PLUS (Pmode, new, new_offset);
+		  new = gen_rtx_PLUS (STACK_Pmode, new, new_offset);
 
 		  start_sequence ();
 		  temp = force_operand (new, NULL_RTX);
@@ -2181,7 +2185,7 @@ assign_parm_find_data_types (struct assign_parm_data_all *all, tree parm,
     {
       passed_type = nominal_type = build_pointer_type (passed_type);
       data->passed_pointer = true;
-      passed_mode = nominal_mode = Pmode;
+      passed_mode = nominal_mode = STACK_Pmode;
     }
 
   /* Find mode as it is passed by the ABI.  */
@@ -2391,7 +2395,7 @@ assign_parm_find_stack_rtl (tree parm, struct assign_parm_data_one *data)
 
   stack_parm = current_function_internal_arg_pointer;
   if (offset_rtx != const0_rtx)
-    stack_parm = gen_rtx_PLUS (Pmode, stack_parm, offset_rtx);
+    stack_parm = gen_rtx_PLUS (STACK_Pmode, stack_parm, offset_rtx);
   stack_parm = gen_rtx_MEM (data->promoted_mode, stack_parm);
 
   set_mem_attributes (stack_parm, parm, 1);
@@ -3130,7 +3134,7 @@ assign_parms (tree fndecl)
 	x = addr;
       else
 	{
-	  addr = convert_memory_address (Pmode, addr);
+	  addr = convert_memory_address (STACK_Pmode, addr);
 	  x = gen_rtx_MEM (DECL_MODE (result), addr);
 	  set_mem_attributes (x, result, 1);
 	}
@@ -4057,19 +4061,19 @@ expand_main_function (void)
       start_sequence ();
       /* Forcibly align the stack.  */
 #ifdef STACK_GROWS_DOWNWARD
-      tmp = expand_simple_binop (Pmode, AND, stack_pointer_rtx, GEN_INT(-align),
+      tmp = expand_simple_binop (STACK_Pmode, AND, stack_pointer_rtx, GEN_INT(-align),
 				 stack_pointer_rtx, 1, OPTAB_WIDEN);
 #else
-      tmp = expand_simple_binop (Pmode, PLUS, stack_pointer_rtx,
+      tmp = expand_simple_binop (STACK_Pmode, PLUS, stack_pointer_rtx,
 				 GEN_INT (align - 1), NULL_RTX, 1, OPTAB_WIDEN);
-      tmp = expand_simple_binop (Pmode, AND, tmp, GEN_INT (-align),
+      tmp = expand_simple_binop (STACK_Pmode, AND, tmp, GEN_INT (-align),
 				 stack_pointer_rtx, 1, OPTAB_WIDEN);
 #endif
       if (tmp != stack_pointer_rtx)
 	emit_move_insn (stack_pointer_rtx, tmp);
 
       /* Enlist allocate_dynamic_stack_space to pick up the pieces.  */
-      tmp = force_reg (Pmode, const0_rtx);
+      tmp = force_reg (STACK_Pmode, const0_rtx);
       allocate_dynamic_stack_space (tmp, NULL_RTX, BIGGEST_ALIGNMENT);
       seq = get_insns ();
       end_sequence ();
@@ -4139,7 +4143,7 @@ expand_function_start (tree subr)
 	     it.  */
 	  if (sv)
 	    {
-	      value_address = gen_reg_rtx (Pmode);
+	      value_address = gen_reg_rtx (STACK_Pmode);
 	      emit_move_insn (value_address, sv);
 	    }
 	}
@@ -4201,7 +4205,7 @@ expand_function_start (tree subr)
   if (cfun->static_chain_decl)
     {
       tree parm = cfun->static_chain_decl;
-      rtx local = gen_reg_rtx (Pmode);
+      rtx local = gen_reg_rtx (STACK_Pmode);
 
       set_decl_incoming_rtl (parm, static_chain_incoming_rtx);
       SET_DECL_RTL (parm, local);
@@ -4225,7 +4229,7 @@ expand_function_start (tree subr)
 		       cfun->nonlocal_goto_save_area,
 		       integer_zero_node, NULL_TREE, NULL_TREE);
       r_save = expand_expr (t_save, NULL_RTX, VOIDmode, EXPAND_WRITE);
-      r_save = convert_memory_address (Pmode, r_save);
+      r_save = convert_memory_address (STACK_Pmode, r_save);
 
       emit_move_insn (r_save, virtual_stack_vars_rtx);
       update_nonlocal_goto_save_area ();
@@ -4598,7 +4602,7 @@ get_arg_pointer_save_area (struct function *f)
 
   if (! ret)
     {
-      ret = assign_stack_local_1 (Pmode, GET_MODE_SIZE (Pmode), 0, f);
+      ret = assign_stack_local_1 (STACK_Pmode, GET_MODE_SIZE (STACK_Pmode), 0, f);
       f->x_arg_pointer_save_area = ret;
     }
 
@@ -4850,7 +4854,7 @@ keep_stack_depressed (rtx insns)
 	      
 	      if (REG_P (ret_ptr))
 		{
-		  base = gen_rtx_REG (Pmode, REGNO (ret_ptr));
+		  base = gen_rtx_REG (STACK_Pmode, REGNO (ret_ptr));
 		  offset = 0;
 		}
 	      else
@@ -4858,7 +4862,7 @@ keep_stack_depressed (rtx insns)
 		  gcc_assert (GET_CODE (ret_ptr) == PLUS
 			      && REG_P (XEXP (ret_ptr, 0))
 			      && GET_CODE (XEXP (ret_ptr, 1)) == CONST_INT);
-		  base = gen_rtx_REG (Pmode, REGNO (XEXP (ret_ptr, 0)));
+		  base = gen_rtx_REG (STACK_Pmode, REGNO (XEXP (ret_ptr, 0)));
 		  offset = INTVAL (XEXP (ret_ptr, 1));
 		}
 	    }
@@ -4872,7 +4876,7 @@ keep_stack_depressed (rtx insns)
 					    plus_constant (info.sp_equiv_reg,
 							   info.sp_offset));
 
-	  retaddr = gen_rtx_MEM (Pmode, retaddr);
+	  retaddr = gen_rtx_MEM (STACK_Pmode, retaddr);
 
 	  /* If there is a pending load to the equivalent register for SP
 	     and we reference that register, we must load our address into
@@ -4884,21 +4888,21 @@ keep_stack_depressed (rtx insns)
 	      rtx reg;
 
 	      for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-		if (HARD_REGNO_MODE_OK (regno, Pmode)
+		if (HARD_REGNO_MODE_OK (regno, STACK_Pmode)
 		    && !fixed_regs[regno]
 		    && TEST_HARD_REG_BIT (regs_invalidated_by_call, regno)
 		    && !REGNO_REG_SET_P (EXIT_BLOCK_PTR->global_live_at_start,
 					 regno)
 		    && !refers_to_regno_p (regno,
 					   regno + hard_regno_nregs[regno]
-								   [Pmode],
+								   [STACK_Pmode],
 					   info.equiv_reg_src, NULL)
 		    && info.const_equiv[regno] == 0)
 		  break;
 
 	      gcc_assert (regno < FIRST_PSEUDO_REGISTER);
 
-	      reg = gen_rtx_REG (Pmode, regno);
+	      reg = gen_rtx_REG (STACK_Pmode, regno);
 	      emit_move_insn (reg, retaddr);
 	      retaddr = reg;
 	    }

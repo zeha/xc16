@@ -584,6 +584,15 @@ simplify_unary_operation (enum rtx_code code, enum machine_mode mode,
 	    return 0;
 	  break;
 
+#ifdef _PIC30_H_
+        case EDSPAGE:
+        case PSVPAGE:
+        case TBLPAGE:
+        case TBLOFFSET:
+        case PSVOFFSET:
+        case EDSOFFSET:
+        case DMAOFFSET:
+#endif
 	case SQRT:
 	case FLOAT_EXTEND:
 	case FLOAT_TRUNCATE:

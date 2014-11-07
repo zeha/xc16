@@ -873,9 +873,11 @@ static tree
 chain_of_csts_start (struct loop *loop, tree x)
 {
   tree stmt = SSA_NAME_DEF_STMT (x);
-  basic_block bb = bb_for_stmt (stmt);
+  basic_block bb;
   use_optype uses;
 
+  if (stmt) bb = bb_for_stmt (stmt);
+  else return NULL_TREE;
   if (!bb
       || !flow_bb_inside_loop_p (loop, bb))
     return NULL_TREE;

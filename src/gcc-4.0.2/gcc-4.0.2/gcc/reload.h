@@ -238,6 +238,7 @@ struct insn_chain
 /* A chain of insn_chain structures to describe all non-note insns in
    a function.  */
 extern struct insn_chain *reload_insn_chain;
+extern struct insn_chain *relaod_insn_chain_tail;
 
 /* Allocate a new insn_chain structure.  */
 extern struct insn_chain *new_insn_chain (void);

@@ -167,7 +167,7 @@ dump_decl_name (pretty_printer *buffer, tree node, int flags)
       else
 	{
 	  char c = TREE_CODE (node) == CONST_DECL ? 'C' : 'D';
-	  pp_printf (buffer, "%c.%u", c, DECL_UID (node));
+	  pp_printf (buffer, "(0x%x) %c.%u", node, c, DECL_UID (node));
 	}
     }
 }

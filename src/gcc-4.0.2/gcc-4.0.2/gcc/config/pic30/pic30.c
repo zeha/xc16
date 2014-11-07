@@ -70,9 +70,11 @@ Boston, MA 02111-1307, USA.  */
 #include "tm_p.h"
 #include "tree-gimple.h"
 #include "cgraph.h"
+#include "hashtab.h"
 
 /* fputs_unlocked warning getting on my nerves */
 #undef fputs
+#define machine_Pmode HImode
 
 #define    NELEMENTS(a)    (sizeof(a)/sizeof(a[0]))
 /*----------------------------------------------------------------------*/
@@ -134,6 +136,8 @@ int pic30_managed_psv = 0;               /* this is set iff a managed psv
 #define SECTION_DMA             (PIC30_LL(SECTION_MACH_DEP) << 12)
 #define SECTION_PMP             (PIC30_LL(SECTION_MACH_DEP) << 13)
 #define SECTION_EXTERNAL        (PIC30_LL(SECTION_MACH_DEP) << 14)
+#define SECTION_EDS             (PIC30_LL(SECTION_MACH_DEP) << 15)
+#define SECTION_PAGE            (PIC30_LL(SECTION_MACH_DEP) << 16)
 
 /* the attribute names from the assemblers point of view */
 #define SECTION_ATTR_ADDRESS "address"
@@ -156,6 +160,8 @@ int pic30_managed_psv = 0;               /* this is set iff a managed psv
 #define SECTION_ATTR_BOOT    "boot"
 #define SECTION_ATTR_SECURE  "secure"
 #define SECTION_ATTR_DEFAULT "unused"
+#define SECTION_ATTR_EDS     "eds"
+#define SECTION_ATTR_PAGE    "page"
 
 struct valid_section_flags_ {
   const char *flag_name;
@@ -309,6 +315,8 @@ static int    lCalleeSaveRegs[SP_REGNO];
 static unsigned int l_RAWregdefmask = 0;
 static int pic30_device_id;
 static int pic30_device_mask;
+object_signature_t options_set = { 0 }, external_options_mask = { 0 };
+
 
 #define IDENT_USERINIT(t) \
     ((t)==pic30_identUserinit[0]||(t)==pic30_identUserinit[1])
@@ -385,6 +393,10 @@ static int pic30_device_mask;
    ((t) == pic30_identScratchReg[0] || (t) == pic30_identScratchReg[1])
 #define IDENT_FILLUPPER(t) \
    ((t) == pic30_identFillUpper[0] || (t) == pic30_identFillUpper[1])
+#define IDENT_EDS(t) \
+   ((t) == pic30_identEds[0] || (t) == pic30_identEds[1])
+#define IDENT_PAGE(t) \
+   ((t) == pic30_identPage[0] || (t) == pic30_identPage[1])
 #if 0
 /*
  * experimental - probably toss
@@ -447,6 +459,8 @@ static tree pic30_identEedata[2];
 static tree pic30_identDma[2];
        tree pic30_identSecure[2];
        tree pic30_identBoot[2];
+static tree pic30_identEds[2];
+static tree pic30_identPage[2];
 #if 0
 /*
  * experimental - probably toss
@@ -622,7 +636,8 @@ enum target_qualifier_kind {
   tq_psv = 1,
   tq_prog = 2,
   tq_pmp = 4,
-  tq_external = 8
+  tq_external = 8,
+  tq_eds = 16
 };
 
 tree pic30_read_externals(enum pic30_special_trees);
@@ -636,6 +651,7 @@ static time_t current_time = 0;
 /*----------------------------------------------------------------------*/
 /*    L O C A L    F U N C T I O N    P R O T O T Y P E S        */
 /*----------------------------------------------------------------------*/
+void initialize_object_signatures(void);
 static int pic30_address_cost(rtx op);
 static int pic30_function_arg_partial_nregs(CUMULATIVE_ARGS *cum,
                                             enum machine_mode mode,
@@ -841,6 +857,10 @@ unsigned int validate_target_id(char *id, char **matched_id) {
     *matched_id = (char *)"GENERIC-16BIT";
     return TARGET_MASK_ARCH_GENERIC;
   }
+  if (strcmp(id, "GENERIC-16BIT-DA") == 0) {
+    *matched_id = (char *)"GENERIC-DA-16BIT";
+    return TARGET_MASK_ARCH_DA_GENERIC;
+  }
   if (pic30_resource_file == 0) {
     warning("Provide a resource file");
     return 0;
@@ -988,7 +1008,7 @@ static int pic30_bsearch_rsn_compare(const void *va, const void *vb) {
   const char *a = (const char *)va;
   const struct reserved_section_names_ *n = vb;
 
-  if (n) return strncmp(a, n->section_name, strlen(n->section_name));
+  if (n) return strcmp(a, n->section_name);
   else return 0;
 }
 
@@ -1152,6 +1172,12 @@ static SECTION_FLAGS_INT validate_identifier_flags(const char *id) {
       f += sizeof(PIC30_FCNN_FLAG)-1;
     } else if (strncmp(f, PIC30_FCNS_FLAG, sizeof(PIC30_FCNS_FLAG)-1) == 0) {
       f += sizeof(PIC30_FCNS_FLAG)-1;
+    } else if (strncmp(f, PIC30_EDS_FLAG, sizeof(PIC30_EDS_FLAG)-1) == 0) {
+      flags |= SECTION_EDS;
+      f += sizeof(PIC30_EDS_FLAG)-1;
+    } else if (strncmp(f, PIC30_PAGE_FLAG, sizeof(PIC30_PAGE_FLAG)-1) == 0) {
+      flags |= SECTION_PAGE;
+      f += sizeof(PIC30_PAGE_FLAG)-1;
     } else if (strncmp(f, PIC30_BOOT_FLAG, sizeof(PIC30_BOOT_FLAG)-1) == 0) {
       f += sizeof(PIC30_BOOT_FLAG)-1;
       if (*f == '(') {
@@ -1462,7 +1488,9 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
     if ((address_attr) || (reverse_attr)) {
       DECL_SECTION_NAME(decl) = build_string(1,"*");
     }
-    if (TARGET_CONST_IN_CODE) {
+    if ((TARGET_EDS) && (TREE_CODE(decl) != FUNCTION_DECL)) {
+      flags |= SECTION_EDS;
+    } else if (TARGET_CONST_IN_CODE) {
       if (TREE_CODE(decl) == STRING_CST)
         /* -fwriteable_strings no longer supported */
         flags |= SECTION_READ_ONLY;
@@ -1474,7 +1502,7 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
       }
     }
 #ifdef __C30_BETA__
-    if ((TARGET_CONST_IN_PSV) || (TARGET_CONST_IN_PROG)) {
+    else if ((TARGET_CONST_IN_PSV) || (TARGET_CONST_IN_PROG)) {
       if (TREE_CODE(decl) == STRING_CST) {
         /* -fwriteable_strings no longer supported */
         if (TARGET_CONST_IN_PSV) 
@@ -1600,6 +1628,7 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
   } 
   if ((flags & SECTION_PSV) || 
       (space_attr && (IDENT_PSV(TREE_VALUE(TREE_VALUE(space_attr)))))) {
+    flags |= SECTION_PAGE;
     f += sprintf(f, PIC30_PSV_FLAG);
     fnear = 0;
     section_type_set = 1;
@@ -1621,12 +1650,34 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
     else
        f += sprintf(f, PIC30_DATA_FLAG);
   }
+  if ((flags & SECTION_EDS) || 
+      (space_attr && IDENT_EDS(TREE_VALUE(TREE_VALUE(space_attr))))) {
+    unsigned long address = 0;
+
+    f += sprintf(f, PIC30_EDS_FLAG);
+    if (DECL_MODE(decl) != BLKmode) {
+      flags |= SECTION_PAGE;
+      if (address_attr) {
+        address = TREE_INT_CST_LOW(TREE_VALUE(TREE_VALUE(address_attr)));
+        if ((address >> 15) != 
+                ((TREE_INT_CST_LOW(TYPE_SIZE(TREE_TYPE(decl)))/BITS_PER_WORD +
+                 address) >> 15)) {
+          warning("%J '%s' crosses a EDS page - "
+                  "this may impact code generation", decl,ident);
+          flags &= ~SECTION_PAGE;
+        }
+      }
+    }
+    fnear = 0;
+  }
   if ((flags & SECTION_XMEMORY) || 
-      (space_attr && (IDENT_XMEMORY(TREE_VALUE(TREE_VALUE(space_attr))))))
+      (space_attr && (IDENT_XMEMORY(TREE_VALUE(TREE_VALUE(space_attr)))))) {
     f += sprintf(f, PIC30_X_FLAG);
+  }
   if ((flags & SECTION_YMEMORY) || 
-      (space_attr && (IDENT_YMEMORY(TREE_VALUE(TREE_VALUE(space_attr))))))
+      (space_attr && (IDENT_YMEMORY(TREE_VALUE(TREE_VALUE(space_attr)))))) {
     f += sprintf(f, PIC30_Y_FLAG);
+  }
   if ((flags & SECTION_DMA) || 
       (space_attr && (IDENT_DMA(TREE_VALUE(TREE_VALUE(space_attr)))))) {
     f += sprintf(f, PIC30_DMA_FLAG);
@@ -1767,6 +1818,11 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
         } else f += sprintf(f, PIC30_SECURE_FLAG PIC30_EXTENDED_FLAG);
       }
     }
+  }
+  attr = lookup_attribute(IDENTIFIER_POINTER(pic30_identPage[0]),
+                          DECL_ATTRIBUTES(decl));
+  if (attr || (flags & SECTION_PAGE)) {
+    f += sprintf(f, PIC30_PAGE_FLAG);
   }
   return fnear;
 }
@@ -2069,7 +2125,7 @@ void pic30_override_options(void) {
         copy2 = (char *)"__dsPIC33F__";
       }
       pic30_target_family = copy2;
-      if (TARGET_ARCH(GENERIC)) {
+      if (TARGET_ARCH(GENERIC) || TARGET_ARCH(DA_GENERIC)) {
         pic30_target_cpu = 0;
         pic30_target_family = 0;
       }
@@ -2101,10 +2157,12 @@ void pic30_override_options(void) {
 
     if (!path) fatal_error("Could not locate `%s`\n", save_argv[0]);
     exec = xmalloc(strlen(path)+sizeof("pic30-lm.exe") + 7);
-    sprintf(exec, "%s\\..\\pic30-lm.exe", path);
-    if (pic30_resource_file && pic30_target_cpu && !TARGET_ARCH(GENERIC)) {
+    sprintf(exec, "%s\\pic30-lm.exe", path);
+    if (pic30_resource_file && pic30_target_cpu && 
+        !TARGET_ARCH(GENERIC) && !TARGET_ARCH(DA_GENERIC)) {
       /* pic30_target_cpu == 0 -> no -mcpu= command line option */
       /* TARGET_ARCH(GENERIC) => -mcpu=generic-16bit */
+      /* TARGET_ARCH(DA_GENERIC) => -mcpu=generic-16bit-da */
       cpu_option = xmalloc(strlen(pic30_resource_file)+6+
                            strlen(pic30_target_cpu_id)+1);
       sprintf(cpu_option,"-cpu=%s;%s", pic30_resource_file, pic30_target_cpu_id);
@@ -2217,7 +2275,7 @@ void pic30_override_options(void) {
 
     #define NULLIFY(X) \
     if ((X) && (message_displayed++ == 0)) \
-      warning("Options have been disabled due to %s license\n" \
+      fnotice(stderr,"Options have been disabled due to %s license\n" \
               "Visit http://www.microchip.com/ to purchase a new key.", \
               invalid); \
     X
@@ -2291,6 +2349,8 @@ void pic30_override_options(void) {
       pic30_fillupper_value = 0;
     }
   }
+
+  initialize_object_signatures();
 }
 
 /*
@@ -2338,17 +2398,21 @@ static bool pic30_assemble_integer(rtx x, unsigned int size, int aligned_p) {
 
     case 4:
     if ((GET_MODE(x) == P24PSVmode) || (GET_MODE(x) == P24PROGmode)) {
-#if 0
-      if (GET_CODE(x) != SYMBOL_REF) {
-        error("Complex initializer for 24 bit pointers not yet supported");
-        return 0;
-      } else 
-#endif
       {
         fprintf(asm_out_file, "\t.word tbloffset(");
         output_addr_const(asm_out_file, x);
         fprintf(asm_out_file, ")\n");
         fprintf(asm_out_file, "\t.word tblpage(");
+        output_addr_const(asm_out_file, x);
+        fprintf(asm_out_file, ")\n");
+        return 1;
+      }
+    } else if ((GET_MODE(x) == P32EDSmode) || (GET_MODE(x) == P32PEDSmode)) {
+      {
+        fprintf(asm_out_file, "\t.word edsoffset(");
+        output_addr_const(asm_out_file, x);
+        fprintf(asm_out_file, ")\n");
+        fprintf(asm_out_file, "\t.word edspage(");
         output_addr_const(asm_out_file, x);
         fprintf(asm_out_file, ")\n");
         return 1;
@@ -2408,7 +2472,7 @@ const char *pic30_strip_name_encoding(const char *symbol_name) {
   pic30_interesting_fn *match;
 
   var = pic30_strip_name_encoding_helper(symbol_name);
-  if (TARGET_ARCH(GENERIC) && 
+  if ((TARGET_ARCH(GENERIC) || TARGET_ARCH(DA_GENERIC)) && 
       ((sfr_match = PIC30_HAS_NAME_P(symbol_name, PIC30_SFR_FLAG)) != 0)) {
     /* clear the SFR designator (it is also marked NEAR) so that this message
        is only displayed once per symbol */
@@ -2442,6 +2506,8 @@ static void pic30_globalize_label(FILE *f, const char *l) {
  *    that we may need
  */
 tree ext_ptr_type;
+tree eds_ptr_type;
+tree apsv_ptr_type;
 
 static void pic30_init_builtins(void) {
   tree fn_type;
@@ -2454,6 +2520,20 @@ static void pic30_init_builtins(void) {
   tree pmp_ptr_type;
   int nbits;
   
+  /* type for the auto psv 16bit pointers */
+  apsv_ptr_type = make_node(INTEGER_TYPE);
+  nbits = GET_MODE_BITSIZE(P16APSVmode);
+  TYPE_MODE(apsv_ptr_type) = P16APSVmode;
+  nbits = GET_MODE_BITSIZE(TYPE_MODE(apsv_ptr_type));
+  TYPE_PRECISION (apsv_ptr_type) = nbits;
+  TYPE_MIN_VALUE(apsv_ptr_type) = build_int_cst(unsigned_type_node,0);
+  TYPE_MAX_VALUE(apsv_ptr_type) = build_int_cst(unsigned_type_node,(1<<16)-1);
+  TYPE_SIZE (apsv_ptr_type) = bitsize_int (nbits);
+  TYPE_SIZE_UNIT (apsv_ptr_type) = size_int (nbits / BITS_PER_UNIT);
+  TYPE_UNSIGNED (apsv_ptr_type) = 1;
+  TYPE_ALIGN (apsv_ptr_type) = 16;
+  (*lang_hooks.types.register_builtin_type) (apsv_ptr_type, "__apsv_ptr_t");
+
   /* type for the 24bit pointers */
   psv_ptr_type = make_node(INTEGER_TYPE);
   nbits = GET_MODE_BITSIZE(P24PSVmode);
@@ -2509,6 +2589,20 @@ static void pic30_init_builtins(void) {
   TYPE_UNSIGNED (ext_ptr_type) = 1;
   TYPE_ALIGN (ext_ptr_type) = 32;
   (*lang_hooks.types.register_builtin_type) (ext_ptr_type, "__ext_ptr_t");
+
+  /* type for the 32it EDS pointer type */
+  eds_ptr_type = make_node(POINTER_TYPE);
+  TREE_TYPE(eds_ptr_type) = char_type_node;
+  TYPE_MODE(eds_ptr_type) = P32EDSmode;
+  nbits = GET_MODE_BITSIZE(TYPE_MODE(eds_ptr_type));
+  TYPE_PRECISION (eds_ptr_type) = nbits;
+  TYPE_MIN_VALUE(eds_ptr_type) = build_int_cst(long_unsigned_type_node,0);
+  TYPE_MAX_VALUE(eds_ptr_type) = build_int_cst(long_unsigned_type_node,-1);
+  TYPE_SIZE (eds_ptr_type) = bitsize_int (nbits);
+  TYPE_SIZE_UNIT (eds_ptr_type) = size_int (nbits / BITS_PER_UNIT);
+  TYPE_UNSIGNED (eds_ptr_type) = 1;
+  TYPE_ALIGN (eds_ptr_type) = 32;
+  (*lang_hooks.types.register_builtin_type) (eds_ptr_type, "__eds_ptr_t");
 
   /* attribute sub-values */
   fn_type = build_function_type(void_type_node, NULL_TREE);
@@ -2582,8 +2676,12 @@ static void pic30_init_builtins(void) {
   */
   fn_type = build_function_type(unsigned_type_node, NULL_TREE);
 
+  builtin_function("__builtin_edspage", fn_type,
+          PIC30_BUILTIN_EDSPAGE, BUILT_IN_MD, NULL, NULL_TREE);
   builtin_function("__builtin_tblpage", fn_type,
           PIC30_BUILTIN_TBLPAGE, BUILT_IN_MD, NULL, NULL_TREE);
+  builtin_function("__builtin_edsoffset", fn_type,
+          PIC30_BUILTIN_EDSOFFSET, BUILT_IN_MD, NULL, NULL_TREE);
   builtin_function("__builtin_tbloffset", fn_type,
           PIC30_BUILTIN_TBLOFFSET, BUILT_IN_MD, NULL, NULL_TREE);
   builtin_function("__builtin_psvpage", fn_type,
@@ -3244,6 +3342,40 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       emit_insn(gen_tbladdress(target, r0));
       return target;
 
+    case PIC30_BUILTIN_EDSPAGE:  {
+      arg0 = TREE_VALUE(arglist);
+      r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
+      if (!pic30_eds_space_operand_p(r0))
+      {
+        error("Argument to __builtin_edspage() is not the address\n"
+              "of an object in a code, psv, eedata, data, or PMP section;\n"
+              "the object must not be qualified with any form of index");
+      }
+      if (!target || !register_operand(target, HImode))
+      {
+        target = gen_reg_rtx(HImode);
+      }
+      emit_insn(gen_edspage(target, r0));
+      return target;
+    }
+
+    case PIC30_BUILTIN_EDSOFFSET: {
+      arg0 = TREE_VALUE(arglist);
+      r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
+      if (!pic30_eds_space_operand_p(r0))
+      {
+        error("Argument to __builtin_edsoffset() is not the address\n"
+              "of an object in a code, psv, eedata, data, or PMP section;\n"
+              "the object must not be qualified with any form of index");
+      }
+      if (!target || !register_operand(target, HImode))
+      {
+        target = gen_reg_rtx(HImode);
+      }
+      emit_insn(gen_edsoffset(target, r0));
+      return target;
+    }
+
     case PIC30_BUILTIN_TBLPAGE:
       arg0 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
@@ -3257,7 +3389,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       {
         target = gen_reg_rtx(HImode);
       }
-      emit_insn(gen_tblpage(target, r0));
+      emit_insn(gen_tblpage_helper(target, GEN_INT(pic30_section_base(r0,1))));
       return target;
 
     case PIC30_BUILTIN_TBLOFFSET:
@@ -3288,7 +3420,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       {
         target = gen_reg_rtx(HImode);
       }
-      emit_insn(gen_psvpage(target, r0));
+      emit_insn(gen_psvpage_helper(target, GEN_INT(pic30_section_base(r0,1))));
       return target;
 
     case PIC30_BUILTIN_PSVOFFSET:
@@ -3395,7 +3527,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         arg2 = TREE_VALUE(arglist);
         if (arg2 == error_mark_node) return const0_rtx;
         r2 = expand_expr(arg2, NULL_RTX, HImode, EXPAND_NORMAL);
-        r3 = gen_reg_rtx(Pmode);
+        r3 = gen_reg_rtx(machine_Pmode);
         emit_move_insn(r3,r2);
         r2 = r3;
         if (fcode == PIC30_BUILTIN_DIVMODSD) {
@@ -3628,7 +3760,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       if (fcode == PIC30_BUILTIN_SUBAB) gen = gen_subac_hi; 
       else gen = gen_addac_hi;
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_%s should be an accumulator register",id);
         return NULL_RTX;
       } else {
@@ -3649,7 +3781,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         return NULL_RTX;
       }
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_add should be an accumulator register");
         return NULL_RTX;
       }
@@ -3700,7 +3832,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         return NULL_RTX;
       }
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_clr should be an accumulator register");
       }
       emit_insn(
@@ -3749,7 +3881,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       r5 = NULL_RTX;
 
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_clr_prefetch should be "
               "an accumulator register");
         awb_to = scratch;
@@ -3770,10 +3902,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r2 = expand_expr(arg2, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_xreg = gen_reg_rtx(Pmode);
+        p_xreg = gen_reg_rtx(machine_Pmode);
         d_xreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_xreg, gen_rtx_MEM(Pmode, r0))
+          gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r0))
         );
         if (GET_CODE(r2) != CONST_INT) {
           error("X increment to __builtin_clr_prefetch should be a literal");
@@ -3802,10 +3934,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r5 = expand_expr(arg5, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_yreg = gen_reg_rtx(Pmode);
+        p_yreg = gen_reg_rtx(machine_Pmode);
         d_yreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_yreg, gen_rtx_MEM(Pmode, r3))
+          gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r3))
         );
         if (GET_CODE(r5) != CONST_INT) {
           error("Y increment to __builtin_clr_prefetch should be a literal");
@@ -3880,7 +4012,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           rtx in1 = XEXP(r6,0);
 
           if (GET_CODE(in1) == SYMBOL_REF) {
-            mem_of = gen_reg_rtx(Pmode);
+            mem_of = gen_reg_rtx(machine_Pmode);
 
             emit_insn(
                gen_movhi_address(mem_of, r6)
@@ -3912,7 +4044,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         return NULL_RTX;
       }
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_%s should be an accumulator register",id);
       }
       arg0 = TREE_VALUE(arglist);
@@ -3945,13 +4077,13 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         error("parameter 4 to __builtin_%s cannot be a NULL pointer",id);
         return NULL_RTX;
       }
-      p_xreg = gen_reg_rtx(Pmode);
+      p_xreg = gen_reg_rtx(machine_Pmode);
       emit_insn(
-        gen_movhi(p_xreg, gen_rtx_MEM(Pmode, r1))
+        gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r1))
       );
-      p_yreg = gen_reg_rtx(Pmode);
+      p_yreg = gen_reg_rtx(machine_Pmode);
       emit_insn(
-        gen_movhi(p_yreg, gen_rtx_MEM(Pmode, r3))
+        gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r3))
       );
       r2 = expand_expr(arg2, NULL_RTX, HImode, EXPAND_NORMAL);
       r4 = expand_expr(arg4, NULL_RTX, HImode, EXPAND_NORMAL);
@@ -4042,7 +4174,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         r0 = reg;
       }
       if (!target || (GET_CODE(target) != REG) || 
-          (!IS_ACCUM_REG(REGNO(target)))) {
+          (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result of __builtin_lac should be an accumulator register");
         return NULL_RTX;
       }
@@ -4098,7 +4230,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       r7 = NULL_RTX;
 
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_mac should be an accumulator register");
         awb_to = scratch;
       } else {
@@ -4137,10 +4269,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r4 = expand_expr(arg4, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_xreg = gen_reg_rtx(Pmode);
+        p_xreg = gen_reg_rtx(machine_Pmode);
         d_xreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_xreg, gen_rtx_MEM(Pmode, r2))
+          gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r2))
         );
         if (GET_CODE(r4) != CONST_INT) {
           error("X increment to __builtin_mac should be a literal");
@@ -4168,10 +4300,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r7 = expand_expr(arg7, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_yreg = gen_reg_rtx(Pmode);
+        p_yreg = gen_reg_rtx(machine_Pmode);
         d_yreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_yreg, gen_rtx_MEM(Pmode, r5))
+          gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r5))
         );
         if (GET_CODE(r7) != CONST_INT) {
           error("Y increment to __builtin_mac should be a literal");
@@ -4250,7 +4382,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           rtx in1 = XEXP(r8,0);
 
           if (GET_CODE(in1) == SYMBOL_REF) {
-            mem_of = gen_reg_rtx(Pmode);
+            mem_of = gen_reg_rtx(machine_Pmode);
 
             emit_insn(
                gen_movhi_address(mem_of, r8)
@@ -4297,7 +4429,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       r5 = NULL_RTX;
 
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_movsac should be an accumulator register");
         awb_to = scratch;
       } else {
@@ -4317,10 +4449,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r2 = expand_expr(arg2, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_xreg = gen_reg_rtx(Pmode);
+        p_xreg = gen_reg_rtx(machine_Pmode);
         d_xreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_xreg, gen_rtx_MEM(Pmode, r0))
+          gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r0))
         );
         if (GET_CODE(r2) != CONST_INT) {
           error("X increment to __builtin_movsac should be a literal");
@@ -4349,10 +4481,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r5 = expand_expr(arg5, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_yreg = gen_reg_rtx(Pmode);
+        p_yreg = gen_reg_rtx(machine_Pmode);
         d_yreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_yreg, gen_rtx_MEM(Pmode, r3))
+          gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r3))
         );
         if (GET_CODE(r5) != CONST_INT) {
           error("Y increment to __builtin_movsac should be a literal");
@@ -4427,7 +4559,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           rtx in1 = XEXP(r6,0);
 
           if (GET_CODE(in1) == SYMBOL_REF) {
-            mem_of = gen_reg_rtx(Pmode);
+            mem_of = gen_reg_rtx(machine_Pmode);
 
             emit_insn(
                gen_movhi_address(mem_of, r6)
@@ -4479,7 +4611,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       r7 = NULL_RTX;
 
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_%s should be an accumulator register",id);
       }
       if (!target || !register_operand(target, HImode))
@@ -4515,10 +4647,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r4 = expand_expr(arg4, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_xreg = gen_reg_rtx(Pmode);
+        p_xreg = gen_reg_rtx(machine_Pmode);
         d_xreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_xreg, gen_rtx_MEM(Pmode, r2))
+          gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r2))
         );
         if (GET_CODE(r4) != CONST_INT) {
           error("X increment to __builtin_%s should be a literal",id);
@@ -4546,10 +4678,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r7 = expand_expr(arg7, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_yreg = gen_reg_rtx(Pmode);
+        p_yreg = gen_reg_rtx(machine_Pmode);
         d_yreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_yreg, gen_rtx_MEM(Pmode, r5))
+          gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r5))
         );
         if (GET_CODE(r7) != CONST_INT) {
           error("Y increment to __builtin_%s should be a literal",id);
@@ -4642,7 +4774,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       r7 = NULL_RTX;
 
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_msc should be an accumulator register");
         awb_to = scratch;
       } else {
@@ -4681,10 +4813,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r4 = expand_expr(arg4, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_xreg = gen_reg_rtx(Pmode);
+        p_xreg = gen_reg_rtx(machine_Pmode);
         d_xreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_xreg, gen_rtx_MEM(Pmode, r2))
+          gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r2))
         );
         if (GET_CODE(r4) != CONST_INT) {
           error("X increment to __builtin_msc should be a literal");
@@ -4712,10 +4844,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           return NULL_RTX;
         }
         r7 = expand_expr(arg7, NULL_RTX, HImode, EXPAND_NORMAL);
-        p_yreg = gen_reg_rtx(Pmode);
+        p_yreg = gen_reg_rtx(machine_Pmode);
         d_yreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_yreg, gen_rtx_MEM(Pmode, r5))
+          gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r5))
         );
         if (GET_CODE(r7) != CONST_INT) {
           error("Y increment to __builtin_msc should be a literal");
@@ -4794,7 +4926,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           rtx in1 = XEXP(r8,0);
 
           if (GET_CODE(in1) == SYMBOL_REF) {
-            mem_of = gen_reg_rtx(Pmode);
+            mem_of = gen_reg_rtx(machine_Pmode);
             
             emit_insn(
                gen_movhi_address(mem_of, r8)
@@ -4820,7 +4952,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       arg1 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       r1 = expand_expr(arg1, NULL_RTX, HImode, EXPAND_NORMAL);
-      if ((GET_CODE(r0) != REG) || (!IS_ACCUM_REG(REGNO(r0)))) {
+      if ((GET_CODE(r0) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(r0)))) {
         error("parameter 1 for __builtin_sac should be "
               "an accumulator register");
         return NULL_RTX;
@@ -4852,7 +4984,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       arg1 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       r1 = expand_expr(arg1, NULL_RTX, HImode, EXPAND_NORMAL);
-      if ((GET_CODE(r0) != REG) || (!IS_ACCUM_REG(REGNO(r0)))) {
+      if ((GET_CODE(r0) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(r0)))) {
         error("parameter 1 for __builtin_sacr should be "
               "an accumulator register");
         return NULL_RTX;
@@ -4881,7 +5013,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         return NULL_RTX;
       }
       if (!target ||
-          (GET_CODE(target) != REG) || (!IS_ACCUM_REG(REGNO(target)))) {
+          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_sftac should be an accumulator register");
       }
       arg0 = TREE_VALUE(arglist);
@@ -5129,6 +5261,8 @@ int pic30_hard_regno_mode_ok(int regno, enum machine_mode mode) {
 
   switch (mode)
   {
+    case P32PEDSmode:
+    case P32EDSmode:
     case P32EXTmode:
     case P24PROGmode:
     case P24PSVmode:
@@ -5682,157 +5816,127 @@ int pic30_dead_or_set_p(rtx first, rtx reg) {
 ** See if a register (reg) is dereferenced in an RTL (in).
 */
 static int pic30_reg_dereferenced_p(rtx reg, rtx in) {
-    register const char *fmt;
-    register int i;
-    register enum rtx_code code;
-    rtx regb;
-    rtx regi;
-    rtx rtxInner;
-    rtx rtxPlusOp0;
-    rtx rtxPlusOp1;
+  register const char *fmt;
+  register int i;
+  register enum rtx_code code;
+  rtx regb;
+  rtx regi;
+  rtx rtxInner;
+  rtx rtxPlusOp0;
+  rtx rtxPlusOp1;
 
-    if (in == 0)
-    {
-        return(0);
-    }
-    code = GET_CODE(in);
+  if (in == 0) return 0;
+  code = GET_CODE(in);
 
-    switch (code)
-    {
+  switch (code) {
     case MEM:
-        rtxInner = XEXP(in, 0);
-        regb = NULL_RTX;
-        regi = NULL_RTX;
-        switch (GET_CODE(rtxInner))
-        {
+      rtxInner = XEXP(in, 0);
+  
+      regb = NULL_RTX;
+      regi = NULL_RTX;
+      switch (GET_CODE(rtxInner)) {
         case REG:
-            regb = rtxInner;
-            break;
+          regb = rtxInner;
+          break;
         case POST_INC:
         case POST_DEC:
         case PRE_INC:
         case PRE_DEC:
-            regb = XEXP(rtxInner, 0);
-            if (GET_CODE(regb) != REG)
-            {
-                regb = NULL_RTX;
-            }
-            break;
+          regb = XEXP(rtxInner, 0);
+          if (GET_CODE(regb) != REG) regb = NULL_RTX;
+          break;
         case PLUS:
-            /*
-            ** Base with index/displacement.
-            */
-              rtxPlusOp0 = XEXP(rtxInner, 0);
-              switch (GET_CODE(rtxPlusOp0))
-            {
+          /*
+          ** Base with index/displacement.
+          */
+          rtxPlusOp0 = XEXP(rtxInner, 0);
+          switch (GET_CODE(rtxPlusOp0)) {
             case SUBREG:
-                if (!register_operand(rtxPlusOp0, Pmode))
-                {
-                    break;
-                }
-                /*
-                ** Fall thru
-                */
+              if (!register_operand(rtxPlusOp0, machine_Pmode)) break;
+              /*
+              ** Fall thru
+              */
             case REG:
-                regb = rtxPlusOp0;
-                rtxPlusOp1 = XEXP(rtxInner, 1);
-                switch (GET_CODE(rtxPlusOp1))
-                {
+              regb = rtxPlusOp0;
+              rtxPlusOp1 = XEXP(rtxInner, 1);
+              switch (GET_CODE(rtxPlusOp1)) {
                 case SUBREG:
-                    if (!register_operand(rtxPlusOp1,Pmode))
-                    {
-                        break;
-                    }
-                    /*
-                    ** Fall thru
-                    */
+                  if (!register_operand(rtxPlusOp1,machine_Pmode)) break;
+                  /*
+                  ** Fall thru
+                  */
                 case REG:
-                    /*
-                    ** Base with index
-                    */
-                    regi = rtxPlusOp1;
-                    break;
+                  /*
+                  ** Base with index
+                  */
+                  regi = rtxPlusOp1;
+                  break;
                 default:
-                    break;
-                }
-                break;
+                  break;
+              }
+              break;
             default:
-                break;
-            }
-            break;
+              break;
+          }
+          break;
         default:
-            break;
-        }
-        if ((regb != NULL_RTX) && (REGNO(regb) == REGNO(reg)))
-        {
-            return(1);
-        }
-        if ((regi != NULL_RTX) && (REGNO(regi) == REGNO(reg)))
-        {
-            return(1);
-        }
-        return(0);
+          break;
+      }
+      if ((regb != NULL_RTX) && (REGNO(regb) == REGNO(reg))) return 1;
+      if ((regi != NULL_RTX) && (REGNO(regi) == REGNO(reg))) return 1;
+      return 0;
 
     case REG:
-        return(0);
+      return 0;
 
     case SCRATCH:
     case CC0:
     case PC:
-        return(0);
+      return 0;
 
     case CONST_INT:
-        return(0);
+      return 0;
       
     case CONST_DOUBLE:
-        return(0);
+      return 0;
       
     default:
         break;
-    }
-    /*
-    ** Abstract expression: get the format code.
-    ** For each expression code, the rtx format specifies the number of
-    ** contained objects and their kinds using a sequence of characters
-    ** called the 'format' of the expression code.
-    ** We are interested in expressions (format 'e') and vectors of
-    ** expressions (format 'E').
-    */
-    fmt = GET_RTX_FORMAT(code);
+  }
+  /*
+  ** Abstract expression: get the format code.
+  ** For each expression code, the rtx format specifies the number of
+  ** contained objects and their kinds using a sequence of characters
+  ** called the 'format' of the expression code.
+  ** We are interested in expressions (format 'e') and vectors of
+  ** expressions (format 'E').
+  */
+  fmt = GET_RTX_FORMAT(code);
 
-    for (i = GET_RTX_LENGTH(code) - 1; i >= 0; i--)
-    {
-        int j;
+  for (i = GET_RTX_LENGTH(code) - 1; i >= 0; i--) {
+    int j;
 
-        switch (fmt[i])
-        {
-        case 'E':
-            /*
-            ** A vector of expressions.
-            */
-            for (j = XVECLEN(in, i) - 1; j >= 0; j--)
-            {
-                rtx inv = XVECEXP(in, i, j);
-                if (pic30_reg_dereferenced_p(reg, inv))
-                {
-                    return(1);
-                }
-            }
-            break;
-        case 'e':
-            /*
-            ** An expression (actually a pointer to an expression).
-            */
-            if (pic30_reg_dereferenced_p(reg, XEXP(in, i)))
-            {
-                return(1);
-            }
-            break;
-        default:
-            break;
+    switch (fmt[i]) {
+      case 'E':
+        /*
+        ** A vector of expressions.
+        */
+        for (j = XVECLEN(in, i) - 1; j >= 0; j--) {
+          rtx inv = XVECEXP(in, i, j);
+          if (pic30_reg_dereferenced_p(reg, inv)) return 1;
         }
+        break;
+      case 'e':
+        /*
+        ** An expression (actually a pointer to an expression).
+        */
+        if (pic30_reg_dereferenced_p(reg, XEXP(in, i))) return 1;
+        break;
+      default:
+        break;
     }
-    return(0);
+  }
+  return 0;
 }
 
 /*
@@ -6041,80 +6145,69 @@ static int pic30_address_cost(rtx op) {
     int nCost = 3;
 
     if (REG_P(op)) return 1;
-    switch (GET_MODE (op))
-    {
-#if Pmode != HImode
-    case Pmode:
-#endif
-    case VOIDmode:
-    case HImode:
-    case QImode:
-    case SImode:
-        break;
-    default:
-        return(10);
+    if (GET_MODE(op) != machine_Pmode) { 
+      switch (GET_MODE (op)) {
+        case VOIDmode:
+        case HImode:
+        case QImode:
+        case SImode:
+          break;
+        default:
+          return(10);
+      }
     }
-    switch (GET_CODE (op))
-    {
-    case MEM:
-        if (!recurred)
-        {
-            switch (GET_CODE(XEXP(op, 0)))
-            {
+    switch (GET_CODE (op)) {
+      case MEM:
+        if (!recurred) {
+          switch (GET_CODE(XEXP(op, 0))) {
             case REG:
-                nCost = 1;
-                break;
+              nCost = 1;
+              break;
             case SYMBOL_REF:
-                if (SYMBOL_REF_FLAG(op))
-                {
-                    nCost = 0;
-                }
-                break;
+              if (SYMBOL_REF_FLAG(op)) nCost = 0;
+              break;
             default:
-                break;
-            }
+              break;
+          }
         }
         break;
-    case PRE_DEC:
-    case PRE_INC:
+      case PRE_DEC:
+      case PRE_INC:
         break;
-    case POST_DEC:
-    case POST_INC:
+      case POST_DEC:
+      case POST_INC:
         break;
-    case MINUS:
-    case MULT:
-    case DIV:
-    case IOR:
+      case MINUS:
+      case MULT:
+      case DIV:
+      case IOR:
         nCost = 10;
         break;
-    case PLUS:
+      case PLUS:
         recurred = 1;
         nCost += pic30_address_cost(XEXP(op, 0));
         if (nCost < 10)
             nCost += pic30_address_cost(XEXP(op, 1));
         recurred = 0;
         break;
-    case REG:
+      case REG:
         nCost = 1;
         break;
-    case PC:
-    case CONST:
-    case CONST_INT:
-    case SUBREG:
-    case ASM_OPERANDS:
+      case PC:
+      case CONST:
+      case CONST_INT:
+      case SUBREG:
+      case ASM_OPERANDS:
         break;
-    case SYMBOL_REF:
-        if (SYMBOL_REF_FLAG(op))
-        {
-            nCost = 0;
-        }
+      case SYMBOL_REF:
+        if (SYMBOL_REF_FLAG(op)) nCost = 0;
         break;
-    default:
+      default:
         printf ("pic30_address_cost: code=%d (MEM=%d)\n",
-                    (int) GET_CODE (op), MEM);
+                (int) GET_CODE (op), MEM);
         break;
     }
-    return(nCost);
+    return nCost ;
 }
 
 /*
@@ -6146,86 +6239,77 @@ int pic30_volatile_operand(rtx opnd, enum machine_mode mode) {
 /*      -k    Small literal, negative                                   */
 /*                                                                      */
 /************************************************************************/
-static int pic30_mode1MinMax_operand(rtx op, enum machine_mode mode, 
-                                     int nMin,int nMax) {
-    int nLiteral;
-    int fMode1Operand;
-    enum rtx_code code;
-    rtx x;
+static int pic30_mode1MinMax_res_operand(rtx op, enum machine_mode mode, 
+                                         int nMin, int nMax,
+                                         enum machine_mode pmode) {
+  int nLiteral;
+  int fMode1Operand;
+  enum rtx_code code;
+  rtx x;
 
-    fMode1Operand = 0;
-    code = GET_CODE(op);
-    switch (code)
-    {
+  fMode1Operand = 0;
+  code = GET_CODE(op);
+  switch (code) {
     case SUBREG:
-        fMode1Operand = register_operand(op, mode);
-        break;
+      fMode1Operand = register_operand(op, mode);
+      break;
     case REG:
-        /*
-        ** Register to register
-        */
-        fMode1Operand = ((GET_MODE(op) == mode) &&
-                         ((REGNO(op) <= WR15_REGNO) ||
-                          (REGNO(op) >= FIRST_PSEUDO_REGISTER)));
-        break;
+      /*
+      ** Register to register
+      */
+      fMode1Operand = ((GET_MODE(op) == mode) &&
+                       ((REGNO(op) <= WR15_REGNO) ||
+                        (REGNO(op) >= FIRST_PSEUDO_REGISTER)));
+      break;
     case MEM:
-        /*
-        ** One of:
-        ** Indirect: [Wn]
-        ** Indirect with post-increment: [Wn++]
-        ** Indirect with post-decrement: [Wn--]
-        ** Indirect with pre-increment: [++Wn]
-        ** Indirect with pre-decrement: [--Wn]
-        */
-        x = XEXP(op, 0);
-        code = GET_CODE(x);
-        switch (code)
-        {
+      /*
+      ** One of:
+      ** Indirect: [Wn]
+      ** Indirect with post-increment: [Wn++]
+      ** Indirect with post-decrement: [Wn--]
+      ** Indirect with pre-increment: [++Wn]
+      ** Indirect with pre-decrement: [--Wn]
+      */
+      x = XEXP(op, 0);
+      code = GET_CODE(x);
+      switch (code) {
         case REG:
-            /*
-            ** Indirect
-            */
-            fMode1Operand = (GET_MODE(op) == mode) && (GET_MODE(x) == Pmode);
-            break;
+          fMode1Operand = (GET_MODE(op) == mode) && 
+                          ((GET_MODE(x) == pmode) || 
+                           (GET_MODE(x) == machine_Pmode));
+          break;
         case POST_INC:
-            /*
-            ** Indirect with post-increment: [Wn++]
-            */
         case POST_DEC:
-            /*
-            ** Indirect with post-decrement: [Wn--]
-            */
         case PRE_INC:
-            /*
-            ** Indirect with pre-increment: [++Wn]
-            */
         case PRE_DEC:
-            /*
-            ** Indirect with pre-decrement: [--Wn]
-            */
-            fMode1Operand = (GET_MODE(op) == mode) &&
-                    ((mode == HImode) || (mode == QImode));
-            break;
+          fMode1Operand = (GET_MODE(op) == mode) &&
+                          ((mode == HImode) || (mode == QImode)) &&
+                          ((GET_MODE(x) == pmode) || 
+                           (GET_MODE(x) == machine_Pmode));
+          break;
         default:
-            break;
-        }
-        break;
+          break;
+      }
+      break;
 
     case CONST_INT:
-        /*
-        ** Literal
-        */
-        nLiteral = INTVAL(op);
-        fMode1Operand = (nMin <= nLiteral) && (nLiteral <= nMax);
-#if 0
-                        (((mode > QImode) && ((nLiteral & 1) == 0)) ||
-                         (mode <= QImode));
-#endif
-        break;
+      nLiteral = INTVAL(op);
+      fMode1Operand = (nMin <= nLiteral) && (nLiteral <= nMax);
+      break;
     default:
         break;
-    }
-    return(fMode1Operand);
+  }
+  return fMode1Operand ;
+}
+
+static int pic30_mode1MinMax_operand(rtx op, enum machine_mode mode, 
+                                     int nMin,int nMax) {
+  return pic30_mode1MinMax_res_operand(op,mode,nMin,nMax,machine_Pmode);
+}
+
+static int pic30_mode1MinMax_APSV_operand(rtx op, enum machine_mode mode, 
+                                     int nMin,int nMax) {
+  return pic30_mode1MinMax_res_operand(op,mode,nMin,nMax,P16APSVmode);
 }
 
 int pic30_immediate_1bit_operand(rtx op, 
@@ -6247,34 +6331,56 @@ int pic30_mode1i_operand(rtx op, enum machine_mode mode) {
 /*
 ** Canonical mode1: literal range is [-16,15]
 */
-int
-pic30_mode1_operand(rtx op, enum machine_mode mode) {
-    return(pic30_mode1MinMax_operand(op, mode, -16, 15));
+int pic30_mode1_operand(rtx op, enum machine_mode mode) {
+  return pic30_mode1MinMax_operand(op, mode, -16, 15);
 }
+
+int pic30_mode1_APSV_operand(rtx op, enum machine_mode mode) {
+  return pic30_mode1MinMax_APSV_operand(op, mode, -16, 15);
+}
+
 /*
 ** Special mode1: literal range is [0,31]
 */
 int pic30_mode1P_operand(rtx op, enum machine_mode mode) {
-    return(pic30_mode1MinMax_operand(op, mode, 0, 31));
+  return pic30_mode1MinMax_operand(op, mode, 0, 31);
 }
+
+int pic30_mode1P_APSV_operand(rtx op, enum machine_mode mode) {
+  return pic30_mode1MinMax_APSV_operand(op, mode, 0, 31);
+}
+
 /*
 ** Special mode1: literal range is [-31,31]
 */
 int pic30_mode1PN_operand(rtx op, enum machine_mode mode) {
-    return(pic30_mode1MinMax_operand(op, mode, -31, 31));
+  return pic30_mode1MinMax_operand(op, mode, -31, 31);
 }
+
+int pic30_mode1PN_APSV_operand(rtx op, enum machine_mode mode) {
+  return pic30_mode1MinMax_APSV_operand(op, mode, -31, 31);
+}
+
 /*
 ** Special mode1: literal range is [-31,1023]
 */
-int
-pic30_mode1JN_operand(rtx op, enum machine_mode mode) {
-    return(pic30_mode1MinMax_operand(op, mode, -31, 1023));
+int pic30_mode1JN_operand(rtx op, enum machine_mode mode) {
+  return pic30_mode1MinMax_operand(op, mode, -31, 1023);
 }
+
+int pic30_mode1JN_APSV_operand(rtx op, enum machine_mode mode) {
+  return pic30_mode1MinMax_APSV_operand(op, mode, -31, 1023);
+}
+
 /*
 ** Special mode1: literal range is [0,1023]
 */
 int pic30_mode1J_operand(rtx op, enum machine_mode mode) {
-    return(pic30_mode1MinMax_operand(op, mode, 0, 1023));
+  return pic30_mode1MinMax_operand(op, mode, 0, 1023);
+}
+
+int pic30_mode1J_APSV_operand(rtx op, enum machine_mode mode) {
+  return pic30_mode1MinMax_APSV_operand(op, mode, 0, 1023);
 }
 
 /*
@@ -6285,29 +6391,40 @@ int pic30_mode1J_operand(rtx op, enum machine_mode mode) {
  */
 
 int pic30_indirect_mem_operand_modify(rtx op, enum machine_mode mode) {
-  if (GET_CODE(op) == MEM)
-    switch (GET_CODE(XEXP(op,0)))
-    {
+  rtx inner;
+
+  if (GET_CODE(op) == MEM) {
+    inner = XEXP(op,0);
+    switch (GET_CODE(inner)) {
       case POST_INC:
-        /*
-        ** Indirect with post-increment: [Wn++]
-        */
       case POST_DEC:
-        /*
-        ** Indirect with post-decrement: [Wn--]
-        */
       case PRE_INC:
-        /*
-        ** Indirect with pre-increment: [++Wn]
-        */
       case PRE_DEC:
-        /*
-        ** Indirect with pre-decrement: [--Wn]
-        */
-        return (GET_MODE(op) == mode);
+        return (GET_MODE(op) == mode) && (GET_MODE(inner) == machine_Pmode);
       default:
         break;
     }
+  }
+  return FALSE;
+}
+
+int pic30_APSV_indirect_mem_operand_modify(rtx op, enum machine_mode mode) {
+  rtx inner;
+
+  if (GET_CODE(op) == MEM) {
+    inner = XEXP(op,0);
+    switch (GET_CODE(inner)) {
+      case POST_INC:
+      case POST_DEC:
+      case PRE_INC:
+      case PRE_DEC:
+        return (GET_MODE(op) == mode) && 
+               ((GET_MODE(inner) == P16APSVmode) || 
+                (GET_MODE(inner) == machine_Pmode));
+      default:
+        break;
+    }
+  }
   return FALSE;
 }
 
@@ -6329,7 +6446,27 @@ int pic30_indirect_mem_operand(rtx op, enum machine_mode mode) {
         /*
         ** Indirect: [Wn]
         */
-        return (GET_MODE(op) == mode) && (GET_MODE(x) == Pmode);
+        return (GET_MODE(op) == mode) && (GET_MODE(x) == machine_Pmode);
+      default:
+        break;
+    }
+  }
+  return FALSE;
+}
+
+int pic30_APSV_indirect_mem_operand(rtx op, enum machine_mode mode) {
+  rtx x;
+
+  if (GET_CODE(op) == MEM) {
+    if (pic30_APSV_indirect_mem_operand_modify(op, mode)) return TRUE;
+    x = XEXP(op,0);
+    switch (GET_CODE(x)) {
+      case REG:
+        /*
+        ** Indirect: [Wn]
+        */
+        return (GET_MODE(op) == mode) && 
+               ((GET_MODE(x) == P16APSVmode) || (GET_MODE(x) == machine_Pmode));
       default:
         break;
     }
@@ -6348,9 +6485,23 @@ int pic30_modek_possible_operand(rtx op, enum machine_mode mode) {
   if (GET_CODE(op) == MEM) {
     x = XEXP(op,0);
     if (GET_CODE(x) == REG) {
-      return (GET_MODE(op) == mode) && (GET_MODE(x) == Pmode);
+      return (GET_MODE(op) == mode) && (GET_MODE(x) == machine_Pmode);
     }
     else return pic30_modek_operand(op,mode);
+  }
+  return 0;
+}
+
+int pic30_modek_APSV_possible_operand(rtx op, enum machine_mode mode) {
+  rtx x;
+
+  if (GET_CODE(op) == MEM) {
+    x = XEXP(op,0);
+    if (GET_CODE(x) == REG) {
+      return (GET_MODE(op) == mode) && 
+             ((GET_MODE(x) == P16APSVmode) || (GET_MODE(x) == machine_Pmode));
+    }
+    else return pic30_modek_APSV_operand(op,mode);
   }
   return 0;
 }
@@ -6370,31 +6521,57 @@ int pic30_modek_possible_operand(rtx op, enum machine_mode mode) {
 /*    [--Wn]    Indirect with pre-decrement                             */
 /************************************************************************/
 int pic30_mode2_operand(rtx op, enum machine_mode mode) {
-    int fMode2Operand;
-    enum rtx_code code;
+  int fMode2Operand;
+  enum rtx_code code;
 
-    fMode2Operand = FALSE;
-    code = GET_CODE(op);
-    switch (code)
-    {
+  fMode2Operand = FALSE;
+  code = GET_CODE(op);
+  switch (code) {
     case SUBREG:
-        fMode2Operand = register_operand(op, mode);
-        break;
+      fMode2Operand = register_operand(op, mode);
+      break;
     case REG:
-        /*
-        ** Register to register
-        */
-        fMode2Operand = ((GET_MODE(op) == mode) &&
-                         ((REGNO(op) <= WR15_REGNO) ||
-                          (REGNO(op) >= FIRST_PSEUDO_REGISTER)));
-        break;
+      /*
+      ** Register to register
+      */
+      fMode2Operand = ((GET_MODE(op) == mode) &&
+                       ((REGNO(op) <= WR15_REGNO) ||
+                        (REGNO(op) >= FIRST_PSEUDO_REGISTER)));
+      break;
     case MEM:
-        fMode2Operand = pic30_indirect_mem_operand(op,mode);
-        break;
+      fMode2Operand = pic30_indirect_mem_operand(op,mode);
+      break;
     default:
         break;
-    }
-    return(fMode2Operand);
+  }
+  return fMode2Operand;
+}
+
+int pic30_mode2_APSV_operand(rtx op, enum machine_mode mode) {
+  int fMode2Operand;
+  enum rtx_code code;
+
+  fMode2Operand = FALSE;
+  code = GET_CODE(op);
+  switch (code) {
+    case SUBREG:
+      fMode2Operand = register_operand(op, mode);
+      break;
+    case REG:
+      /*
+      ** Register to register
+      */
+      fMode2Operand = ((GET_MODE(op) == mode) &&
+                       ((REGNO(op) <= WR15_REGNO) ||
+                        (REGNO(op) >= FIRST_PSEUDO_REGISTER)));
+      break;
+    case MEM:
+      fMode2Operand = pic30_APSV_indirect_mem_operand(op,mode);
+      break;
+    default:
+        break;
+  }
+  return fMode2Operand;
 }
 
 int pic30_mode2_or_near_operand(rtx op, enum machine_mode mode) {
@@ -6434,35 +6611,45 @@ int pic30_mode2res_operand(rtx op, enum machine_mode mode) {
 /* pic30_mode2mres_operand(): predicate for restricted mode2 addr modes    */
 /************************************************************************/
 int pic30_mode2mres_operand(rtx op, enum machine_mode mode) {
-    int fMode2Operand;
-    fMode2Operand = pic30_mode2_operand(op, mode);
-    if (fMode2Operand)
-    {
-        if (GET_CODE(op) == MEM)
-        {
-            switch (GET_CODE(XEXP(op, 0)))
-            {
-            case PRE_INC:
-                /*
-                ** Indirect with pre-increment: [++Wn]
-                */
-            case PRE_DEC:
-                /*
-                ** Indirect with pre-decrement: [--Wn]
-                */
-            case POST_DEC:
-                /*
-                ** Indirect with post-decrement: [Wn--]
-                */
-                fMode2Operand = FALSE;
-                break;
-            default:
-                break;
-            }
-        }
+  int fMode2Operand;
+
+  fMode2Operand = pic30_mode2_operand(op, mode);
+  if (fMode2Operand) {
+    if (GET_CODE(op) == MEM) {
+      switch (GET_CODE(XEXP(op, 0))) {
+        case PRE_INC:
+        case PRE_DEC:
+        case POST_DEC:
+          fMode2Operand = FALSE;
+          break;
+        default:
+          break;
+      }
     }
-    return(fMode2Operand);
+  }
+  return fMode2Operand;
 }
+
+int pic30_mode2mres_APSV_operand(rtx op, enum machine_mode mode) {
+  int fMode2Operand;
+
+  fMode2Operand = pic30_mode2_APSV_operand(op, mode);
+  if (fMode2Operand) {
+    if (GET_CODE(op) == MEM) {
+      switch (GET_CODE(XEXP(op, 0))) {
+        case PRE_INC:
+        case PRE_DEC:
+        case POST_DEC:
+          fMode2Operand = FALSE;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+  return fMode2Operand;
+}
+
 /************************************************************************/
 /* pic30_modek_operand(): predicate for the modek addressing modes      */
 /*                                                                      */
@@ -6480,16 +6667,13 @@ int pic30_modek_operand(rtx op, enum machine_mode mode) {
   int nMin, nMax, nDisp, scale;
 
   fModekOperand = FALSE;
-  switch (GET_CODE(op))
-  {
+  switch (GET_CODE(op)) {
     case SUBREG:
       /*
       ** Either a register, or a memory reference
       */
-      if (GET_CODE(SUBREG_REG(op)) == MEM)
-      {
-        if (GET_MODE(op) == mode)
-        {
+      if (GET_CODE(SUBREG_REG(op)) == MEM) {
+        if (GET_MODE(op) == mode) {
           rtx subop;
           enum machine_mode submd;
 
@@ -6501,21 +6685,16 @@ int pic30_modek_operand(rtx op, enum machine_mode mode) {
       break;
     case MEM:
       rtxInner = XEXP(op, 0);
-      switch (GET_MODE(rtxInner)) {
-        case Pmode: break;
-        default: return 0;
-      }
-      switch (GET_CODE(rtxInner))
-      {
+      if (GET_MODE(rtxInner) != machine_Pmode) return 0;
+      switch (GET_CODE(rtxInner)) {
         case PLUS:
           /*
           ** Base with displacement.
           */
           rtxPlusOp0 = XEXP(rtxInner, 0);
-          switch (GET_CODE(rtxPlusOp0))
-          {
+          switch (GET_CODE(rtxPlusOp0)) {
             case SUBREG:
-              if (!register_operand(rtxPlusOp0, Pmode))
+              if (!register_operand(rtxPlusOp0, machine_Pmode))
               {
                 break;
               }
@@ -6524,14 +6703,12 @@ int pic30_modek_operand(rtx op, enum machine_mode mode) {
               */
             case REG:
               rtxPlusOp1 = XEXP(rtxInner, 1);
-              switch (GET_CODE(rtxPlusOp1))
-              {
+              switch (GET_CODE(rtxPlusOp1)) {
                 case CONST_INT:
                   /*
                   ** Base with displacement.
                   */
-                  switch (mode)
-                  {
+                  switch (mode) {
                     case QImode:
                       nMin = PIC30_DISP_MIN;
                       nMax = PIC30_DISP_MAX;
@@ -6539,6 +6716,7 @@ int pic30_modek_operand(rtx op, enum machine_mode mode) {
                     case P24PROGmode:
                     case P24PSVmode:
                     case P16PMPmode:
+                    case P16APSVmode:
                     case SFmode:
                     case DFmode:
                     case HImode:
@@ -6574,6 +6752,101 @@ int pic30_modek_operand(rtx op, enum machine_mode mode) {
   }
   return(fModekOperand);
 }
+
+int pic30_modek_APSV_operand(rtx op, enum machine_mode mode) {
+  int fModekOperand;
+  rtx rtxInner;
+  rtx rtxPlusOp0;
+  rtx rtxPlusOp1;
+  int nMin, nMax, nDisp, scale;
+
+  fModekOperand = FALSE;
+  switch (GET_CODE(op)) {
+    case SUBREG:
+      /*
+      ** Either a register, or a memory reference
+      */
+      if (GET_CODE(SUBREG_REG(op)) == MEM) {
+        if (GET_MODE(op) == mode) {
+          rtx subop;
+          enum machine_mode submd;
+
+          subop = SUBREG_REG(op);
+          submd = GET_MODE(subop);
+          fModekOperand = pic30_modek_APSV_operand(subop, submd);
+        }
+      }
+      break;
+    case MEM:
+      rtxInner = XEXP(op, 0);
+      if ((GET_MODE(rtxInner) != machine_Pmode) &&
+          (GET_MODE(rtxInner) != P16APSVmode)) return 0;
+      switch (GET_CODE(rtxInner)) {
+        case PLUS:
+          /*
+          ** Base with displacement.
+          */
+          rtxPlusOp0 = XEXP(rtxInner, 0);
+          switch (GET_CODE(rtxPlusOp0)) {
+            case SUBREG:
+              if (!register_operand(rtxPlusOp0, machine_Pmode) &&
+                  !register_operand(rtxPlusOp0, P16APSVmode))
+                break;
+              /*
+              ** Fall thru
+              */
+            case REG:
+              rtxPlusOp1 = XEXP(rtxInner, 1);
+              switch (GET_CODE(rtxPlusOp1)) {
+                case CONST_INT:
+                  /*
+                  ** Base with displacement.
+                  */
+                  switch (mode) {
+                    case QImode:
+                      nMin = PIC30_DISP_MIN;
+                      nMax = PIC30_DISP_MAX;
+                      break;
+                    case P24PROGmode:
+                    case P24PSVmode:
+                    case P16PMPmode:
+                    case P16APSVmode:
+                    case SFmode:
+                    case DFmode:
+                    case HImode:
+                    case SImode:
+                    case DImode:
+                      nMin = PIC30_DISP_MIN*2;
+                      nMax = PIC30_DISP_MAX*2 +
+                               UNITS_PER_WORD -
+                               GET_MODE_SIZE(mode);
+                      break;
+                    default:
+                      nMin = 0;
+                      nMax = 0;
+                      break;
+                  }
+                  nDisp = INTVAL(rtxPlusOp1);
+                  scale = ((GET_MODE(op) == QImode) ? 0 : 1);
+                  fModekOperand = (GET_MODE(op)==mode) &&
+                                   ((nMin <= nDisp) && (nDisp <= nMax)) &&
+                                   ((nDisp & scale) == 0);
+                  break;
+                default:
+                  break;
+              }
+            default:
+              break;
+          }
+        default:
+          break;
+      }
+    default:
+      break;
+  }
+  return(fModekOperand);
+}
+
 /************************************************************************/
 /* pic30_mode3_operand(): predicate for the mode3 addressing modes      */
 /*                                                                      */
@@ -6590,148 +6863,271 @@ int pic30_modek_operand(rtx op, enum machine_mode mode) {
 /*    [Wn+Wb]    Indirect with base                                     */
 /************************************************************************/
 int pic30_mode3_operand(rtx op, enum machine_mode mode) {
-    int fMode3Operand = -1;
-    rtx rtxInner;
-    rtx rtxPlusOp0;
-    rtx rtxPlusOp1;
+  int fMode3Operand = -1;
+  rtx rtxInner;
+  rtx rtxPlusOp0;
+  rtx rtxPlusOp1;
+  rtx of;
 
-    switch (GET_CODE(op))
-    {
+  switch (GET_CODE(op)) {
     case SUBREG:
-        /*
-        ** Either a register, or a memory reference
-        */
-        if (GET_CODE(SUBREG_REG(op)) == MEM)
-        {
-            if (GET_MODE(op) == mode)
-            {
-                rtx subop;
-                     enum machine_mode submd;
+      /*
+      ** Either a register, or a memory reference
+      */
 
-                subop = SUBREG_REG(op);
-                submd = GET_MODE(subop);
-                if (SUBREG_BYTE(op) != 0) {
-                  fMode3Operand = pic30_modek_possible_operand(subop, submd);
-                } else {
-                  fMode3Operand = pic30_mode3_operand(subop, submd);
-                }
-            }
+      of = op;
+      while ((GET_CODE(of) == SUBREG) && (GET_CODE(SUBREG_REG(of)) == SUBREG))
+        of = SUBREG_REG(of);
+      if (of != op) {
+        // just for validation
+        of = gen_rtx_SUBREG(GET_MODE(op), SUBREG_REG(of), SUBREG_BYTE(op));
+      }
+      if (GET_CODE(SUBREG_REG(of)) == MEM) {
+        if (GET_MODE(of) == mode) {
+          rtx subop;
+          enum machine_mode submd;
+
+          subop = SUBREG_REG(of);
+          submd = GET_MODE(subop);
+          if (SUBREG_BYTE(of) != 0) {
+            fMode3Operand = pic30_modek_possible_operand(subop, submd);
+          } else {
+            fMode3Operand = pic30_mode3_operand(subop, submd);
+          }
         }
-        else
-        {
-            fMode3Operand = register_operand(op, mode);
-        }
-        break;
+      } else {
+        fMode3Operand = register_operand(of, mode);
+      }
+      break;
     case SCRATCH:
     case REG:
-        /*
-        ** Register to register
-        */
-        fMode3Operand = ((GET_MODE(op) == mode) && 
-                         ((REGNO(op) <= WR15_REGNO) || 
-                          (REGNO(op) >= FIRST_PSEUDO_REGISTER)));
-        break;
+      /*
+      ** Register to register
+      */
+      fMode3Operand = ((GET_MODE(op) == mode) && 
+                       ((REGNO(op) <= WR15_REGNO) || 
+                        (REGNO(op) >= FIRST_PSEUDO_REGISTER)));
+      break;
     case MEM:
-        rtxInner = XEXP(op, 0);
-        switch (GET_MODE(rtxInner)) {
-          case Pmode:
-                         break;
-          default: return 0;
-        }
-        switch (GET_CODE(rtxInner))
-        {
+      rtxInner = XEXP(op, 0);
+      if (GET_MODE(rtxInner) != machine_Pmode) return 0;
+      switch (GET_CODE(rtxInner)) {
         case SUBREG:
-            fMode3Operand = (GET_MODE(op) == mode);
-            break;
+          fMode3Operand = (GET_MODE(op) == mode);
+          break;
         case REG:
-            fMode3Operand = (GET_MODE(op) == mode);
-            break;
+          fMode3Operand = (GET_MODE(op) == mode);
+          break;
         case POST_INC:
-            fMode3Operand = (GET_MODE(op) == mode);
-            /* FALLSTRHOUGH */
+          fMode3Operand = (GET_MODE(op) == mode);
+          /* FALLSTRHOUGH */
         case PRE_DEC:
-            if (fMode3Operand == -1) fMode3Operand = (GET_MODE(op) == mode);
-            /* FALLSTRHOUGH */
+          if (fMode3Operand == -1) fMode3Operand = (GET_MODE(op) == mode);
+          /* FALLSTRHOUGH */
         case PRE_INC:
         case POST_DEC:
-            if (fMode3Operand == -1) switch (mode)
-            {
+          if (fMode3Operand == -1) switch (mode) {
             case DFmode:
             case DImode:
-                /*
-                ** mov.q in these modes can't
-                ** be synthesized from mov.d
-                */
-                fMode3Operand = FALSE;
-                break;
+              /*
+              ** mov.q in these modes can't
+              ** be synthesized from mov.d
+              */
+              fMode3Operand = FALSE;
+              break;
             default:
-                fMode3Operand = (GET_MODE(op) == mode);
-                break;
-            }
-            switch (GET_MODE(XEXP(rtxInner,0))) {
-              case Pmode: return fMode3Operand;
-              default: return 0;
-            }
-            break;
+              fMode3Operand = (GET_MODE(op) == mode);
+              break;
+          }
+          if ((GET_MODE(XEXP(rtxInner,0))) == machine_Pmode) 
+            return fMode3Operand;
+          break;
         case PRE_MODIFY:
         case POST_MODIFY:
-            /*
-            ** Not yet implemented in gcc.
-            */
-            break;
+          /*
+          ** Not yet implemented in gcc.
+          */
+          break;
         case PLUS:
-            /*
-            ** Base with index.
-            */
-              rtxPlusOp0 = XEXP(rtxInner, 0);
-              switch (GET_CODE(rtxPlusOp0))
-            {
+          /*
+          ** Base with index.
+          */
+          rtxPlusOp0 = XEXP(rtxInner, 0);
+          switch (GET_CODE(rtxPlusOp0)) {
             case SUBREG:
-                if (!register_operand(rtxPlusOp0, Pmode))
-                {
-                    break;
-                }
-                /*
-                ** Fall thru
-                */
+              if (!register_operand(rtxPlusOp0, machine_Pmode)) {
+                break;
+              }
+              /*
+              ** Fall thru
+              */
             case REG:
-                rtxPlusOp1 = XEXP(rtxInner, 1);
-                switch (GET_CODE(rtxPlusOp1))
-                {
+              rtxPlusOp1 = XEXP(rtxInner, 1);
+              switch (GET_CODE(rtxPlusOp1)) {
                 case SUBREG:
-                    if (!register_operand(rtxPlusOp1,Pmode))
-                    {
-                        break;
-                    }
-                    /*
-                    ** Fall thru
-                    */
+                  if (!register_operand(rtxPlusOp1,machine_Pmode)) {
+                    break;
+                  }
+                  /*
+                  ** Fall thru
+                  */
                 case REG:
-                    /*
-                    ** Base with index
-                    */
-                    fMode3Operand = (GET_MODE(op)==mode) &&
-                            ((mode == QImode) ||
-                             (mode == HImode));
-                    break;
+                  /*
+                  ** Base with index
+                  */
+                  fMode3Operand = (GET_MODE(op)==mode) &&
+                                   ((mode == QImode) || (mode == HImode));
+                  break;
                 default:
-                    break;
-                }
-                break;
+                  break;
+              }
+              break;
             default:
-                break;
-            }
-            break;
+              break;
+          }
+          break;
         default:
-            break;
-        }
-        break;
+          break;
+      }
+      break;
     default:
-        break;
-    }
-    if (fMode3Operand == -1) fMode3Operand = 0;
-    return(fMode3Operand);
+      break;
+  }
+  if (fMode3Operand == -1) fMode3Operand = 0;
+  return fMode3Operand;
 }
+
+int pic30_mode3_APSV_operand(rtx op, enum machine_mode mode) {
+  int fMode3Operand = -1;
+  rtx rtxInner;
+  rtx rtxPlusOp0;
+  rtx rtxPlusOp1;
+
+  switch (GET_CODE(op)) {
+    case SUBREG:
+      /*
+      ** Either a register, or a memory reference
+      */
+      if (GET_CODE(SUBREG_REG(op)) == MEM) {
+        if (GET_MODE(op) == mode) {
+          rtx subop;
+          enum machine_mode submd;
+
+          subop = SUBREG_REG(op);
+          submd = GET_MODE(subop);
+          if (SUBREG_BYTE(op) != 0) {
+            fMode3Operand = pic30_modek_APSV_possible_operand(subop, submd);
+          } else {
+            fMode3Operand = pic30_mode3_APSV_operand(subop, submd);
+          }
+        }
+      } else {
+        fMode3Operand = register_operand(op, mode);
+      }
+      break;
+    case SCRATCH:
+    case REG:
+      /*
+      ** Register to register
+      */
+      fMode3Operand = ((GET_MODE(op) == mode) && 
+                       ((REGNO(op) <= WR15_REGNO) || 
+                        (REGNO(op) >= FIRST_PSEUDO_REGISTER)));
+      break;
+    case MEM:
+      rtxInner = XEXP(op, 0);
+      if ((GET_MODE(rtxInner) != P16APSVmode) &&
+          (GET_MODE(rtxInner) != machine_Pmode)) 
+        return 0;
+      switch (GET_CODE(rtxInner)) {
+        case SUBREG:
+          fMode3Operand = (GET_MODE(op) == mode);
+          fMode3Operand &= (GET_CODE(XEXP(op,0)) == REG);
+          break;
+        case REG:
+          fMode3Operand = (GET_MODE(op) == mode);
+          break;
+        case POST_INC:
+          fMode3Operand = (GET_MODE(op) == mode);
+          /* FALLSTRHOUGH */
+        case PRE_DEC:
+          if (fMode3Operand == -1) fMode3Operand = (GET_MODE(op) == mode);
+          /* FALLSTRHOUGH */
+        case PRE_INC:
+        case POST_DEC:
+          if (fMode3Operand == -1) switch (mode) {
+            case DFmode:
+            case DImode:
+              /*
+              ** mov.q in these modes can't
+              ** be synthesized from mov.d
+              */
+              fMode3Operand = FALSE;
+              break;
+            default:
+              fMode3Operand = (GET_MODE(op) == mode);
+              break;
+          }
+          if ((GET_MODE(XEXP(rtxInner,0)) == machine_Pmode) ||
+              (GET_MODE(XEXP(rtxInner,0)) == P16APSVmode)) return fMode3Operand;
+          break;
+        case PRE_MODIFY:
+        case POST_MODIFY:
+          /*
+          ** Not yet implemented in gcc.
+          */
+          break;
+        case PLUS:
+          /*
+          ** Base with index.
+          */
+          rtxPlusOp0 = XEXP(rtxInner, 0);
+          switch (GET_CODE(rtxPlusOp0)) {
+            case SUBREG:
+              if (!register_operand(rtxPlusOp0, machine_Pmode) && 
+                  !register_operand(rtxPlusOp0, P16APSVmode)) {
+                break;
+              }
+              /*
+              ** Fall thru
+              */
+            case REG:
+              rtxPlusOp1 = XEXP(rtxInner, 1);
+              switch (GET_CODE(rtxPlusOp1)) {
+                case SUBREG:
+                  if (!register_operand(rtxPlusOp1,machine_Pmode) &&
+                      !register_operand(rtxPlusOp1,P16APSVmode)) {
+                    break;
+                  }
+                  /*
+                  ** Fall thru
+                  */
+                case REG:
+                  /*
+                  ** Base with index
+                  */
+                  fMode3Operand = (GET_MODE(op) == mode) &&
+                                   ((mode == QImode) || (mode == HImode));
+                  break;
+                default:
+                  break;
+              }
+              break;
+            default:
+              break;
+          }
+          break;
+        default:
+          break;
+      }
+      break;
+    default:
+      break;
+  }
+  if (fMode3Operand == -1) fMode3Operand = 0;
+  return fMode3Operand;
+}
+
 /************************************************************************/
 /* pic30_wreg_operand(): predicate for the WREG addressing mode        */
 /************************************************************************/
@@ -6835,8 +7231,11 @@ int pic30_data_operand(rtx op, enum machine_mode mode) {
     switch (mode)
     {
     case QImode:
-        fData = FALSE;
-        break;
+        // if (!reload_in_progress && !reload_completed) 
+        {
+          fData = FALSE;
+          break;
+        }
     default:
         fData = (mode == GET_MODE(op)) && pic30_T_constraint(op);
         break;
@@ -6884,6 +7283,11 @@ int pic30_reg_imm_or_near_operand(rtx op, enum machine_mode mode) {
 /************************************************************************/
 int pic30_rR_or_near_operand(rtx op,enum machine_mode mode) {
   return (pic30_reg_or_R_operand(op, mode) || pic30_near_operand(op, mode));
+}
+
+int pic30_rR_or_near_APSV_operand(rtx op,enum machine_mode mode) {
+  return (pic30_reg_or_R_APSV_operand(op, mode) || 
+          pic30_near_operand(op, mode));
 }
 
 /************************************************************************/
@@ -6946,13 +7350,21 @@ int pic30_imm16plus_operand(rtx op, enum machine_mode mode) {
 /* a non-J or -K operand from actually being accepted.            */
 /************************************************************************/
 int pic30_math_operand(rtx op,enum machine_mode mode) {
-    int fMathOperand;
+  int fMathOperand;
 
-    fMathOperand = pic30_mode1_operand(op, mode) ||
-            pic30_JN_operand(op, mode);
-
-    return(fMathOperand);
+  fMathOperand = pic30_mode1_operand(op, mode) || pic30_JN_operand(op, mode);
+  return fMathOperand ;
 }
+
+int pic30_math_APSV_operand(rtx op,enum machine_mode mode) {
+  int fMathOperand;
+
+  fMathOperand = pic30_mode1_APSV_operand(op, mode) ||
+                 pic30_JN_operand(op, mode);
+  return fMathOperand ;
+}
+
+
 
 /************************************************************************/
 /* pic30_inc_imm_operand(): predicate for imm opnd suitable for inc/dec */
@@ -6974,8 +7386,13 @@ int pic30_near_math_operand(rtx op, enum machine_mode mode) {
 /* pic30_near_mode2_operand(): predicate for math instruction operand.    */
 /************************************************************************/
 int pic30_near_mode2_operand(rtx op,enum machine_mode mode) {
-    return (pic30_mode2_operand(op, mode) || 
-            pic30_wreg_or_near_operand(op, mode));
+  return (pic30_mode2_operand(op, mode) || 
+          pic30_wreg_or_near_operand(op, mode));
+}
+
+int pic30_near_mode2_APSV_operand(rtx op,enum machine_mode mode) {
+  return (pic30_mode2_APSV_operand(op, mode) || 
+          pic30_wreg_or_near_operand(op, mode));
 }
 
 /************************************************************************/
@@ -6983,6 +7400,11 @@ int pic30_near_mode2_operand(rtx op,enum machine_mode mode) {
 /************************************************************************/
 int pic30_near_mode1PN_operand(rtx op, enum machine_mode mode) {
     return (pic30_mode1PN_operand(op, mode) ||
+            pic30_wreg_or_near_operand(op, mode));
+}
+
+int pic30_near_mode1PN_APSV_operand(rtx op, enum machine_mode mode) {
+    return (pic30_mode1PN_APSV_operand(op, mode) ||
             pic30_wreg_or_near_operand(op, mode));
 }
 
@@ -7000,10 +7422,27 @@ int pic30_move_operand(rtx op, enum machine_mode mode) {
   return(fMoveOperand);
 }
 
+int pic30_move_APSV_operand(rtx op, enum machine_mode mode) {
+  int fMoveOperand;
+
+  fMoveOperand = pic30_mode3_APSV_operand(op, mode) ||
+                 pic30_modek_APSV_operand(op, mode) ||
+                 pic30_near_operand(op, mode) ||
+                 pic30_data_operand(op, mode);
+
+  return(fMoveOperand);
+}
+
 /* alternative move operand that does not have a near in it */
 int pic30_move2_operand(rtx op, enum machine_mode mode) {
   return pic30_mode3_operand(op,mode) ||
          pic30_modek_operand(op,mode) ||
+         pic30_data_operand(op,mode);
+}
+
+int pic30_move2_APSV_operand(rtx op, enum machine_mode mode) {
+  return pic30_mode3_APSV_operand(op,mode) ||
+         pic30_modek_APSV_operand(op,mode) ||
          pic30_data_operand(op,mode);
 }
 
@@ -7018,6 +7457,9 @@ int pic30_register_operand_helper(rtx op, enum machine_mode mode,
 
 int pic30_register_operand_helper(rtx op, enum machine_mode mode, 
                                   int subreg_ok) {
+  int class;
+
+
   if (GET_MODE (op) != mode && mode != VOIDmode)
     return 0;
 
@@ -7068,10 +7510,14 @@ int pic30_register_operand_helper(rtx op, enum machine_mode mode,
 
   /* We don't consider registers whose class is NO_REGS
      to be a register operand.  */
-  return (GET_CODE (op) == REG && 
-          (REGNO (op) >= FIRST_PSEUDO_REGISTER || 
-          ((REGNO_REG_CLASS (REGNO (op)) != NO_REGS) && 
-           (REGNO_REG_CLASS(REGNO(op)) != ACCUM_REGS))));
+  if (GET_CODE(op) == REG) {
+    class = REGNO_REG_CLASS(REGNO(op));
+
+    if (REGNO(op) >= FIRST_PSEUDO_REGISTER) return 1;
+    if ((class != NO_REGS) && (class != ACCUM_REGS) && (class != PSV_REGS))
+      return 1;
+  }
+  return 0;
 }
 
 int pic30_register_operand(rtx op, enum machine_mode mode) {
@@ -7093,9 +7539,11 @@ int pic30_general_operand(rtx op, enum machine_mode mode) {
     rtx inner = XEXP(op,0);
    
     if ((GET_MODE(inner) == P24PROGmode) || (GET_MODE(inner) == P24PSVmode) ||
-        (GET_MODE(inner) == P16PMPmode) || (GET_MODE(inner) == P32EXTmode)) 
+        (GET_MODE(inner) == P16PMPmode) || (GET_MODE(inner) == P32EXTmode) ||
+        (GET_MODE(inner) == P32EDSmode) || (GET_MODE(inner) == P32PEDSmode)) { 
       /* a de-reference of an extended pointer - not general */
       return 0;
+    }
   }
   return result;
 }
@@ -7105,10 +7553,10 @@ int pic30_accumulator_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
   switch (GET_CODE(op)) {
     case REG:
       return (IS_ACCUM_REG(REGNO(op)) ||
-#if 1
-              0);
-#else
+#if IGNORE_ACCUM_CHECK
              (REGNO(op) >= FIRST_PSEUDO_REGISTER));
+#else
+              0);
 #endif
     default:  break;
   } 
@@ -7295,6 +7743,27 @@ int pic30_registerpairs_p(rtx op0,rtx op1,rtx op2,rtx op3) {
     return(fPair);
 }
 
+int pic30_eds_target(void) {
+  return TARGET_ARCH(DA_GENERIC) || (pic30_device_mask & HAS_EDS);
+}
+
+int pic30_eds_space_operand_p(rtx op) {
+  if (pic30_has_space_operand_p(op, PIC30_PROG_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_DATA_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_X_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_Y_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_PMP_FLAG) &&
+      (pic30_device_mask & HAS_PMPV2)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_APSV_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_PSV_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_EE_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_BSS_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_EDS_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_SFR_FLAG)) return TRUE;
+  if (pic30_has_space_operand_p(op, PIC30_DMA_FLAG)) return TRUE;
+  return FALSE;
+}
+
 /*
 ** Predicate for symbolic address operand.
 */
@@ -7316,12 +7785,19 @@ int pic30_symbolic_address_operand(rtx op, enum machine_mode mode) {
           }
           return ((GET_MODE(op) == mode) && 
                   (string_constant || pic30_builtin_tblpsv_arg_p(NULL,op)));
+        } else if (mode == P16APSVmode) {
+          if (pic30_has_space_operand_p(op,PIC30_APSV_FLAG)) return TRUE;
+          if (pic30_data_space_operand_p(GET_MODE(op),op,0)) return TRUE;
+          else return FALSE;
         } else if (mode == P32EXTmode) {
           if (pic30_has_space_operand_p(op,PIC30_EXT_FLAG)) return TRUE;
           else return FALSE;
         } else if (mode == P16PMPmode) {
           if (pic30_has_space_operand_p(op,PIC30_PMP_FLAG)) return TRUE;
           else return FALSE;
+        } else if ((mode == P32EDSmode) || (mode == P32PEDSmode)) {
+          /* these pointers are compatible with a multitude of spaces */
+          return pic30_eds_space_operand_p(op);
         }
         return TRUE;
     case CONST:
@@ -7425,25 +7901,70 @@ int pic30_invalid_address_operand(rtx op, enum machine_mode mode) {
 }
 
 /************************************************************************/
-/* pic30_call_address_operand(): Predicate for the call insn operand.    */
+/* pic30_call_address_operand(): Predicate for the call insn operand.   */
 /************************************************************************/
 int pic30_call_address_operand(rtx op, enum machine_mode mode) {
-      return(REG_P(op) || pic30_symbolic_address_operand(op, mode));
+      return (REG_P(op) || pic30_symbolic_address_operand(op, mode));
 }
 
 /************************************************************************/
-/* pic30_reg_or_zero_operand(): Predicate for register or zero operand.    */
+/* pic30_reg_or_zero_operand(): Predicate for register or zero operand. */
 /************************************************************************/
 int pic30_reg_or_zero_operand(rtx op, enum machine_mode mode) {
-    return(register_operand(op, mode) || (op == CONST0_RTX(mode)));
+    return (register_operand(op, mode) || (op == CONST0_RTX(mode)));
 }
 
 /************************************************************************/
-/* pic30_rR_or_zero_operand(): Predicate for register or zero operand.    */
+/* pic30_rR_or_zero_operand(): Predicate for register or zero operand.  */
 /************************************************************************/
 int pic30_rR_or_zero_operand(rtx op, enum machine_mode mode) {
-    return(pic30_reg_or_R_operand(op, mode) || (op == CONST0_RTX(mode)));
+    return (pic30_reg_or_R_operand(op, mode) || (op == CONST0_RTX(mode)));
 }
+
+#define JOIN4_2(A,B,C,D) A##B##C##D
+#define JOIN4(A,B,C,D) JOIN4_2(A,B,C,D)
+#define GEN_TARGET_ACCESS(access, rdwt) \
+          case QImode: \
+                       fn = JOIN4(gen_,access,rdwt,_qi); \
+                       break;\
+          case HImode:\
+                       fn = JOIN4(gen_,access,rdwt,_hi);\
+                       break;\
+          case P16APSVmode: \
+                       fn = JOIN4(gen_,access,rdwt,_P16APSV);\
+                       break;\
+          case P16PMPmode: \
+                       fn = JOIN4(gen_,access,rdwt,_P16PMP);\
+                       break;\
+          case P24PROGmode: \
+                       fn = JOIN4(gen_,access,rdwt,_P24PROG);\
+                       break;\
+          case P24PSVmode: \
+                       fn = JOIN4(gen_,access,rdwt,_P24PSV);\
+                       break;\
+          case SImode: \
+                       fn = JOIN4(gen_,access,rdwt,_si);\
+                       break;\
+          case P32EXTmode: \
+                       fn = JOIN4(gen_,access,rdwt,_P32EXT);\
+                       break;\
+          case P32EDSmode: \
+                       fn = JOIN4(gen_,access,rdwt,_P32EDS);\
+                       break;\
+          case P32PEDSmode: \
+                       fn = JOIN4(gen_,access,rdwt,_P32PEDS);\
+                       break;\
+          case SFmode: \
+                       fn = JOIN4(gen_,access,rdwt,_sf);\
+                       break;\
+          case DImode: \
+                       fn = JOIN4(gen_,access,rdwt,_di);\
+                       break;\
+          case DFmode: \
+                       fn = JOIN4(gen_,access,rdwt,_df);\
+                       break;
+#define GEN_TARGET_RD_ACCESS(source) GEN_TARGET_ACCESS(source, rd)
+#define GEN_TARGET_WT_ACCESS(dest) GEN_TARGET_ACCESS(dest, wt)
 
 /************************************************************************/
 /* pic30_emit_move_sequence(): Expand a move RTX.                       */
@@ -7452,6 +7973,10 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
   int fForce;
   rtx op0;
   rtx op1;
+  rtx (*fn_r)(rtx,rtx) = 0;     // rhs move function
+  rtx (*fn_l)(rtx,rtx) = 0;     // lhs move function
+  rtx op0_r,op0_l;              // opnds
+  rtx op1_r,op1_l;              // opnds
 
   op0 = operands[0];
   op1 = operands[1];
@@ -7466,9 +7991,11 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
       for (id = 0; id < 2; ++id) {
         if (GET_CODE(operands[id]) == MEM) {
           enum rtx_code code;
+          enum machine_mode mode;
           rtx reg;
           code = GET_CODE(XEXP(operands[id],0));
-
+          mode = GET_MODE(XEXP(operands[id],0));
+          if (mode == HImode)
           switch (code) {
             case PRE_INC:
               /*
@@ -7500,7 +8027,7 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
               **    global
               ** to
               **    wn = &global ; [wn]
-              reg = gen_reg_rtx(Pmode);
+              reg = gen_reg_rtx(machine_Pmode);
               emit_insn((rtx) gen_movhi_address(reg, operands[id]));
               operands[id] = gen_rtx_MEM(mode, reg);
               */
@@ -7533,194 +8060,120 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
       }
       if (fForce) op1 = force_reg(mode, op1);
     }
-    if ((GET_CODE(op1) == MEM) && (pic30_move_operand(op0, mode))) {
-      rtx (*fn)(rtx,rtx) = 0;
+  }
+  if (GET_CODE(op1) == MEM) {
+    rtx (*fn)(rtx,rtx) = 0;
+    rtx o0,o1;
 
-      if (pic30_prog_operand(XEXP(op1,0),P24PROGmode)) {
-        /* our move is a P24PROG psv access */
-   
-        switch (mode) {
-          case QImode: fn = gen_P24PROGrd_qi; 
-                       break;
-          case HImode: fn = gen_P24PROGrd_hi;
-                       break;
-          case P16PMPmode: fn = gen_P24PROGrd_P16PMP;
-                       break;
-          case P24PROGmode: fn = gen_P24PROGrd_P24PROG;
-                       break;
-          case P24PSVmode: fn = gen_P24PROGrd_P24PSV;
-                       break;
-          case SImode: fn = gen_P24PROGrd_si;
-                       break;
-          case P32EXTmode: fn = gen_P24PROGrd_P32EXT;
-                       break;
-          case SFmode: fn = gen_P24PROGrd_sf;
-                       break;
-          case DImode: fn = gen_P24PROGrd_di;
-                       break;
-          case DFmode: fn = gen_P24PROGrd_df;
-                       break;
-          default:
-             error("Undefined PSV access");
-             break;
-        }
-      } else if (pic30_psv_operand(XEXP(op1,0),P24PSVmode)) {
-        /* our move is a P24PSV psv access */
-  
-        switch (mode) {
-          case QImode: fn = gen_P24PSVrd_qi;
-                       break;
-          case HImode: fn = gen_P24PSVrd_hi;
-                       break;
-          case P16PMPmode: fn = gen_P24PSVrd_P16PMP;
-                       break;
-          case P24PSVmode: fn = gen_P24PSVrd_P24PSV;
-                       break;
-          case P24PROGmode: fn = gen_P24PSVrd_P24PROG;
-                       break;
-          case SImode: fn = gen_P24PSVrd_si;
-                       break;
-          case P32EXTmode: fn = gen_P24PSVrd_P32EXT;
-                       break;
-          case SFmode: fn = gen_P24PSVrd_sf;
-                       break;
-          case DImode: fn = gen_P24PSVrd_di;
-                       break;
-          case DFmode: fn = gen_P24PSVrd_df;
-                       break;
-          default:
-             error("Undefined PSV access");
-             break;
-        }
-      } else if (pic30_pmp_operand(XEXP(op1,0),P16PMPmode)) {
-        /* our move is a P16PMP access */
-
-        switch (mode) {
-          case QImode: fn = gen_P16PMPrd_qi;
-                       break;
-          case HImode: fn = gen_P16PMPrd_hi;
-                       break;
-          case P16PMPmode: fn = gen_P16PMPrd_P16PMP;
-                       break;
-          case P24PSVmode: fn = gen_P16PMPrd_P24PSV;
-                       break;
-          case P24PROGmode: fn = gen_P16PMPrd_P24PROG;
-                       break;
-          case SImode: fn = gen_P16PMPrd_si;
-                       break;
-          case P32EXTmode: fn = gen_P16PMPrd_P32EXT;
-                       break;
-          case SFmode: fn = gen_P16PMPrd_sf;
-                       break;
-          case DImode: fn = gen_P16PMPrd_di;
-                       break;
-          case DFmode: fn = gen_P16PMPrd_df;
-                       break;
-          default:
-             error("Undefined PSV access");
-             break;
-        }
-      } else if (pic30_ext_operand(XEXP(op1,0),P32EXTmode)) {
-        /* our move is a P32EXT access */
-
-        switch (mode) {
-          case QImode: fn = gen_P32EXTrd_qi;
-                       break;
-          case HImode: fn = gen_P32EXTrd_hi;
-                       break;
-          case P16PMPmode: fn = gen_P32EXTrd_P16PMP;
-                       break;
-          case P24PSVmode: fn = gen_P32EXTrd_P24PSV;
-                       break;
-          case P24PROGmode: fn = gen_P32EXTrd_P24PROG;
-                       break;
-          case SImode: fn = gen_P32EXTrd_si;
-                       break;
-          case P32EXTmode: fn = gen_P32EXTrd_P32EXT;
-                       break;
-          case SFmode: fn = gen_P32EXTrd_sf;
-                       break;
-          case DImode: fn = gen_P32EXTrd_di;
-                       break;
-          case DFmode: fn = gen_P32EXTrd_df;
-                       break;
-          default:
-             error("Undefined PSV access");
-             break;
-        }
-      } else if (pic30_invalid_address_operand(op1, GET_MODE(op1))) {
-        return -1;
+    o0 = op0;
+    o1 = XEXP(op1,0);
+    if (pic30_apsv_operand(o1,P16APSVmode)) {
+      /* our move is an auto psv access */
+ 
+      switch (mode) {
+        GEN_TARGET_RD_ACCESS(P16APSV);
+        default:
+           error("Undefined APSV access");
+           break;
       }
-      if (fn) {
-        emit_insn(fn(op0,XEXP(op1,0)));
-        return 1;
+      if ((fn) && (!fn_r)) {
+        fn_r = fn;
+        op0_r = op0;
+        op1_r = op1;
       }
-    } else if ((GET_CODE(op0) == MEM) && (pic30_move_operand(op1, mode))) {
-      rtx (*fn)(rtx,rtx) = 0;
-
-      if (pic30_pmp_operand(XEXP(op0,0),P16PMPmode)) {
-        /* our move is a P16PMP write */
-
-        switch (mode) {
-          case QImode: fn = gen_P16PMPwt_qi;
-                       break;
-          case HImode: fn = gen_P16PMPwt_hi;
-                       break;
-          case P16PMPmode: fn = gen_P16PMPwt_P16PMP;
-                       break;
-          case P24PSVmode: fn = gen_P16PMPwt_P24PSV;
-                       break;
-          case P24PROGmode: fn = gen_P16PMPwt_P24PROG;
-                       break;
-          case SImode: fn = gen_P16PMPwt_si;
-                       break;
-          case P32EXTmode: fn = gen_P16PMPwt_P32EXT;
-                       break;
-          case SFmode: fn = gen_P16PMPwt_sf;
-                       break;
-          case DImode: fn = gen_P16PMPwt_di;
-                       break;
-          case DFmode: fn = gen_P16PMPwt_df;
-                       break;
-          default:
-             error("Undefined PMP access");
-             break;
-        }
-      } else if (pic30_ext_operand(XEXP(op0,0),P32EXTmode)) {
-        /* our move is a P32EXT write */
-
-        switch (mode) {
-          case QImode: fn = gen_P32EXTwt_qi;
-                       break;
-          case HImode: fn = gen_P32EXTwt_hi;
-                       break;
-          case P16PMPmode: fn = gen_P32EXTwt_P16PMP;
-                       break;
-          case P24PSVmode: fn = gen_P32EXTwt_P24PSV;
-                       break;
-          case P24PROGmode: fn = gen_P32EXTwt_P24PROG;
-                       break;
-          case SImode: fn = gen_P32EXTwt_si;
-                       break;
-          case P32EXTmode: fn = gen_P32EXTwt_P32EXT;
-                       break;
-          case SFmode: fn = gen_P32EXTwt_sf;
-                       break;
-          case DImode: fn = gen_P32EXTwt_di;
-                       break;
-          case DFmode: fn = gen_P32EXTwt_df;
-                       break;
-          default:
-             error("Undefined EXT access");
-             break;
-        }
-      } else if (pic30_invalid_address_operand(op1, GET_MODE(op1))) {
-        return -1;
+    } else if (pic30_prog_operand(XEXP(op1,0),P24PROGmode)) {
+      /* our move is a P24PROG psv access */
+ 
+      switch (mode) {
+        GEN_TARGET_RD_ACCESS(P24PROG);
+        default:
+           error("Undefined PSV access");
+           break;
       }
-      if (fn) {
-        emit_insn(fn(XEXP(op0,0),op1));
-        return 1;
+    } else if (pic30_psv_operand(XEXP(op1,0),P24PSVmode)) {
+      /* our move is a P24PSV psv access */
+
+      switch (mode) {
+        GEN_TARGET_RD_ACCESS(P24PSV);
+        default:
+           error("Undefined PSV access");
+           break;
       }
+    } else if (pic30_pmp_operand(XEXP(op1,0),P16PMPmode)) {
+      /* our move is a P16PMP access */
+
+      switch (mode) {
+        GEN_TARGET_RD_ACCESS(P16PMP);
+        default:
+           error("Undefined PSV access");
+           break;
+      }
+    } else if (pic30_ext_operand(XEXP(op1,0),P32EXTmode)) {
+      /* our move is a P32EXT access */
+
+      switch (mode) {
+        GEN_TARGET_RD_ACCESS(P32EXT);
+        default:
+           error("Undefined PSV access");
+           break;
+      }
+    } else if (pic30_eds_operand(XEXP(op1,0),P32EDSmode)) {
+      fn = gen_P32EDSrd;
+      o1 = op1;
+    } else if (pic30_eds_operand(XEXP(op1,0),P32PEDSmode)) {
+      fn = gen_P32PEDSrd;
+      o1 = op1;
+    } else if (pic30_invalid_address_operand(op1, GET_MODE(op1))) {
+      return -1;
+    }
+    if ((fn) && (!fn_r)) {
+      fn_r = fn;
+      op0_r = o0;
+      op1_r = o1;
+    }
+  } 
+  if (GET_CODE(op0) == MEM) {
+    rtx (*fn)(rtx,rtx) = 0;
+
+    rtx o0,o1;
+
+    o1 = op1;
+    o0 = XEXP(op0,0);
+    if (pic30_pmp_operand(XEXP(op0,0),P16PMPmode)) {
+      /* our move is a P16PMP write */
+
+      switch (mode) {
+        GEN_TARGET_WT_ACCESS(P16PMP);
+        default:
+           error("Undefined PMP write access");
+           break;
+      }
+    } else if (pic30_ext_operand(XEXP(op0,0),P32EXTmode)) {
+      /* our move is a P32EXT write */
+
+      switch (mode) {
+        GEN_TARGET_WT_ACCESS(P32EXT);
+        default:
+           error("Undefined EXT write access");
+           break;
+      }
+    } else if (pic30_eds_operand(XEXP(op0,0),P32EDSmode)) {
+      /* our move is a P32EDS write */
+
+      fn = gen_P32EDSwt;
+      o0 = op0; // these patterns do not strip MEM?
+    } else if (pic30_eds_operand(XEXP(op0,0),P32PEDSmode)) {
+      /* our move is a P32PEDS write */
+
+      fn = gen_P32PEDSwt;
+      o0 = op0; // these patterns do not strip MEM?
+    } else if ((!fn_r) && (pic30_invalid_address_operand(op1, GET_MODE(op1)))) {
+      return -1;
+    }
+    if ((fn)  && (!fn_l)) {
+      fn_l = fn;
+      op0_l = o0;
+      op1_l = o1;
     }
   }
   if ((mode == P24PROGmode) || (mode == P24PSVmode)) {
@@ -7732,9 +8185,10 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
       if (mode == P24PSVmode) 
         fn = gen_movP24PSV_address;
   
-      if (fn) {
-        emit_insn(fn(op0,op1));
-        return 1;
+      if ((fn)  && (!fn_r)) {
+        fn_r = fn;
+        op0_r = op0;
+        op1_r = op1;
       }
     } else if (pic30_symbolic_address_operand(op1,VOIDmode)) {
       const char *symbol = pic30_strip_name_encoding_helper(XSTR(op1,0));
@@ -7742,6 +8196,34 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
       error("Cannot take managed PSV address of object:\n"
             " '%s', which is not in FLASH", symbol);
       return -1;
+    }
+  } else if (mode == P32EDSmode) {
+    if (pic30_symbolic_address_operand(op1,mode)) {
+      rtx (*fn)(rtx,rtx) = 0;
+    
+      if (mode == P32EDSmode) {
+        fn = gen_movP32EDS_address;
+      }
+
+      if ((fn)  && (!fn_r)) {
+        fn_r = fn;
+        op0_r = op0;
+        op1_r = op1;
+      }
+    }
+  } else if (mode == P32PEDSmode) {
+    if (pic30_symbolic_address_operand(op1,mode)) {
+      rtx (*fn)(rtx,rtx) = 0;
+    
+      if (mode == P32PEDSmode) {
+        fn = gen_movP32PEDS_address;
+      }
+
+      if ((fn)  && (!fn_r)) {
+        fn_r = fn;
+        op0_r = op0;
+        op1_r = op1;
+      }
     }
   } else if ((mode == P16PMPmode) || (mode == P32EXTmode)) {
     if (pic30_symbolic_address_operand(op1,mode)) {
@@ -7752,11 +8234,27 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
       if (mode == P32EXTmode)
         fn = gen_movP32EXT_address;
  
-      if (fn) {
-        emit_insn(fn(op0,op1));
-        return 1;
+      if ((fn)  && (!fn_r)) {
+        fn_r = fn;
+        op0_r = op0;
+        op1_r = op1;
       }
     }
+  }
+  if (fn_r && fn_l) {
+    // oh no!  we need a special operand for read *and* write
+    //   emit both instructions using a temp
+    rtx temp = gen_reg_rtx(GET_MODE(op0_r));
+
+    emit_insn(fn_r(temp, op1_r));
+    emit_insn(fn_l(op0_l, temp));
+    return 1;
+  } else if (fn_r) {
+    emit_insn(fn_r(op0_r, op1_r));
+    return 1;
+  } else if (fn_l) {
+    emit_insn(fn_l(op0_l, op1_l));
+    return 1;
   }
   if (pic30_accumulator_operand(op0,mode)) {
     /* op1 must be a REG or MEM (REG)) */
@@ -7888,21 +8386,33 @@ int pic30_reg_or_P_operand(rtx op, enum machine_mode mode) {
 /* pic30_mode2_or_P_operand(): dsPIC30 operand mode2/P: 5-bit, unsigned    */
 /************************************************************************/
 int pic30_mode2_or_P_operand(rtx op, enum machine_mode mode) {
-    return(pic30_mode2_operand(op, mode) || pic30_P_operand(op, mode));
+  return (pic30_mode2_operand(op, mode) || pic30_P_operand(op, mode));
+}
+
+int pic30_mode2_or_P_APSV_operand(rtx op, enum machine_mode mode) {
+  return (pic30_mode2_APSV_operand(op, mode) || pic30_P_operand(op, mode));
 }
 
 /************************************************************************/
 /* pic30_rR_or_JN_operand(): dsPIC30 operand J&M: 11-bit, signed    */
 /************************************************************************/
 int pic30_rR_or_JN_operand(rtx op, enum machine_mode mode) {
-    return(pic30_reg_or_R_operand(op, mode) || pic30_JN_operand(op, mode));
+  return (pic30_reg_or_R_operand(op, mode) || pic30_JN_operand(op, mode));
+}
+
+int pic30_rR_or_JN_APSV_operand(rtx op, enum machine_mode mode) {
+  return (pic30_reg_or_R_APSV_operand(op, mode) || pic30_JN_operand(op, mode));
 }
 
 /************************************************************************/
 /* pic30_reg_or_R_operand(): dsPIC30 operand r or R            */
 /************************************************************************/
 int pic30_reg_or_R_operand(rtx op, enum machine_mode mode) {
-    return(register_operand(op, mode) || pic30_R_operand(op, mode));
+  return (register_operand(op, mode) || pic30_R_operand(op, mode));
+}
+
+int pic30_reg_or_R_APSV_operand(rtx op, enum machine_mode mode) {
+  return (register_operand(op, mode) || pic30_R_APSV_operand(op, mode));
 }
 
 /************************************************************************/
@@ -8022,37 +8532,46 @@ int pic30_Q_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
 /* pic30_R_constraint(): dsPIC30 constraint R: indirect addressing    */
 /************************************************************************/
 int pic30_R_constraint(rtx op) {
-    int fR = FALSE;
-    rtx rtxInner;
+  int fR = FALSE;
+  rtx rtxInner;
 
-    switch (GET_CODE(op))
-    {
+  switch (GET_CODE(op)) {
     case MEM:
-        rtxInner = XEXP(op, 0);
-        switch (GET_CODE(rtxInner))
-        {
-         case SUBREG:
-            fR = register_operand(rtxInner, Pmode);
-            break;
-         case REG:
-            fR = ((REGNO(op) <= WR15_REGNO) ||
-                  (REGNO(op) >= FIRST_PSEUDO_REGISTER));
-            break;
+      rtxInner = XEXP(op, 0);
+      switch (GET_MODE(rtxInner)) {
+        default: return 0;
+        case HImode:
+	case P16APSVmode:
+        case P32EDSmode:
+          break;
+      }
+      switch (GET_CODE(rtxInner)) {
+        case SUBREG:
+          fR = register_operand(rtxInner, VOIDmode);
+          break;
+        case REG:
+          fR = ((REGNO(op) <= WR15_REGNO) ||
+                 (REGNO(op) >= FIRST_PSEUDO_REGISTER));
+          break;
         default:
-            break;
-        }
-        break;
+          break;
+      }
+      break;
     default:
-        break;
-    }
-    return(fR);
+      break;
+  }
+  return fR;
 }
 
 /************************************************************************/
 /* pic30_R_operand(): dsPIC30 predicate R: indirect addressing        */
 /************************************************************************/
-int pic30_R_operand(rtx op,enum machine_mode mode ATTRIBUTE_UNUSED) {
-    return(pic30_R_constraint(op));
+int pic30_R_operand(rtx op,enum machine_mode mode) {
+  return pic30_R_constraint(op);
+}
+
+int pic30_R_APSV_operand(rtx op,enum machine_mode mode ATTRIBUTE_UNUSED) {
+  return pic30_R_constraint(op);
 }
 
 /************************************************************************/
@@ -8116,7 +8635,7 @@ int pic30_T_constraint(rtx op) {
     if (GET_CODE(op) == MEM)
     {
         rtx inner = XEXP(op, 0);
-        fT = pic30_data_space_operand_p(GET_MODE(op),inner);
+        fT = pic30_data_space_operand_p(GET_MODE(op),inner,0);
     }
     return(fT);
 }
@@ -8574,8 +9093,8 @@ void pic30_print_operand_address(FILE *file, rtx addr) {
                 break;
             default:
                 fprintf(file, "P_O_A int+UFO[int=%ld,"
-                        "code(y)=%d]",
-                        INTVAL(x), GET_CODE(y));
+                        "code(y)=%s]",
+                        INTVAL(x), rtx_name[GET_CODE(y)]);
                 break;
             }
             break;
@@ -8713,26 +9232,22 @@ static int pic30_mustsave(int r, int fLeaf, int fInterrupt) {
 **    if the function needs any local variable space.
 */
 static int pic30_frame_pointer_needed_p(int size) {
-    int fNeeded;
+  int fNeeded;
 
-    fNeeded = (frame_pointer_needed || size);
-    if (!fNeeded)
-    {
-        tree param;
+  fNeeded = (frame_pointer_needed || size);
+  if (!fNeeded) {
+    tree param;
 
-          for (    param = DECL_ARGUMENTS(current_function_decl);
-            param;
-                  param = TREE_CHAIN(param))
-        {
-            rtx rtl = DECL_INCOMING_RTL(param);
-            if (GET_CODE (rtl) != REG)
-            {
-                fNeeded = TRUE;
-                break;
-            }
-        }
+    for (param = DECL_ARGUMENTS(current_function_decl); param; 
+         param = TREE_CHAIN(param)) {
+      rtx rtl = DECL_INCOMING_RTL(param);
+      if (GET_CODE (rtl) != REG) {
+        fNeeded = TRUE;
+        break;
+      }
     }
-    return(fNeeded);
+  }
+  return fNeeded;
 }
 
 int pic30_asm_function_p(int bDiscover) {
@@ -9474,20 +9989,17 @@ void pic30_expand_prologue(void) {
 #endif
 
       if (is_boot_fn)
-        sfr = gen_rtx_SYMBOL_REF(QImode, bootconst);
+        sfr = gen_rtx_SYMBOL_REF(HImode, bootconst);
       else if (is_secure_fn)
-        sfr = gen_rtx_SYMBOL_REF(QImode, secureconst);
+        sfr = gen_rtx_SYMBOL_REF(HImode, secureconst);
       else
-        sfr = gen_rtx_SYMBOL_REF(QImode, constconst);
+        sfr = gen_rtx_SYMBOL_REF(HImode, constconst);
       if (scratch_regno == -1) {
         scratch_regno = WR8_REGNO;
         pop_scratch_regno = 1;
-        reg = gen_rtx_REG(QImode, WR8_REGNO);
+        reg = gen_rtx_REG(HImode, WR8_REGNO);
         insn = pic30_expand_pushhi(WR8_REGNO);
-#if MAKE_FRAME_RELATED
-          RTX_FRAME_RELATED_P(insn) = 1;
-#endif
-      } else reg = gen_rtx_REG(QImode, scratch_regno);
+      } else reg = gen_rtx_REG(HImode, scratch_regno);
       emit_insn(gen_movhi_address(reg,sfr));
 #if MAKE_FRAME_RELATED
           RTX_FRAME_RELATED_P(insn) = 1;
@@ -9905,26 +10417,51 @@ void pic30_expand_epilogue(void) {
 ** See if the current function requires epilogue code.
 */
 int pic30_null_epilogue_p(void) {
-    int regno;
+  int regno;
+  int is_boot_fn, is_secure_fn;
+  enum psv_model_kind psv_model = psv_unspecified;
 
-    if (reload_completed &&
-        !pic30_interrupt_function_p(current_function_decl) &&
-        !current_function_calls_alloca &&
-        !current_function_args_size &&
-        !frame_pointer_needed &&
-        !(optimize < 2) &&
-        !get_frame_size())
-    {
-        for (regno = FIRST_PSEUDO_REGISTER - 1; regno >= 0; regno--)
-        {
-            if (regs_ever_live[regno] && !call_used_regs[regno])
-            {
-                return(FALSE);
-            }
-        }
-        return(TRUE);
+  is_boot_fn = (lookup_attribute(IDENTIFIER_POINTER(pic30_identBoot[0]),
+                                 DECL_ATTRIBUTES(current_function_decl)) != 0);
+  is_secure_fn = (lookup_attribute(IDENTIFIER_POINTER(pic30_identSecure[0]),
+                                   DECL_ATTRIBUTES(current_function_decl))!= 0);
+  if (lookup_attribute(IDENTIFIER_POINTER(pic30_identConst[0]),
+                       DECL_ATTRIBUTES(current_function_decl))) {
+    psv_model = psv_auto_psv;
+  } else if (lookup_attribute(IDENTIFIER_POINTER(pic30_identNoAutoPSV[0]),
+                       DECL_ATTRIBUTES(current_function_decl))) {
+    psv_model = psv_no_auto_psv;
+  }
+  if (is_boot_fn || is_secure_fn) {
+    psv_model = psv_unspecified;
+  } else if ((pic30_interrupt_function_p(current_function_decl)) && 
+             (psv_model == psv_unspecified)) {
+    psv_model = psv_auto_psv;
+  }
+
+  if ((is_boot_fn) || (is_secure_fn) || (psv_model == psv_auto_psv)) 
+    return FALSE;
+
+  if (reload_completed &&
+      !pic30_interrupt_function_p(current_function_decl) &&
+      !current_function_calls_alloca &&
+      !current_function_args_size &&
+      !frame_pointer_needed &&
+      !(optimize < 2) &&
+      !get_frame_size()) {
+    for (regno = FIRST_PSEUDO_REGISTER - 1; regno >= 0; regno--) {
+      if (regs_ever_live[regno] && !call_used_regs[regno]) {
+        return FALSE;
+      }
     }
-    return(FALSE);
+    if (pic30_mustsave(A_REGNO, current_function_is_leaf, 
+                       pic30_interrupt_function_p(current_function_decl)) ||
+        pic30_mustsave(B_REGNO, current_function_is_leaf, 
+                       pic30_interrupt_function_p(current_function_decl)))
+      return FALSE;
+    return TRUE;
+  }
+  return FALSE;
 }
 
 /*
@@ -10077,26 +10614,33 @@ int pic30_libcall(const char *pszSymbolName) {
 ** Return 1 if the operand is a near data space reference.
 */
 int pic30_neardata_space_operand_p(rtx op) {
-    int fNear;
+  int fNear;
+  int plus=0;
 
-    fNear = FALSE;
-    switch (GET_CODE (op))
-    {
-    case LABEL_REF:
-        break;
-    case SYMBOL_REF:
-        fNear = SYMBOL_REF_FLAG(op);
-        break;
-    case PLUS:
-        /* Assume canonical format of symbol + constant.
-        Fall through.  */
-    case CONST:
-        fNear = pic30_neardata_space_operand_p(XEXP(op, 0));
-        break;
-    default:
-        break;
+  fNear = -1;
+  do {
+    switch (GET_CODE (op)) {
+      case LABEL_REF: break;
+      case SYMBOL_REF:
+          fNear = SYMBOL_REF_FLAG(op);
+          break;
+      case PLUS:
+          /* Assume canonical format of symbol + constant.
+             Fall through.  */
+          /* avoid plus (plus () ()) () */
+          if (plus) fNear = 0;
+          if (GET_CODE(XEXP(op,1)) != CONST_INT) fNear = 0;
+          plus++;
+      case CONST:
+          op = XEXP(op, 0);
+          break;
+      default:
+          fNear = 0;
+          break;
     }
-    return(fNear);
+  }
+  while (fNear < 0);
+  return fNear;
 }
 
 /*
@@ -10162,7 +10706,8 @@ int pic30_has_space_operand_p(rtx op, char *has) {
 /*
 ** Return 1 if the operand is a data space reference.
 */
-int pic30_data_space_operand_p(enum machine_mode mode,rtx op) {
+int pic30_data_space_operand_p(enum machine_mode mode,rtx op,int strict) {
+    // eh?
     if (GET_MODE(op) != mode) {
       switch (GET_MODE(op)) {
         default: break;
@@ -10170,6 +10715,8 @@ int pic30_data_space_operand_p(enum machine_mode mode,rtx op) {
         case P24PSVmode:
         case P16PMPmode:
         case P32EXTmode:
+        case P32PEDSmode:
+        case P32EDSmode:
           return 0;
       }
     }
@@ -10178,7 +10725,9 @@ int pic30_data_space_operand_p(enum machine_mode mode,rtx op) {
     case LABEL_REF:
         return(FALSE);
     case SYMBOL_REF:
-        return(!pic30_program_space_operand_p(op));
+        if (strict && (mode == QImode)) 
+          return pic30_neardata_space_operand_p(op);
+        return !pic30_program_space_operand_p(op);
     case CONST_INT:
         /*
         ** Cast of constant integer to address.
@@ -10188,7 +10737,7 @@ int pic30_data_space_operand_p(enum machine_mode mode,rtx op) {
         /* Assume canonical format of symbol + constant.
         Fall through.  */
     case CONST:
-        return(pic30_data_space_operand_p(mode,XEXP(op, 0)));
+        return pic30_data_space_operand_p(mode,XEXP(op, 0),strict);
     default:
         break;
     }
@@ -10202,32 +10751,57 @@ int pic30_data_space_operand_p(enum machine_mode mode,rtx op) {
 ** that wants to use this address.
 */
 int pic30_check_legit_addr(enum machine_mode mode, rtx addr, int fStrict) {
-    int fLegit;
-    rtx base = NULL_RTX;        /* Base register */
-    rtx indx = NULL_RTX;        /* Index register */
-    rtx disp = NULL_RTX;        /* Displacement */
+  int fLegit;
+  rtx base = NULL_RTX;        /* Base register */
+  rtx indx = NULL_RTX;        /* Index register */
+  rtx disp = NULL_RTX;        /* Displacement */
 
-    fLegit = TRUE;
-    if (CONSTANT_ADDRESS_P(addr))
-    {
-        switch (mode)
-        {
-        case P16PMPmode:
-        case P32EXTmode:
-        case P24PSVmode:
-        case P24PROGmode:  /* if (reload_in_progress) return FALSE; */
-        case HImode:
-        case SImode:
-        case SFmode:
-            return(TRUE);
-        case DFmode:
-        case DImode:
-            return(FALSE);
-        default:
-            return(pic30_program_space_operand_p(addr) ||
-                   pic30_neardata_space_operand_p(addr));
-        }
+  fLegit = TRUE;
+  if (CONSTANT_ADDRESS_P(addr)) {
+    /* saying yes if mode is > 32 bits seems to generate worse code,
+       lets say no even if it is a valid address for that mode 
+
+       but we probably want to generate the faster sequence if we are at
+       higher optimization levels 
+
+       however, if the addr mode is anything other HImode we must accept
+       the address
+    */
+    if ((GET_MODE(addr) == HImode) && ((optimize < 2) || (optimize_size))) {
+      if ((mode == DImode) || (mode == DFmode)) return FALSE;
     }
+    switch (GET_MODE(addr)) {
+      default:  return FALSE;
+      case P32PEDSmode:
+      case P32EDSmode:
+        /* EDS can access any internal memory, including PMP if v3 device */
+        return pic30_has_space_operand_p(addr, PIC30_EDS_FLAG) ||
+               pic30_has_space_operand_p(addr, PIC30_PMP_FLAG) ||
+               pic30_has_space_operand_p(addr, PIC30_PSV_FLAG) ||
+               pic30_has_space_operand_p(addr, PIC30_APSV_FLAG) ||
+               pic30_has_space_operand_p(addr, PIC30_PROG_FLAG) ||
+               pic30_has_space_operand_p(addr, PIC30_EE_FLAG) ||
+               pic30_data_space_operand_p(mode,addr,fStrict);
+      case P16APSVmode:
+        return pic30_has_space_operand_p(addr, PIC30_APSV_FLAG);
+      case P16PMPmode:
+        return pic30_has_space_operand_p(addr, PIC30_PMP_FLAG);
+      case P32EXTmode:
+        return pic30_has_space_operand_p(addr, PIC30_EXT_FLAG);
+      case P24PSVmode:
+        return pic30_has_space_operand_p(addr, PIC30_PSV_FLAG) ||
+               pic30_has_space_operand_p(addr, PIC30_APSV_FLAG) ||
+               pic30_has_space_operand_p(addr, PIC30_PROG_FLAG);
+      case P24PROGmode:  /* if (reload_in_progress) return FALSE; */
+        return pic30_has_space_operand_p(addr, PIC30_PROG_FLAG) ||
+               pic30_has_space_operand_p(addr, PIC30_APSV_FLAG) ||
+               pic30_has_space_operand_p(addr, PIC30_PSV_FLAG);
+      case HImode:
+        return pic30_data_space_operand_p(mode,addr,fStrict) ||
+               pic30_program_space_operand_p(addr) ||
+               pic30_has_space_operand_p(addr, PIC30_APSV_FLAG);
+      }
+  }
     switch (GET_CODE(addr))
     {
     case PRE_DEC:
@@ -10236,6 +10810,8 @@ int pic30_check_legit_addr(enum machine_mode mode, rtx addr, int fStrict) {
     case POST_INC:
         switch (mode)
         {
+        case P32PEDSmode:
+        case P32EDSmode:
         case P16PMPmode:
         case P32EXTmode:
         case P24PSVmode:
@@ -10320,6 +10896,8 @@ int pic30_check_legit_addr(enum machine_mode mode, rtx addr, int fStrict) {
         {
             switch (mode)
             {
+            case P32PEDSmode:
+            case P32EDSmode:
             case P16PMPmode:
             case P32EXTmode:
             case P24PSVmode:
@@ -11119,6 +11697,10 @@ static void pic30_init_idents(void) {
         pic30_identEedata[1] = get_identifier("__eedata__");
         pic30_identDma[0] = get_identifier("dma");
         pic30_identDma[1] = get_identifier("__dma__");
+        pic30_identEds[0] = get_identifier("eds");
+        pic30_identEds[1] = get_identifier("__eds__");
+        pic30_identPage[0] = get_identifier("page");
+        pic30_identPage[1] = get_identifier("__page__");
 
         pic30_identAddress[0] = get_identifier("address");
         pic30_identAddress[1] = get_identifier("__address__");
@@ -11587,6 +12169,9 @@ static tree pic30_valid_machine_decl_attribute(tree *node, tree identifier,
   if (IDENT_FILLUPPER(identifier)) {
     return NULL_TREE;
   }
+  if (IDENT_PAGE(identifier)) {
+    return NULL_TREE;
+  }
   /*
   ** Check for address space attributes.
   */
@@ -11605,7 +12190,8 @@ static tree pic30_valid_machine_decl_attribute(tree *node, tree identifier,
     if (IDENT_PROG(TREE_VALUE(args)) || IDENT_DATA(TREE_VALUE(args)) ||
         IDENT_XMEMORY(TREE_VALUE(args)) || IDENT_YMEMORY(TREE_VALUE(args)) ||
         IDENT_CONST(TREE_VALUE(args)) || IDENT_PSV(TREE_VALUE(args)) ||
-        IDENT_EEDATA(TREE_VALUE(args)) || IDENT_DMA(TREE_VALUE(args))) 
+        IDENT_EEDATA(TREE_VALUE(args)) || IDENT_DMA(TREE_VALUE(args)) ||
+        IDENT_EDS(TREE_VALUE(args))) 
     { char space;
 
       if ((!(pic30_device_mask & HAS_EEDATA)) && 
@@ -12071,7 +12657,7 @@ static tree pic30_valid_machine_type_attribute(tree *node, tree identifier,
         (IDENT_PROG(TREE_VALUE(args)) || IDENT_DATA(TREE_VALUE(args)) ||
         IDENT_XMEMORY(TREE_VALUE(args)) || IDENT_YMEMORY(TREE_VALUE(args)) ||
         IDENT_CONST(TREE_VALUE(args)) || IDENT_PSV(TREE_VALUE(args)) ||
-        IDENT_EEDATA(TREE_VALUE(args)))) {
+        IDENT_EEDATA(TREE_VALUE(args)) || IDENT_EDS(TREE_VALUE(args)))) {
         if (lookup_attribute(IDENTIFIER_POINTER(identifier),
                              TYPE_ATTRIBUTES(type)) == NULL_TREE)
         { char space;
@@ -12358,6 +12944,12 @@ static void pic30_merged_asm_named_section(const char *pszSectionName,
   if (flags & SECTION_READ_ONLY) {
     f += sprintf(f, "," SECTION_ATTR_CONST);
   }
+  if (flags & SECTION_EDS) {
+    f += sprintf(f, "," SECTION_ATTR_EDS);
+  }
+  if (flags & SECTION_PAGE) {
+    f += sprintf(f, "," SECTION_ATTR_PAGE);
+  }
   if (flags & SECTION_XMEMORY) {
     f += sprintf(f, "," SECTION_ATTR_XMEMORY);
   }
@@ -12620,7 +13212,7 @@ static unsigned int pic30_reganydef(rtx op) {
     switch (GET_CODE(op))
     {
     case SUBREG:
-        if (!register_operand(op, Pmode))
+        if (!register_operand(op, machine_Pmode))
         {
             break;
         }
@@ -12704,7 +13296,7 @@ static unsigned int pic30_reginduse(rtx op) {
               switch (GET_CODE(rtxPlusOp0))
             {
             case SUBREG:
-                if (!register_operand(rtxPlusOp0, Pmode))
+                if (!register_operand(rtxPlusOp0, machine_Pmode))
                 {
                     break;
                 }
@@ -12717,7 +13309,7 @@ static unsigned int pic30_reginduse(rtx op) {
                 switch (GET_CODE(rtxPlusOp1))
                 {
                 case SUBREG:
-                    if (!register_operand(rtxPlusOp1,Pmode))
+                    if (!register_operand(rtxPlusOp1,machine_Pmode))
                     {
                         break;
                     }
@@ -12733,7 +13325,7 @@ static unsigned int pic30_reginduse(rtx op) {
             }
             break;
         case SUBREG:
-            if (!register_operand(rtxInner, Pmode))
+            if (!register_operand(rtxInner, machine_Pmode))
             {
                 break;
             }
@@ -13474,8 +14066,9 @@ rtx pic30_return_addr_rtx(int count ATTRIBUTE_UNUSED, rtx frameaddr) {
   }
   else
   {
-    ret = gen_rtx_MEM(Pmode, 
-            memory_address(Pmode,plus_constant(frameaddr,-3 * UNITS_PER_WORD)));
+    ret = gen_rtx_MEM(machine_Pmode, 
+            memory_address(machine_Pmode,
+                           plus_constant(frameaddr,-3 * UNITS_PER_WORD)));
   }
   return(ret);
 }
@@ -13667,6 +14260,14 @@ void pic30_asm_file_end(void) {
   if (pic30_errata_mask & psv_address_errata) {
     fprintf(asm_out_file,
             "\n\t.section __c30_info, info, bss\n__psv_trap_errata:\n");
+  }
+  if (external_options_mask.mask) {
+    fprintf(asm_out_file,
+            "\n\t.section __c30_signature, info, data\n"
+            "\t.word 0x0001\n"
+            "\t.word 0x%4.4x\n"
+            "\t.word 0x%4.4x\n",
+            external_options_mask.mask, options_set.mask);
   }
   if (pic30_pmp_space_cs0 || pic30_pmp_space_cs1 || pic30_pmp_space_cs2) {
 
@@ -14125,6 +14726,10 @@ rtx pic30_legitimize_address(rtx x, rtx oldx ATTRIBUTE_UNUSED,
                 return x;
               } else if ((GET_MODE(x) == P16PMPmode) && (GET_MODE(x) == mode)) {
                 return x;
+              } else if ((GET_MODE(x) == P32PEDSmode) && (GET_MODE(x) == mode)){
+                return x;
+              } else if ((GET_MODE(x) == P32EDSmode) && (GET_MODE(x) == mode)) {
+                return x;
               } else if ((GET_MODE(x) == P32EXTmode) && (GET_MODE(x) == mode)) {
                 return x;
               }
@@ -14169,7 +14774,9 @@ int pic30_extended_pointer_operand(rtx x, enum machine_mode mode) {
         default: return 0;
         case SYMBOL_REF:
           if (GET_MODE(lhs) != mode) return 0;
-          if (mode == P24PSVmode) {
+          if (mode == P16APSVmode) {
+            if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_APSV_FLAG)) return 1;
+          } else if (mode == P24PSVmode) {
             if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PROG_FLAG)) {
               error("Accessing a variable in program space with a psv "
                     "pointer is dangerous");
@@ -14179,11 +14786,18 @@ int pic30_extended_pointer_operand(rtx x, enum machine_mode mode) {
             return 1;
           } else if (mode == P24PROGmode) {
             if ((PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PROG_FLAG)) ||
+                (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_APSV_FLAG)) ||
                 (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PSV_FLAG))) {
               return 1;
             }
           } else if (mode == P16PMPmode) {
             if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PMP_FLAG))
+              return 1;
+          } else if (mode == P32EDSmode) {
+            if (pic30_eds_space_operand_p(XSTR(lhs,0)))
+              return 1;
+          } else if (mode == P32PEDSmode) {
+            if (pic30_eds_space_operand_p(XSTR(lhs,0)))
               return 1;
           } else if (mode == P32EXTmode) {
             if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_EXT_FLAG))
@@ -14204,21 +14818,31 @@ int pic30_extended_pointer_operand(rtx x, enum machine_mode mode) {
       return 1;  /* pic30_move_operand doesn't check rhs */
     case SYMBOL_REF:
       if (GET_MODE(x) != mode) return 0;
-      if (mode == P24PSVmode) {
+      if (mode == P16APSVmode) {
+        if (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_APSV_FLAG)) return 1;
+      } else if (mode == P24PSVmode) {
         if (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PROG_FLAG)) {
           error("Accessing a variable in program space with a psv "
                 "pointer is dangerous");
-        } else if (!(PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PSV_FLAG))) {
-          return 0;
+        } else if ((PIC30_HAS_NAME_P(XSTR(x,0),PIC30_APSV_FLAG)) ||
+                   (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PSV_FLAG))) {
+          return 1;
         }
-        return 1;
+        return 0;
       } else if (mode == P24PROGmode) {
         if ((PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PROG_FLAG)) ||
+            (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_APSV_FLAG)) ||
             (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PSV_FLAG))) {
           return 1;
         }
       } else if (mode == P16PMPmode) {
         if (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PMP_FLAG))
+          return 1;
+      } else if (mode == P32EDSmode) {
+        if (pic30_eds_space_operand_p(x))
+          return 1;
+      } else if (mode == P32PEDSmode) {
+        if (pic30_eds_space_operand_p(x))
           return 1;
       } else if (mode == P32EXTmode) {
         if (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_EXT_FLAG))
@@ -14227,9 +14851,11 @@ int pic30_extended_pointer_operand(rtx x, enum machine_mode mode) {
       break;
     case CONST:
       return pic30_extended_pointer_operand(XEXP(x,0),mode);
+#if 0
     case MEM:
       if (GET_MODE(x) == mode) return 1;
       break;
+#endif
   }
   return 0;
 }
@@ -14242,12 +14868,33 @@ int pic30_psv_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
   return pic30_extended_pointer_operand(x, P24PSVmode);
 } 
 
+int pic30_apsv_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
+  return pic30_extended_pointer_operand(x, P16APSVmode);
+} 
+
 int pic30_pmp_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
   return pic30_extended_pointer_operand(x, P16PMPmode);
 }
 
 int pic30_ext_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
   return pic30_extended_pointer_operand(x, P32EXTmode);
+}
+int pic30_eds_operand(rtx x, enum machine_mode mode) {
+  return pic30_extended_pointer_operand(x, mode);
+}
+
+int pic30_mem_eds_operand(rtx x, enum machine_mode mode) {
+  if (GET_CODE(x) == MEM) {
+    return pic30_extended_pointer_operand(XEXP(x,0), P32EDSmode);
+  } 
+  return 0;
+}
+
+int pic30_mem_peds_operand(rtx x, enum machine_mode mode) {
+  if (GET_CODE(x) == MEM) {
+    return pic30_extended_pointer_operand(XEXP(x,0), P32PEDSmode);
+  } 
+  return 0;
 }
 
 int pic30_psvpage_operand(rtx x, enum machine_mode mode) {
@@ -14257,14 +14904,33 @@ int pic30_psvpage_operand(rtx x, enum machine_mode mode) {
 enum machine_mode pic30_pointer_mode(tree type, tree decl) {
   tree actual_type;
   int prog=0;
+  int apsv=0;
   int psv=0;
   int pmp=0;
   int external=0;
+  int eds=0;
   int target_qualifiers;
   int qualifications = 0;
+  tree space_attr=0;
+  int is_scalar;
 
   /* not yet initialized? return Pmode */
-  if (pic30_identPsv[0] == 0) return Pmode;
+  if (pic30_identPsv[0] == 0) {
+    if (TYPE_READONLY(type) && TARGET_CONST_IN_CODE) return P16APSVmode;
+    return Pmode;
+  }
+  switch (TREE_CODE(type)) {
+    default:  is_scalar = 0;
+              break;
+    case FUNCTION_TYPE:
+    case OFFSET_TYPE:
+    case ENUMERAL_TYPE:
+    case BOOLEAN_TYPE:
+    case CHAR_TYPE:
+    case INTEGER_TYPE:
+    case REAL_TYPE: is_scalar = 1;
+                    break;
+  }
   if (decl) {
     /* selecting pointer mode for make_decl_rtl */
     /* ie:  mem:MODE (symbol_ref:MODE2 x)
@@ -14279,15 +14945,10 @@ enum machine_mode pic30_pointer_mode(tree type, tree decl) {
      *  would need (mem:P24PSV (symbol_ref: Pmode (foo)))
      *    since foo is stored in data memory (and its address is there too)
      */
-    tree space_attr;
 
     space_attr = lookup_attribute(IDENTIFIER_POINTER(pic30_identSpace[0]),
                                   DECL_ATTRIBUTES(decl));
     if (space_attr) {
-      int pmp=0;
-      int external=0;
-      int psv=0;
-      int prog=0;
       /* declaration is in space */
   
       if (TREE_CODE(TREE_VALUE(TREE_VALUE(space_attr))) == CALL_EXPR) {
@@ -14296,38 +14957,62 @@ enum machine_mode pic30_pointer_mode(tree type, tree decl) {
         pmp = IDENT_PMP(DECL_NAME(id));
         external = IDENT_EXTERNAL(DECL_NAME(id));
       }
-      psv = (space_attr && IDENT_CONST(TREE_VALUE(TREE_VALUE(space_attr))));
+      apsv = (space_attr && IDENT_CONST(TREE_VALUE(TREE_VALUE(space_attr))));
+      psv = apsv;
       psv |= (space_attr && IDENT_PSV(TREE_VALUE(TREE_VALUE(space_attr))));
       prog = (space_attr && IDENT_PROG(TREE_VALUE(TREE_VALUE(space_attr))));
+      eds = (space_attr && IDENT_EDS(TREE_VALUE(TREE_VALUE(space_attr))));
       switch (TYPE_MODE(type)) {
-        case P24PSVmode: if (psv) return P24PSVmode;
-                         break;
+        case P16APSVmode: if (apsv) return P16APSVmode;
+                          break;
+        case P24PSVmode:  if (psv) return P24PSVmode;
+                          break;
         case P24PROGmode: if (prog) return P24PROGmode;
-                         break;
-        case P16PMPmode: if (pmp) return P16PMPmode;
-                         break;
-        case P32EXTmode: if (external) return P32EXTmode;
-                         break;
+                          break;
+        case P16PMPmode:  if (pmp) return P16PMPmode;
+                          break;
+        case P32EXTmode:  if (external) return P32EXTmode;
+                          break;
+        case P32PEDSmode: 
+        case P32EDSmode:  if (!pmp && !external) {
+                            if (is_scalar) return P32PEDSmode;
+                            else return P32EDSmode;
+                          }
+                          break;
       }
     }
-    if (TREE_CODE(type) == POINTER_TYPE) return Pmode;
+  }
+#if 0
+  if (TREE_CODE(type) == ARRAY_TYPE) {
+    if (TYPE_READONLY(type) && TARGET_CONST_IN_CODE) return P16APSVmode;
+    return Pmode;
+  }
+#endif
+  actual_type = type;
+  while (TREE_CODE(actual_type) == ARRAY_TYPE) {
+    /* examine the underlying type of the array - for example if the type
+       of the array is const qualified, the array is in auto_psv...
+       also if the underlying type is __psv__, then it must also be in
+       FLASH */
+    actual_type = TREE_TYPE(actual_type);
   }
   /* some other code (alias analysis, +?) forced the type to be 24bit pointer 
      type, the qualifiers might not be present, allow the force */
-  if ((TYPE_MODE(type) == P24PSVmode) || (TYPE_MODE(type) == P24PROGmode) ||
-      (TYPE_MODE(type) == P16PMPmode) || (TYPE_MODE(type) == P32EXTmode))
-    return TYPE_MODE(type);
-  actual_type = type;
-  while (TREE_CODE(actual_type) == ARRAY_TYPE) {
-    /* if we have an array type then the actual type we need to check is
-       type of the array which may be marked prog or psv */
-    actual_type = TREE_TYPE(actual_type);
+  if (TREE_CODE(actual_type) != POINTER_TYPE) {
+    if ((TYPE_MODE(actual_type) == P24PSVmode) || 
+        (TYPE_MODE(actual_type) == P24PROGmode) ||
+        (TYPE_MODE(actual_type) == P16PMPmode) || 
+        (TYPE_MODE(actual_type) == P32EXTmode) ||
+        (TYPE_MODE(actual_type) == P32EDSmode) || 
+        (TYPE_MODE(actual_type) == P32PEDSmode))
+      return TYPE_MODE(type);
   }
   target_qualifiers = TYPE_TARGET_QUALIFIER(actual_type);
   psv = (target_qualifiers & tq_psv) && (++qualifications);
   prog = (target_qualifiers & tq_prog) && (++qualifications);
   pmp = (target_qualifiers & tq_pmp) && (++qualifications);
   external = (target_qualifiers & tq_external) && (++qualifications);
+  eds = (target_qualifiers & tq_eds) && (++qualifications);
   if (qualifications > 1) {
     error("Incompatible mix of type qualifiers");
   }
@@ -14339,9 +15024,23 @@ enum machine_mode pic30_pointer_mode(tree type, tree decl) {
     return P16PMPmode;
   } else if (external) {
     return P32EXTmode;
-  } else {
-    return Pmode;
+  } else if (eds) {
+    // a decl present means we are taking the address of a specific variable
+    //   which we can use paged mode for if it is scalar
+    if (decl && is_scalar) return P32PEDSmode;  
+    return P32EDSmode;
   }
+  if (decl && TARGET_CONST_IN_CODE) {
+    if (TREE_CODE(decl) == STRING_CST) return P16APSVmode;
+    if (TREE_CODE(decl) == VAR_DECL) {
+        if ((apsv || (!space_attr && TREE_READONLY(decl))) &&
+            (DECL_INITIAL(decl) || (DECL_EXTERNAL(decl))))
+          return P16APSVmode;
+    }
+  }
+  if (TREE_CODE(type) == FUNCTION_TYPE) return HImode;
+  if (TYPE_READONLY(type) && (TARGET_CONST_IN_CODE)) return P16APSVmode;
+  return Pmode;
 }
 
 /*
@@ -14369,6 +15068,8 @@ void pic30_layout_type(tree type) {
       if ((TYPE_MODE(type) == P24PSVmode) || 
           (TYPE_MODE(type) == P24PROGmode) ||
           (TYPE_MODE(type) == P16PMPmode) ||
+          (TYPE_MODE(type) == P32PEDSmode) ||
+          (TYPE_MODE(type) == P32EDSmode) ||
           (TYPE_MODE(type) == P32EXTmode)) {
         mode = TYPE_MODE(type);
       }
@@ -14386,18 +15087,22 @@ void pic30_layout_type(tree type) {
 
 bool pic30_valid_pointer_mode(enum machine_mode mode) {
   switch (mode) {
-    case Pmode:
-    case P32EXTmode:
+    case HImode:
+    case P16APSVmode:
     case P16PMPmode:
     case P24PROGmode:
-    case P24PSVmode:  return 1;
+    case P24PSVmode:
+    case P32EXTmode:
+    case P32PEDSmode:
+    case P32EDSmode:   
+      return 1;
     default:  break;
   }
   if (mode == ptr_mode) return 1;
   return 0;
 }
 
-bool pic30_convert_pointer(rtx to, rtx from) {
+bool pic30_convert_pointer(rtx to, rtx from, int unsignedp) {
   rtx result;
   rtx result2;
 
@@ -14424,6 +15129,18 @@ bool pic30_convert_pointer(rtx to, rtx from) {
                                     gen_rtx_SYMBOL_REF(P24PSVmode,XSTR(from,0)))
              );
              return 1;
+          case P32PEDSmode:
+             emit_insn(
+               gen_movP32PEDS_address(to,
+                                   gen_rtx_SYMBOL_REF(P32PEDSmode,XSTR(from,0)))
+             );
+             return 1;
+          case P32EDSmode:
+             emit_insn(
+               gen_movP32EDS_address(to,
+                                    gen_rtx_SYMBOL_REF(P32EDSmode,XSTR(from,0)))
+             );
+             return 1;
           case P32EXTmode:
              emit_insn(
                gen_movP32EXT_address(to,
@@ -14435,15 +15152,26 @@ bool pic30_convert_pointer(rtx to, rtx from) {
         break;
     }
   }
-  result2 = pic30_convert_mode(GET_MODE(to), GET_MODE(from), from, 1);
+#if 0
+  result2 = pic30_convert_mode(GET_MODE(to), GET_MODE(from), from, unsignedp);
   if (result2) {
+    rtx To = to;
     result = gen_reg_rtx(GET_MODE(from));
    
+    // emit_insn(gen_rtx_SET(GET_MODE(from),result,from));
     emit_move_insn(result,from);
-    result2 = pic30_convert_mode(GET_MODE(to), GET_MODE(result), result, 1);
-    emit_move_insn(to, result2);
+    result2 = pic30_convert_mode(GET_MODE(to), GET_MODE(result), result, 
+                                 unsignedp);
+    if (!REG_P(To)) {
+      To = gen_reg_rtx(GET_MODE(To));
+    }
+    emit_move_insn(To, result2);
+    if (To != to) {
+      emit_move_insn(to, To);
+    }
     return 1;
   }
+#endif
   return 0;
 }
 
@@ -14565,6 +15293,8 @@ int pic30_parse_target_rid(tree qual, int *x) {
     *x |= tq_pmp;
   else if (strcmp(IDENTIFIER_POINTER(qual), "__external__") == 0)
     *x |= tq_external;
+  else if (strcmp(IDENTIFIER_POINTER(qual), "__eds__") == 0)
+    *x |= tq_eds;
   return 0;
 }
 
@@ -14572,14 +15302,16 @@ rtx pic30_convert_mode(enum machine_mode newmode ATTRIBUTE_UNUSED,
                        enum machine_mode oldmode ATTRIBUTE_UNUSED, 
                        rtx x ATTRIBUTE_UNUSED, 
                        int unsignedp) {
-  rtx result = 0;
-
   if (newmode != oldmode) {
-    if (GET_MODE_BITSIZE(newmode) == GET_MODE_BITSIZE(oldmode)) {
+    if (GET_MODE_BITSIZE(newmode) <= GET_MODE_BITSIZE(oldmode)) {
       return gen_rtx_SUBREG(newmode, x, 0);
+    } else if (unsignedp) {
+      return gen_rtx_ZERO_EXTEND(newmode, x);
+    } else {
+      return gen_rtx_SIGN_EXTEND(newmode, x);
     }
   }
-  return result;
+  return 0;
 }
 
 /*
@@ -14808,6 +15540,8 @@ pic30_expand_constant(tree t) {
       if ((TYPE_MODE(TREE_TYPE(t)) == P24PROGmode) ||
           (TYPE_MODE(TREE_TYPE(t)) == P24PSVmode) ||
           (TYPE_MODE(TREE_TYPE(t)) == P16PMPmode) ||
+          (TYPE_MODE(TREE_TYPE(t)) == P32PEDSmode) ||
+          (TYPE_MODE(TREE_TYPE(t)) == P32EDSmode) ||
           (TYPE_MODE(TREE_TYPE(t)) == P32EXTmode)) {
         new_tree = copy_node(TREE_OPERAND(t,0));
         TREE_TYPE(new_tree) = TREE_TYPE(t);
@@ -14961,17 +15695,20 @@ int pic30_output_address_of_external(FILE *output_file, rtx op1) {
   return 1;
 }
 
-int pic30_emit_block_move(rtx x, rtx y, rtx size) {
+int pic30_emit_block_move(rtx x, rtx *y, rtx size, unsigned int align) {
   rtx innerx = 0;
   rtx innery = 0;
   int result = 0;
+  char *fn=0;
   tree sym;
+  enum machine_mode mode;
+  rtx reg;
 
   if ((GET_CODE(x) == MEM) && (GET_MODE(x) == BLKmode)) {
     innerx = XEXP(x,0);
   }
-  if ((GET_CODE(y) == MEM) && (GET_MODE(y) == BLKmode)) {
-    innery = XEXP(y,0);
+  if ((GET_CODE(*y) == MEM) && (GET_MODE(*y) == BLKmode)) {
+    innery = XEXP(*y,0);
   }
   if ((innerx == 0) || (GET_MODE(innerx) == P24PSVmode) || 
       (GET_MODE(innerx) == P24PROGmode)) {
@@ -14984,6 +15721,12 @@ int pic30_emit_block_move(rtx x, rtx y, rtx size) {
   }
   switch (GET_MODE(innery)) {
     default: return 0;  /* cannot support this source mode */
+    case P16APSVmode: {
+      /* treat it like HImode */
+      rtx z = gen_rtx_SUBREG(HImode, innery, 0);
+      *y = gen_rtx_MEM(BLKmode, z);
+      return 0;
+    }
     case P24PSVmode:
     case P24PROGmode:
       if (GET_MODE(innerx) == HImode) {
@@ -15017,8 +15760,273 @@ int pic30_emit_block_move(rtx x, rtx y, rtx size) {
         result=1;
       }
       break;
+    case P32PEDSmode:
+      if ((GET_MODE(innerx) == HImode) || (GET_MODE(innerx) == P32PEDSmode))
+        fn = "_memcpy_peds";
+      /* FALLSTHROUGH */
+    case P32EDSmode:
+      sym = maybe_get_identifier(fn ? fn : "_memcpy_eds");
+      if (sym) sym = lookup_name(sym);
+      if (!sym) {
+        /* define it */
+        tree fn_type;
+        tree decl;
+
+        sym = get_identifier(fn ? fn : "_memcpy_eds");
+        fn_type = build_function_type_list(void_type_node,
+                                           long_unsigned_type_node,
+                                           long_unsigned_type_node,
+                                           unsigned_type_node,
+                                           unsigned_type_node,NULL_TREE);
+        decl = build_decl(FUNCTION_DECL, sym, fn_type);
+        TREE_PUBLIC(decl) = 1;
+        DECL_EXTERNAL(decl)=1;
+        SET_DECL_ASSEMBLER_NAME(decl,sym);
+        // bind(sym,decl,external_scope,1,0);
+        sym = decl;
+      }
+      if (GET_MODE(innerx) == HImode) {
+        reg = gen_reg_rtx(P32PEDSmode);
+        mode = P32PEDSmode;
+        emit_insn(
+          gen_extendhip32peds2(reg,innerx)
+        );
+      } else {
+        reg = innerx;
+        mode = GET_MODE(innerx);
+      }
+      emit_library_call(XEXP(DECL_RTL(sym),0),
+                        LCT_NORMAL, VOIDmode, 4,
+                        innery, GET_MODE(innery),
+                        reg, mode,
+                        size, HImode,
+                        GEN_INT(align), HImode);
+      result=1;
+
   }
   return result;
+}
+
+/*
+ * return the section name from which to base a {psv|table|eds}{offset|page}
+ * if no named section, return the operand as usual
+ */
+#define MAXHASH 253
+
+hashval_t section_base_hash(const void *foo) {
+  char *name =foo;
+  hashval_t val;
+
+#define v(x) ((x) == '_' ? 53 : (x) == 0 ? 0 : (x) <= 'Z' ? (x)-'Z' : (x) - 'z')
+
+  val = v(name[1]) + v(name[2]) + v(name[3]);
+  if (val > MAXHASH) val = MAXHASH;
+  return val;
+}
+
+int section_base_eq(const void *a, const void *b) {
+  char *A,*B;
+
+  A=a;
+  B=b;
+  return (strcmp(A,B) == 0);
+}
+   
+char *pic30_section_base(rtx x, int operand) {
+  tree decl = 0;
+  tree section;
+  tree result;
+  char *r;
+  static htab_t table = 0;
+  char entry[256];
+  rtx op = x;
+  int is_const=0;
+  rtx offset = 0;
+
+  if (table == 0) {
+    table = htab_create_alloc(MAXHASH, section_base_hash, section_base_eq, 0, 
+                              xcalloc, free);
+  }
+  do {
+    switch (GET_CODE(op)) {
+      case SYMBOL_REF: 
+      case LABEL_REF:  
+        decl = SYMBOL_REF_DECL(op);
+        op = 0;
+        break;
+      case CONST:
+        op = XEXP(op,0);
+        is_const = 1;
+        break;
+      case PLUS:
+        offset = XEXP(op,1);
+        op = XEXP(op,0);
+        break;
+      default: op = 0;
+    }
+  }
+  while (op);
+      
+  if (decl) {
+    section = DECL_SECTION_NAME(decl);
+    const char *name;
+
+    if (section) {
+      name = TREE_STRING_POINTER(DECL_SECTION_NAME(decl));
+      if (strcmp(name,pic30_default_section) == 0) section = 0;
+    }
+    if (((operand == 0) || (section == 0)) || 
+        !(PIC30_HAS_NAME_P(XSTR(x,0), PIC30_PAGE_FLAG))) {
+      r = XSTR(XEXP(DECL_RTL(decl),0),0);
+      r = pic30_strip_name_encoding_helper(r);
+      if (offset && is_const) {
+        sprintf(entry,"_%s+%d",r,INTVAL(offset));
+      } else sprintf(entry,"_%s",r);
+      r = htab_find(table, entry);
+      if (!r) {
+        char **s = htab_find_slot(table, entry, 1);
+        *s = xstrdup(entry); 
+        r = *s;
+      }
+      return r;
+    } else {
+      result = get_identifier(TREE_STRING_POINTER(section));
+      r = IDENTIFIER_POINTER(result);
+      if (offset && is_const) {
+        sprintf(entry,"_%s+%d",r,INTVAL(offset));
+        r = htab_find(table, entry);
+        if (!r) {
+          char **s = htab_find_slot(table, entry, 1);
+          *s = xstrdup(entry); 
+          r = *s;
+        }
+      }
+      return r;
+    }
+  }
+  return "cannot find symbol name";
+}
+
+rtx gen_rtx_EDSPAGE(enum machine_mode mode, rtx reg) {
+  return gen_rtx_fmt_e(EDSPAGE, mode, reg);
+}
+
+rtx gen_rtx_PSVPAGE(enum machine_mode mode, rtx reg) {
+  return gen_rtx_fmt_e(PSVPAGE, mode, reg);
+}
+
+rtx gen_rtx_TBLPAGE(enum machine_mode mode, rtx reg) {
+  return gen_rtx_fmt_e(TBLPAGE, mode, reg);
+}
+
+rtx gen_rtx_EDSOFFSET(enum machine_mode mode, rtx reg) {
+  return gen_rtx_fmt_e(EDSOFFSET, mode, reg);
+}
+
+rtx gen_rtx_TBLOFFSET(enum machine_mode mode, rtx reg) {
+  return gen_rtx_fmt_e(TBLOFFSET, mode, reg);
+}
+
+rtx gen_rtx_PSVOFFSET(enum machine_mode mode, rtx reg) {
+  return gen_rtx_fmt_e(PSVOFFSET, mode, reg);
+}
+
+rtx gen_rtx_DMAOFFSET(enum machine_mode mode, rtx reg) {
+  return gen_rtx_fmt_e(DMAOFFSET, mode, reg);
+}
+
+void pic30_cpu_cpp_builtins(void *pfile) {
+  char buffer[80]; 
+  extern const char *pic30_it_option; 
+  extern const char *pic30_it_option_arg; 
+  extern int flag_lang_asm; 
+  
+  if (pic30_target_family) cpp_define(pfile, pic30_target_family); 
+  if (pic30_target_cpu) cpp_define(pfile, pic30_target_cpu); 
+  sprintf(buffer,"__BUILTIN_ITTYPE"); 
+  cpp_define(pfile,buffer); 
+  if (pic30_it_option) { 
+    sprintf(buffer,"__IT_TRANSPORT=%s",pic30_it_option); 
+    cpp_define(pfile,buffer); 
+    if (pic30_it_option_arg) { 
+      int i=1; 
+      char *s,*c; 
+      
+      c = pic30_it_option_arg; 
+      do { 
+        s = c; 
+        for (; *c && *c != ','; c++); 
+        if (*c) *c++ = 0; 
+        sprintf(buffer,"__IT_TRANSPORT_OPTION%d=%s",i++,s); 
+        cpp_define(pfile,buffer); 
+      } while (*c); 
+    } 
+  }
+  {
+    sprintf(buffer,"__C30_VERSION__=%d", pic30_compiler_version);
+    cpp_define(pfile,buffer);
+  }
+
+  if (flag_lang_asm == 0) { 
+#if PIC30_DWARF2
+    cpp_define(pfile,"__C30"); 
+    cpp_define(pfile,"__C30ELF"); 
+    cpp_define(pfile,"__dsPIC30"); 
+    cpp_define(pfile,"__dsPIC30ELF"); 
+    cpp_define(pfile,"__C30__"); 
+    cpp_define(pfile,"__C30ELF__"); 
+    cpp_define(pfile,"__dsPIC30__"); 
+    cpp_define(pfile,"__dsPIC30ELF__"); 
+    if (!flag_iso) {
+      cpp_define(pfile,"C30"); 
+      cpp_define(pfile,"C30ELF"); 
+      cpp_define(pfile,"dsPIC30"); 
+      cpp_define(pfile,"dsPIC30ELF"); 
+    } 
+#else
+    cpp_define(pfile,"__C30"); 
+    cpp_define(pfile,"__C30COFF"); 
+    cpp_define(pfile,"__dsPIC30"); 
+    cpp_define(pfile,"__dsPIC30COFF"); 
+    cpp_define(pfile,"__C30__"); 
+    cpp_define(pfile,"__C30COFF__"); 
+    cpp_define(pfile,"__dsPIC30__"); 
+    cpp_define(pfile,"__dsPIC30COFF__"); 
+    if (!flag_iso) {
+      cpp_define(pfile,"C30"); 
+      cpp_define(pfile,"C30COFF"); 
+      cpp_define(pfile,"dsPIC30"); 
+      cpp_define(pfile,"dsPIC30COFF"); 
+    } 
+#endif
+  } else { 
+    cpp_define(pfile,"__ASM30"); 
+    cpp_define(pfile,"__ASM30__"); 
+    if (!flag_iso) {
+      cpp_define(pfile,"ASM30"); 
+    } 
+  } 
+  if (pic30_device_mask) { 
+    if (pic30_device_mask & HAS_DSP) cpp_define(pfile,"__HAS_DSP__"); 
+    if (pic30_device_mask & HAS_EEDATA) cpp_define(pfile,"__HAS_EEDATA__"); 
+    if (pic30_device_mask & HAS_DMA) cpp_define(pfile,"__HAS_DMA__"); 
+    if (pic30_device_mask & HAS_CODEGUARD) 
+      cpp_define(pfile,"__HAS_CODEGUARD__");
+    if (pic30_device_mask & HAS_PMP) cpp_define(pfile,"__HAS_PMP__"); 
+    if (pic30_device_mask & HAS_PMPV2) cpp_define(pfile,"__HAS_PMP_ENHANCED__");
+    if (pic30_device_mask & HAS_EDS) cpp_define(pfile,"__HAS_EDS__"); 
+  } 
+}
+
+void initialize_object_signatures(void) {
+  /* intitialize values of external_options_mask, some of which are 
+     externally significant only if certain code sequences are generated
+     (so will be set at code-generation in the pic30.md file) while others 
+     are significant simply by command line optinos (and will be set here) */
+  external_options_mask.bits.unsigned_long_size_t = 1;
+
+  /* intitialize values of options_set mask */
+  if (TARGET_BIG_ARRAYS) options_set.bits.unsigned_long_size_t = 1;
 }
 
 /*END********************************************************************/

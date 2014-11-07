@@ -401,6 +401,15 @@ is_gimple_asm_val (tree t)
   return is_gimple_val (t);
 }
 
+bool
+is_gimple_formal_tmp_asm_reg(tree t)
+{
+  if (TREE_CODE (t) == VAR_DECL && DECL_HARD_REGISTER (t))
+    return true;
+
+  return is_gimple_formal_tmp_reg (t);
+}
+
 /* Return true if T is a GIMPLE minimal lvalue.  */
 
 bool

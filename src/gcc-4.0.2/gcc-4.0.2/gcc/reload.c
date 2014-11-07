@@ -4947,7 +4947,7 @@ find_reloads_address (enum machine_mode mode, rtx *memrefloc, rtx ad,
 	     reload the sum into a base reg.
 	     That will at least work.  */
 	  find_reloads_address_part (ad, loc, MODE_BASE_REG_CLASS (mode),
-				     Pmode, opnum, type, ind_levels, insn);
+				     GET_MODE(ad), opnum, type, ind_levels, insn);
 	}
       return ! removed_and;
     }
