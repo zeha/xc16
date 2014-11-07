@@ -1055,7 +1055,7 @@ static bool
 valid_in_set (value_set_t set, tree expr)
 {
   switch (TREE_CODE_CLASS (TREE_CODE (expr)))
-    {
+   {
     case tcc_binary:
       {
 	tree op1 = TREE_OPERAND (expr, 0);
@@ -1069,6 +1069,7 @@ valid_in_set (value_set_t set, tree expr)
 	return set_contains_value (set, op1);
       }
 
+    case tcc_declaration:  /* comment says this is also a variable ref */
     case tcc_reference:
       /* XXX: Until PRE of loads works, no reference nodes are ANTIC.  */
       return false;

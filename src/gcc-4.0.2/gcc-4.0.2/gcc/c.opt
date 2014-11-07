@@ -772,7 +772,7 @@ C ObjC C++ ObjC++ Joined Separate
 -iwithprefixbefore <dir>	Add <dir> to the end of the main include path
 
 lang-asm
-C Undocumented
+C Var(flag_lang_asm) Init(0) Undocumented
 
 lang-fortran
 C Undocumented

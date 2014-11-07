@@ -4287,7 +4287,8 @@ build_pointer_type_for_mode (tree to_type, enum machine_mode mode,
 tree
 build_pointer_type (tree to_type)
 {
-  return build_pointer_type_for_mode (to_type, ptr_mode, false);
+  return build_pointer_type_for_mode (to_type, TARGET_POINTER_MODE(to_type), 
+                                      false);
 }
 
 /* Same as build_pointer_type_for_mode, but for REFERENCE_TYPE.  */

@@ -352,13 +352,18 @@ is_gimple_non_addressable (tree t)
 
 /* Return true if T is a GIMPLE rvalue, i.e. an identifier or a constant.  */
 
+/*
+ * is_gimple_reg returns false for hard registers, but they are not volatiles
+ *   or memory vars and don't need to be explicit ... so add that check in (CW)
+ */
+
 bool
 is_gimple_val (tree t)
 {
   /* Make loads from volatiles and memory vars explicit.  */
   if (is_gimple_variable (t)
       && is_gimple_reg_type (TREE_TYPE (t))
-      && !is_gimple_reg (t))
+      && (!is_gimple_reg (t) && !is_gimple_hard_reg(t)))
     return false;
 
   /* FIXME make these decls.  That can happen only when we expose the

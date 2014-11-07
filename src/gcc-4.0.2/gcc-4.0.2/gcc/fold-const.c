@@ -211,10 +211,13 @@ force_fit_type (tree t, int overflowable,
   low = TREE_INT_CST_LOW (t);
   high = TREE_INT_CST_HIGH (t);
 
+#if  0
+  /* (CW) surely the size of a pointer type is already correct? */
   if (POINTER_TYPE_P (TREE_TYPE (t))
       || TREE_CODE (TREE_TYPE (t)) == OFFSET_TYPE)
     prec = POINTER_SIZE;
   else
+#endif
     prec = TYPE_PRECISION (TREE_TYPE (t));
   /* Size types *are* sign extended.  */
   sign_extended_type = (!TYPE_UNSIGNED (TREE_TYPE (t))

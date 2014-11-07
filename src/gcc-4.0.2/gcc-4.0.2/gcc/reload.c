@@ -274,7 +274,7 @@ static int find_reloads_address_1 (enum machine_mode, rtx, int, rtx *,
 				   int, enum reload_type,int, rtx);
 static void find_reloads_address_part (rtx, rtx *, enum reg_class,
 				       enum machine_mode, int,
-				       enum reload_type, int);
+				       enum reload_type, int, rtx);
 static rtx find_reloads_subreg_address (rtx, int, int, enum reload_type,
 					int, rtx);
 static void copy_replacements_1 (rtx *, rtx *, int);
@@ -925,7 +925,7 @@ int
 push_reload (rtx in, rtx out, rtx *inloc, rtx *outloc,
 	     enum reg_class class, enum machine_mode inmode,
 	     enum machine_mode outmode, int strict_low, int optional,
-	     int opnum, enum reload_type type)
+	     int opnum, enum reload_type type, rtx insn)
 {
   int i;
   int dont_share = 0;
@@ -1114,7 +1114,7 @@ push_reload (rtx in, rtx out, rtx *inloc, rtx *outloc,
 	 RELOAD_OTHER, we are guaranteed that this inner reload will be
 	 output before the outer reload.  */
       push_reload (SUBREG_REG (in), NULL_RTX, &SUBREG_REG (in), (rtx *) 0,
-		   in_class, VOIDmode, VOIDmode, 0, 0, opnum, type);
+		   in_class, VOIDmode, VOIDmode, 0, 0, opnum, type, insn);
       dont_remove_subreg = 1;
     }
 
@@ -1199,13 +1199,12 @@ push_reload (rtx in, rtx out, rtx *inloc, rtx *outloc,
       push_reload (SUBREG_REG (out), SUBREG_REG (out), &SUBREG_REG (out),
 		   &SUBREG_REG (out),
 		   find_valid_class (outmode, GET_MODE (SUBREG_REG (out)),
-				     subreg_regno_offset (REGNO (SUBREG_REG (out)),
-							  GET_MODE (SUBREG_REG (out)),
-							  SUBREG_BYTE (out),
-							  GET_MODE (out)),
-				     REGNO (SUBREG_REG (out))),
-		   VOIDmode, VOIDmode, 0, 0,
-		   opnum, RELOAD_OTHER);
+                      subreg_regno_offset(REGNO(SUBREG_REG(out)), 
+                                          GET_MODE (SUBREG_REG (out)),
+                                          SUBREG_BYTE (out),
+                                          GET_MODE (out)),
+				     REGNO (SUBREG_REG (out))), VOIDmode, 
+                                     VOIDmode, 0, 0, opnum, RELOAD_OTHER, insn);
     }
 
   /* If IN appears in OUT, we can't share any input-only reload for IN.  */
@@ -1355,6 +1354,7 @@ push_reload (rtx in, rtx out, rtx *inloc, rtx *outloc,
       rld[i].secondary_in_icode = secondary_in_icode;
       rld[i].secondary_out_icode = secondary_out_icode;
       rld[i].secondary_p = 0;
+      rld[i].insn = insn;
 
       n_reloads++;
 
@@ -3877,7 +3877,7 @@ find_reloads (rtx insn, int replace, int ind_levels, int live_known,
 			     &XEXP (recog_data.operand[i], 0), (rtx*) 0,
 			     MODE_BASE_REG_CLASS (VOIDmode),
 			     GET_MODE (XEXP (recog_data.operand[i], 0)),
-			     VOIDmode, 0, 0, i, RELOAD_FOR_INPUT);
+			     VOIDmode, 0, 0, i, RELOAD_FOR_INPUT, insn);
 	    rld[operand_reloadnum[i]].inc
 	      = GET_MODE_SIZE (GET_MODE (recog_data.operand[i]));
 
@@ -3919,7 +3919,7 @@ find_reloads (rtx insn, int replace, int ind_levels, int live_known,
 			      ? VOIDmode : operand_mode[i]),
 			     (insn_code_number < 0 ? 0
 			      : insn_data[insn_code_number].operand[i].strict_low),
-			     0, i, operand_type[i]);
+			     0, i, operand_type[i], insn);
 	  }
 	/* In a matching pair of operands, one must be input only
 	   and the other must be output only.
@@ -3927,29 +3927,29 @@ find_reloads (rtx insn, int replace, int ind_levels, int live_known,
 	else if (modified[i] == RELOAD_READ
 		 && modified[goal_alternative_matched[i]] == RELOAD_WRITE)
 	  {
-	    operand_reloadnum[i]
-	      = push_reload (recog_data.operand[i],
-			     recog_data.operand[goal_alternative_matched[i]],
-			     recog_data.operand_loc[i],
-			     recog_data.operand_loc[goal_alternative_matched[i]],
-			     (enum reg_class) goal_alternative[i],
-			     operand_mode[i],
-			     operand_mode[goal_alternative_matched[i]],
-			     0, 0, i, RELOAD_OTHER);
+	    operand_reloadnum[i] = 
+              push_reload (recog_data.operand[i],
+                           recog_data.operand[goal_alternative_matched[i]],
+			   recog_data.operand_loc[i],
+			   recog_data.operand_loc[goal_alternative_matched[i]],
+			   (enum reg_class) goal_alternative[i],
+			   operand_mode[i],
+			   operand_mode[goal_alternative_matched[i]],
+			   0, 0, i, RELOAD_OTHER, insn);
 	    operand_reloadnum[goal_alternative_matched[i]] = output_reloadnum;
 	  }
 	else if (modified[i] == RELOAD_WRITE
 		 && modified[goal_alternative_matched[i]] == RELOAD_READ)
 	  {
-	    operand_reloadnum[goal_alternative_matched[i]]
-	      = push_reload (recog_data.operand[goal_alternative_matched[i]],
-			     recog_data.operand[i],
-			     recog_data.operand_loc[goal_alternative_matched[i]],
-			     recog_data.operand_loc[i],
-			     (enum reg_class) goal_alternative[i],
-			     operand_mode[goal_alternative_matched[i]],
-			     operand_mode[i],
-			     0, 0, i, RELOAD_OTHER);
+	    operand_reloadnum[goal_alternative_matched[i]] = 
+              push_reload (recog_data.operand[goal_alternative_matched[i]],
+			   recog_data.operand[i],
+			   recog_data.operand_loc[goal_alternative_matched[i]],
+			   recog_data.operand_loc[i],
+			   (enum reg_class) goal_alternative[i],
+			   operand_mode[goal_alternative_matched[i]],
+			   operand_mode[i],
+			   0, 0, i, RELOAD_OTHER, insn);
 	    operand_reloadnum[i] = output_reloadnum;
 	  }
 	else
@@ -3994,23 +3994,23 @@ find_reloads (rtx insn, int replace, int ind_levels, int live_known,
 	       and push_reload verifies the constraints for asms.  */
 	    && (modified[i] == RELOAD_READ
 		|| (! no_output_reloads && ! this_insn_is_asm)))
-	  operand_reloadnum[i]
-	    = push_reload ((modified[i] != RELOAD_WRITE
-			    ? recog_data.operand[i] : 0),
-			   (modified[i] != RELOAD_READ
-			    ? recog_data.operand[i] : 0),
-			   (modified[i] != RELOAD_WRITE
-			    ? recog_data.operand_loc[i] : 0),
-			   (modified[i] != RELOAD_READ
-			    ? recog_data.operand_loc[i] : 0),
-			   (enum reg_class) goal_alternative[i],
-			   (modified[i] == RELOAD_WRITE
-			    ? VOIDmode : operand_mode[i]),
-			   (modified[i] == RELOAD_READ
-			    ? VOIDmode : operand_mode[i]),
-			   (insn_code_number < 0 ? 0
-			    : insn_data[insn_code_number].operand[i].strict_low),
-			   1, i, operand_type[i]);
+	  operand_reloadnum[i] = 
+            push_reload ((modified[i] != RELOAD_WRITE
+			 ? recog_data.operand[i] : 0),
+			 (modified[i] != RELOAD_READ
+			 ? recog_data.operand[i] : 0),
+			 (modified[i] != RELOAD_WRITE
+			 ? recog_data.operand_loc[i] : 0),
+			 (modified[i] != RELOAD_READ
+			 ? recog_data.operand_loc[i] : 0),
+			 (enum reg_class) goal_alternative[i],
+			 (modified[i] == RELOAD_WRITE
+			 ? VOIDmode : operand_mode[i]),
+			 (modified[i] == RELOAD_READ
+			 ? VOIDmode : operand_mode[i]),
+			 (insn_code_number < 0 ? 0
+			 : insn_data[insn_code_number].operand[i].strict_low),
+			 1, i, operand_type[i], insn);
 	/* If a memory reference remains (either as a MEM or a pseudo that
 	   did not get a hard register), yet we can't make an optional
 	   reload, check if this is actually a pseudo register reference;
@@ -4063,10 +4063,11 @@ find_reloads (rtx insn, int replace, int ind_levels, int live_known,
 			   recog_data.operand[i],
 			   recog_data.operand_loc[goal_alternative_matches[i]],
 			   recog_data.operand_loc[i],
-			   (enum reg_class) goal_alternative[goal_alternative_matches[i]],
+			   (enum reg_class) 
+                              goal_alternative[goal_alternative_matches[i]],
 			   operand_mode[goal_alternative_matches[i]],
-			   operand_mode[i],
-			   0, 1, goal_alternative_matches[i], RELOAD_OTHER);
+			   operand_mode[i], 0, 1, goal_alternative_matches[i], 
+                           RELOAD_OTHER, insn);
       }
 
   /* Perform whatever substitutions on the operands we are supposed
@@ -4800,7 +4801,7 @@ find_reloads_address (enum machine_mode mode, rtx *memrefloc, rtx ad,
 
       /* If we do not have one of the cases above, we must do the reload.  */
       push_reload (ad, NULL_RTX, loc, (rtx*) 0, MODE_BASE_REG_CLASS (mode),
-		   GET_MODE (ad), VOIDmode, 0, 0, opnum, type);
+		   GET_MODE (ad), VOIDmode, 0, 0, opnum, type, insn);
       return 1;
     }
 
@@ -4901,8 +4902,7 @@ find_reloads_address (enum machine_mode mode, rtx *memrefloc, rtx ad,
 	     have any subexpressions reloaded, if needed.  */
 	  push_reload (tem, NULL_RTX, loc, (rtx*) 0,
 		       MODE_BASE_REG_CLASS (mode), GET_MODE (tem),
-		       VOIDmode, 0,
-		       0, opnum, type);
+		       VOIDmode, 0, 0, opnum, type, insn);
 	  return ! removed_and;
 	}
       else
@@ -4938,7 +4938,7 @@ find_reloads_address (enum machine_mode mode, rtx *memrefloc, rtx ad,
 	     We assume the frame pointer or arg pointer is a base reg.  */
 	  find_reloads_address_part (XEXP (ad, 1), &XEXP (ad, 1),
 				     INDEX_REG_CLASS, GET_MODE (ad), opnum,
-				     type, ind_levels);
+				     type, ind_levels, insn);
 	  return 0;
 	}
       else
@@ -4947,7 +4947,7 @@ find_reloads_address (enum machine_mode mode, rtx *memrefloc, rtx ad,
 	     reload the sum into a base reg.
 	     That will at least work.  */
 	  find_reloads_address_part (ad, loc, MODE_BASE_REG_CLASS (mode),
-				     Pmode, opnum, type, ind_levels);
+				     Pmode, opnum, type, ind_levels, insn);
 	}
       return ! removed_and;
     }
@@ -5021,10 +5021,9 @@ find_reloads_address (enum machine_mode mode, rtx *memrefloc, rtx ad,
 				 op_index == 0 ? addend : offset_reg);
 	  *loc = ad;
 
-	  find_reloads_address_part (XEXP (ad, op_index), 
-				     &XEXP (ad, op_index),
-				     MODE_BASE_REG_CLASS (mode),
-				     GET_MODE (ad), opnum, type, ind_levels);
+	  find_reloads_address_part (XEXP (ad, op_index), &XEXP (ad, op_index),
+				     MODE_BASE_REG_CLASS (mode), GET_MODE (ad),
+                                      opnum, type, ind_levels, insn);
 	  find_reloads_address_1 (mode, 
 				  XEXP (ad, 1 - op_index), 1, 
 				  &XEXP (ad, 1 - op_index), opnum,
@@ -5073,7 +5072,7 @@ find_reloads_address (enum machine_mode mode, rtx *memrefloc, rtx ad,
 	}
 
       find_reloads_address_part (ad, loc, MODE_BASE_REG_CLASS (mode),
-				 Pmode, opnum, type, ind_levels);
+				 Pmode, opnum, type, ind_levels, insn);
       return ! removed_and;
     }
 
@@ -5376,9 +5375,8 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 	  {
 	    find_reloads_address (GET_MODE (x), loc, XEXP (x, 0), &XEXP (x, 0),
 				  opnum, ADDR_TYPE (type), ind_levels, insn);
-	    push_reload (*loc, NULL_RTX, loc, (rtx*) 0,
-			 context_reg_class,
-			 GET_MODE (x), VOIDmode, 0, 0, opnum, type);
+	    push_reload (*loc, NULL_RTX, loc, (rtx*) 0, context_reg_class,
+			 GET_MODE (x), VOIDmode, 0, 0, opnum, type, insn);
 	    return 1;
 	  }
 
@@ -5518,7 +5516,7 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 					  &XEXP (op1, 0),
 					  MODE_BASE_REG_CLASS (mode),
 					  GET_MODE (x), GET_MODE (x), 0,
-					  0, opnum, RELOAD_OTHER);
+					  0, opnum, RELOAD_OTHER, insn);
 
 		update_auto_inc_notes (this_insn, regno, reloadnum);
 		return 0;
@@ -5535,8 +5533,7 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 				      &XEXP (op1, 0), &XEXP (x, 0),
 				      MODE_BASE_REG_CLASS (mode),
 				      GET_MODE (x), GET_MODE (x), 0, 0,
-				      opnum, RELOAD_OTHER);
-
+				      opnum, RELOAD_OTHER, insn);
 	    update_auto_inc_notes (this_insn, regno, reloadnum);
 	    return 0;
 	  }
@@ -5557,6 +5554,7 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 	  gcc_assert (regno < FIRST_PSEUDO_REGISTER
 		      || reg_equiv_constant[regno] == 0);
 
+#if 0
 	  /* Handle a register that is equivalent to a memory location
 	     which cannot be addressed directly.  */
 	  if (reg_equiv_memory_loc[regno] != 0
@@ -5578,6 +5576,7 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 		  /* Proceed to reload that, as if it contained a register.  */
 		}
 	    }
+#endif
 
 	  /* If we have a hard register that is ok as an index,
 	     don't make a reload.  If an autoincrement of a nice register
@@ -5628,10 +5627,9 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 		  loc = &XEXP (x_orig, 0);
 		  x = XEXP (x, 0);
 		  reloadnum
-		    = push_reload (x, x, loc, loc,
-				   context_reg_class,
+		    = push_reload (x, x, loc, loc, context_reg_class,
 				   GET_MODE (x), GET_MODE (x), 0, 0,
-				   opnum, RELOAD_OTHER);
+				   opnum, RELOAD_OTHER, insn);
 		}
 	      else
 		{
@@ -5639,7 +5637,7 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 		    = push_reload (x, NULL_RTX, loc, (rtx*) 0,
 				   context_reg_class,
 				   GET_MODE (x), GET_MODE (x), 0, 0,
-				   opnum, type);
+				   opnum, type, insn);
 		  rld[reloadnum].inc
 		    = find_inc_amount (PATTERN (this_insn), XEXP (x_orig, 0));
 
@@ -5677,8 +5675,8 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 				opnum, type, ind_levels, insn);
 
 	  reloadnum = push_reload (x, NULL_RTX, loc, (rtx*) 0,
-				   context_reg_class,
-				   GET_MODE (x), VOIDmode, 0, 0, opnum, type);
+				   context_reg_class, GET_MODE (x), VOIDmode, 
+                                   0, 0, opnum, type, insn);
 	  rld[reloadnum].inc
 	    = find_inc_amount (PATTERN (this_insn), XEXP (x, 0));
 
@@ -5705,9 +5703,8 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 
       find_reloads_address (GET_MODE (x), loc, XEXP (x, 0), &XEXP (x, 0),
 			    opnum, ADDR_TYPE (type), ind_levels, insn);
-      push_reload (*loc, NULL_RTX, loc, (rtx*) 0,
-		   context_reg_class,
-		   GET_MODE (x), VOIDmode, 0, 0, opnum, type);
+      push_reload (*loc, NULL_RTX, loc, (rtx*) 0, context_reg_class,
+		   GET_MODE (x), VOIDmode, 0, 0, opnum, type, insn);
       return 1;
 
     case REG:
@@ -5717,8 +5714,8 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 	if (reg_equiv_constant[regno] != 0)
 	  {
 	    find_reloads_address_part (reg_equiv_constant[regno], loc,
-				       context_reg_class,
-				       GET_MODE (x), opnum, type, ind_levels);
+				       context_reg_class, GET_MODE (x), opnum, 
+                                       type, ind_levels, insn);
 	    return 1;
 	  }
 
@@ -5753,9 +5750,8 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 	if (regno >= FIRST_PSEUDO_REGISTER
 	    || !REG_OK_FOR_CONTEXT (context, regno, mode))
 	  {
-	    push_reload (x, NULL_RTX, loc, (rtx*) 0,
-			 context_reg_class,
-			 GET_MODE (x), VOIDmode, 0, 0, opnum, type);
+	    push_reload (x, NULL_RTX, loc, (rtx*) 0, context_reg_class,
+			 GET_MODE (x), VOIDmode, 0, 0, opnum, type,insn);
 	    return 1;
 	  }
 
@@ -5765,9 +5761,8 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 	   from before this insn to after it.  */
 	if (regno_clobbered_p (regno, this_insn, GET_MODE (x), 0))
 	  {
-	    push_reload (x, NULL_RTX, loc, (rtx*) 0,
-			 context_reg_class,
-			 GET_MODE (x), VOIDmode, 0, 0, opnum, type);
+	    push_reload (x, NULL_RTX, loc, (rtx*) 0, context_reg_class,
+			 GET_MODE (x), VOIDmode, 0, 0, opnum, type, insn);
 	    return 1;
 	  }
       }
@@ -5785,9 +5780,8 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 
 	      if (! REG_OK_FOR_CONTEXT (context, regno, mode))
 		{
-		  push_reload (x, NULL_RTX, loc, (rtx*) 0,
-			       context_reg_class,
-			       GET_MODE (x), VOIDmode, 0, 0, opnum, type);
+		  push_reload (x, NULL_RTX, loc, (rtx*) 0, context_reg_class,
+			       GET_MODE (x), VOIDmode, 0, 0, opnum, type, insn);
 		  return 1;
 		}
 	    }
@@ -5802,7 +5796,7 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 		  x = find_reloads_subreg_address (x, 0, opnum, type,
 						   ind_levels, insn);
 		  push_reload (x, NULL_RTX, loc, (rtx*) 0, class,
-			       GET_MODE (x), VOIDmode, 0, 0, opnum, type);
+			       GET_MODE (x), VOIDmode, 0, 0, opnum, type, insn);
 		  return 1;
 		}
 	    }
@@ -5847,7 +5841,7 @@ find_reloads_address_1 (enum machine_mode mode, rtx x, int context,
 static void
 find_reloads_address_part (rtx x, rtx *loc, enum reg_class class,
 			   enum machine_mode mode, int opnum,
-			   enum reload_type type, int ind_levels)
+			   enum reload_type type, int ind_levels, rtx insn)
 {
   if (CONSTANT_P (x)
       && (! LEGITIMATE_CONSTANT_P (x)
@@ -5873,8 +5867,8 @@ find_reloads_address_part (rtx x, rtx *loc, enum reg_class class,
 			    opnum, type, ind_levels, 0);
     }
 
-  push_reload (x, NULL_RTX, loc, (rtx*) 0, class,
-	       mode, VOIDmode, 0, 0, opnum, type);
+  push_reload (x, NULL_RTX, loc, (rtx*) 0, class, mode, VOIDmode, 
+               0, 0, opnum, type, insn);
 }
 
 /* X, a subreg of a pseudo, is a part of an address that needs to be

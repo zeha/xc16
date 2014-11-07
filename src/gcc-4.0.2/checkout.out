@@ -1,4 +1,4 @@
-cvs checkout: cwd=c:\pic30-build\build_20070228\src ,current=c:\pic30-build\build_20070228\src
+cvs checkout: cwd=c:\pic30-build\build_20070611\src ,current=c:\pic30-build\build_20070611\src
 cvs checkout: Updating gcc-4.0.2
 cvs checkout: Updating gcc-4.0.2/gcc-4.0.2
 U gcc-4.0.2/gcc-4.0.2/.cvsignore

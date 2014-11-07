@@ -1596,6 +1596,16 @@ build_component_ref (tree datum, tree component)
 	    TREE_READONLY (ref) = 1;
 	  if (TREE_THIS_VOLATILE (datum) || TREE_THIS_VOLATILE (subdatum))
 	    TREE_THIS_VOLATILE (ref) = 1;
+          if (TYPE_TARGET_QUALIFIER(TREE_TYPE(ref)) != 
+              TYPE_TARGET_QUALIFIER(TREE_TYPE(datum))) {
+             tree t;
+
+             t = build_qualified_type(TREE_TYPE(ref), 
+                       TYPE_QUALS(TREE_TYPE(ref)) + 
+                       (TYPE_TARGET_QUALIFIER(TREE_TYPE(datum)) << 
+                        TYPE_QUAL_TARGET_SHIFT));
+             TREE_TYPE(ref) = t;
+          }
 
 	  if (TREE_DEPRECATED (subdatum))
 	    warn_deprecated_use (subdatum);
@@ -1660,6 +1670,14 @@ build_indirect_ref (tree ptr, const char *errorstring)
 	  TREE_SIDE_EFFECTS (ref)
 	    = TYPE_VOLATILE (t) || TREE_SIDE_EFFECTS (pointer);
 	  TREE_THIS_VOLATILE (ref) = TYPE_VOLATILE (t);
+          if (TYPE_TARGET_QUALIFIER(TREE_TYPE(ref)) != TYPE_TARGET_QUALIFIER(t))          {
+             tree new_t;
+
+             new_t = build_qualified_type(TREE_TYPE(ref),
+                       TYPE_QUALS(TREE_TYPE(ref)) +
+                       (TYPE_TARGET_QUALIFIER(t) << TYPE_QUAL_TARGET_SHIFT));
+             TREE_TYPE(ref) = new_t;
+          }
 	  return ref;
 	}
     }
@@ -2729,11 +2747,13 @@ build_unary_op (enum tree_code code, tree xarg, int flag)
          to which the address will point.  Note that you can't get a
 	 restricted pointer by taking the address of something, so we
 	 only have to deal with `const' and `volatile' here.  */
-      if ((DECL_P (arg) || REFERENCE_CLASS_P (arg))
-	  && (TREE_READONLY (arg) || TREE_THIS_VOLATILE (arg)))
-	  argtype = c_build_type_variant (argtype,
-					  TREE_READONLY (arg),
-					  TREE_THIS_VOLATILE (arg));
+      if (DECL_P (arg) || REFERENCE_CLASS_P (arg)) {
+          if (TREE_READONLY (arg) || TREE_THIS_VOLATILE (arg)) {
+	    argtype = c_build_type_variant (argtype,
+					    TREE_READONLY (arg),
+					    TREE_THIS_VOLATILE (arg));
+          }
+      }
 
       if (!c_mark_addressable (arg))
 	return error_mark_node;

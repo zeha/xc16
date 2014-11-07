@@ -41,6 +41,7 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 tree
 convert_to_pointer (tree type, tree expr)
 {
+
   if (integer_zerop (expr))
     {
       expr = build_int_cst (type, 0);
@@ -57,13 +58,13 @@ convert_to_pointer (tree type, tree expr)
     case ENUMERAL_TYPE:
     case BOOLEAN_TYPE:
     case CHAR_TYPE:
-      if (TYPE_PRECISION (TREE_TYPE (expr)) == POINTER_SIZE)
+      if (TYPE_PRECISION (TREE_TYPE (expr)) == TYPE_PRECISION(type))
 	return build1 (CONVERT_EXPR, type, expr);
 
       return
 	convert_to_pointer (type,
 			    convert (lang_hooks.types.type_for_size
-				     (POINTER_SIZE, 0), expr));
+				     (TYPE_PRECISION(type), 0), expr));
 
     default:
       error ("cannot convert to a pointer type");
@@ -387,8 +388,8 @@ convert_to_integer (tree type, tree expr)
 	expr = integer_zero_node;
       else
 	expr = fold (build1 (CONVERT_EXPR,
-			     lang_hooks.types.type_for_size (POINTER_SIZE, 0),
-			     expr));
+                     lang_hooks.types.type_for_size (TYPE_PRECISION(intype), 0),
+                     expr));
 
       return convert_to_integer (type, expr);
 

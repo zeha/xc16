@@ -954,7 +954,7 @@ c_common_post_options (const char **pfilename)
   register_include_chains (parse_in, sysroot, iprefix,
 			   std_inc, std_cxx_inc && c_dialect_cxx (), verbose);
 
-  flag_inline_trees = 1;
+  if (!optimize_size) flag_inline_trees = 1;
 
   /* Use tree inlining.  */
   if (!flag_no_inline)

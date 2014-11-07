@@ -621,10 +621,10 @@ global_alloc (FILE *file)
 	 for the sake of debugging information.  */
   if (n_basic_blocks > 0)
 #endif
-    {
+  do {
       build_insn_chain (get_insns ());
       retval = reload (get_insns (), 1);
-    }
+    }  while (reload_in_progress);
 
   /* Clean up.  */
   free (reg_allocno);
@@ -1799,6 +1799,23 @@ reg_dies (int regno, enum machine_mode mode, struct insn_chain *chain)
       if (reg_renumber[regno] >= 0)
 	SET_REGNO_REG_SET (&chain->dead_or_set, regno);
     }
+}
+
+void
+debug_insn_chain() {
+   FILE *foo;
+   struct insn_chain *chain;
+
+   foo = fopen("debug_insn_chain.out","w+");
+   for (chain = reload_insn_chain; chain; chain = chain->next) {
+     debug_rtx(chain->insn);
+     if (foo) {
+       print_rtl_single(foo,chain->insn);
+       fprintf(foo,"\n");
+     }
+     fprintf(stderr,"\n");
+   }
+   if (foo) fclose(foo);
 }
 
 /* Walk the insns of the current function and build reload_insn_chain,

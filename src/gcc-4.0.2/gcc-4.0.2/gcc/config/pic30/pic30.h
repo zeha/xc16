@@ -167,7 +167,8 @@ enum pic30_builtins
    PIC30_BUILTIN_TBLRDL,
    PIC30_BUILTIN_TBLRDH,
    PIC30_BUILTIN_TBLWTL,
-   PIC30_BUILTIN_TBLWTH
+   PIC30_BUILTIN_TBLWTH,
+   PIC30_BUILTIN_DIVF
 };
 
 #define       TARGET_USE_PA   1
@@ -2019,6 +2020,8 @@ enum pic30_memory_space {
   char buffer[80]; \
   extern const char *pic30_it_option; \
   extern const char *pic30_it_option_arg; \
+  extern int flag_lang_asm; \
+  \
   if (pic30_target_family) cpp_define(pfile, pic30_target_family); \
   if (pic30_target_cpu) cpp_define(pfile, pic30_target_cpu); \
   sprintf(buffer,"__BUILTIN_ITTYPE"); \
@@ -2044,19 +2047,27 @@ enum pic30_memory_space {
     sprintf(buffer,"__C30_VERSION__=%d", pic30_compiler_version);\
     cpp_define(pfile,buffer);\
   }\
-  builtin_define("__C30"); \
-  builtin_define("__C30ELF"); \
-  builtin_define("__dsPIC30"); \
-  builtin_define("__dsPIC30ELF"); \
-  builtin_define("__C30__"); \
-  builtin_define("__C30ELF__"); \
-  builtin_define("__dsPIC30__"); \
-  builtin_define("__dsPIC30ELF__"); \
-  if (!flag_iso) {\
-    builtin_define("C30"); \
-    builtin_define("C30ELF"); \
-    builtin_define("dsPIC30"); \
-    builtin_define("dsPIC30ELF"); \
+  if (flag_lang_asm == 0) { \
+    builtin_define("__C30"); \
+    builtin_define("__C30ELF"); \
+    builtin_define("__dsPIC30"); \
+    builtin_define("__dsPIC30ELF"); \
+    builtin_define("__C30__"); \
+    builtin_define("__C30ELF__"); \
+    builtin_define("__dsPIC30__"); \
+    builtin_define("__dsPIC30ELF__"); \
+    if (!flag_iso) {\
+      builtin_define("C30"); \
+      builtin_define("C30ELF"); \
+      builtin_define("dsPIC30"); \
+      builtin_define("dsPIC30ELF"); \
+    } \
+  } else { \
+    builtin_define("__ASM30"); \
+    builtin_define("__ASM30__"); \
+    if (!flag_iso) {\
+      builtin_define("ASM30"); \
+    } \
   } \
 }
 #else
@@ -2064,6 +2075,8 @@ enum pic30_memory_space {
   char buffer[80]; \
   extern const char *pic30_it_option; \
   extern const char *pic30_it_option_arg; \
+  extern int flag_lang_asm; \
+  \
   if (pic30_target_family) cpp_define(pfile, pic30_target_family); \
   if (pic30_target_cpu) cpp_define(pfile, pic30_target_cpu); \
   {\
@@ -2089,19 +2102,27 @@ enum pic30_memory_space {
       } while (*c); \
     } \
   }\
-  builtin_define("__C30"); \
-  builtin_define("__C30COFF"); \
-  builtin_define("__dsPIC30"); \
-  builtin_define("__dsPIC30COFF"); \
-  builtin_define("__C30__"); \
-  builtin_define("__C30COFF__"); \
-  builtin_define("__dsPIC30__"); \
-  builtin_define("__dsPIC30COFF__"); \
-  if (!flag_iso) {\
-    builtin_define("C30"); \
-    builtin_define("C30COFF"); \
-    builtin_define("dsPIC30"); \
-    builtin_define("dsPIC30COFF"); \
+  if (flag_lang_asm == 0) { \
+    builtin_define("__C30"); \
+    builtin_define("__C30COFF"); \
+    builtin_define("__dsPIC30"); \
+    builtin_define("__dsPIC30COFF"); \
+    builtin_define("__C30__"); \
+    builtin_define("__C30COFF__"); \
+    builtin_define("__dsPIC30__"); \
+    builtin_define("__dsPIC30COFF__"); \
+    if (!flag_iso) {\
+      builtin_define("C30"); \
+      builtin_define("C30COFF"); \
+      builtin_define("dsPIC30"); \
+      builtin_define("dsPIC30COFF"); \
+    } \
+  } else { \
+    builtin_define("__ASM30"); \
+    builtin_define("__ASM30__"); \
+    if (!flag_iso) {\
+      builtin_define("ASM30"); \
+    } \
   } \
 }
 #endif

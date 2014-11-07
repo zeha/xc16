@@ -158,6 +158,8 @@ struct reload
   /* Nonzero if this reload must use a register not already allocated to a
      group.  */
   unsigned int nongroup:1;
+  /* Instruction we are reloading */
+  rtx insn;
 };
 
 extern struct reload rld[MAX_RELOADS];
@@ -315,7 +317,7 @@ extern int earlyclobber_operand_p (rtx);
 /* Record one reload that needs to be performed.  */
 extern int push_reload (rtx, rtx, rtx *, rtx *, enum reg_class,
 			enum machine_mode, enum machine_mode,
-			int, int, int, enum reload_type);
+			int, int, int, enum reload_type, rtx insn);
 
 /* Functions in postreload.c:  */
 extern void reload_cse_regs (rtx);

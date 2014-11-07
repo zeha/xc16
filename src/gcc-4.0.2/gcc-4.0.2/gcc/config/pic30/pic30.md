@@ -1,4 +1,4 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;- Machine description for GNU compiler
 ;;- Microchip dsPIC30 version.
 ;; Copyright (C) 1994, 1995, 1996, 1997 Free Software Foundation, Inc.
@@ -119,6 +119,15 @@
   (UNSPECV_TBLWTH      39) ; __builtin_tblwth
   (UNSPEC_SAVE_CONSTPSV 40)
   (UNSPECV_PSVPTR      41)
+  (UNSPECV_P24PROGPTR  42)
+  (UNSPECV_P24PROG_PSV 43)
+  (UNSPECV_P24PROG_OFF 44)
+  (UNSPECV_P24PSV_PSV  45)
+  (UNSPECV_P24PSV_OFF  46)
+  (UNSPECV_HI2PSV      47)
+  (UNSPECV_HI2PROG     48)
+  (UNSPECV_DIVF        49)
+  (UNSPECV_TEMP        99)
  ]
 )
 
@@ -196,8 +205,19 @@
 
 (define_insn "addac_hi"
   [(set (match_operand: HI          0 "pic30_accumulator_operand" "=w")
-        (plus:HI (match_operand: HI 1 "pic30_accumulator_operand" "%w")
+        (plus:HI (match_operand: HI 1 "pic30_accumulator_operand" "w")
                  (match_dup 0)))]
+  "(REGNO(operands[1]) != REGNO(operands[0]))"
+  "add %0"
+  [
+    (set_attr "cc" "unchanged")
+  ]
+)
+
+(define_insn "addac2_hi"
+  [(set (match_operand: HI          0 "pic30_accumulator_operand" "=w")
+        (plus:HI (match_dup 0)
+                 (match_operand: HI 1 "pic30_accumulator_operand" "w")))]
   "(REGNO(operands[1]) != REGNO(operands[0]))"
   "add %0"
   [
@@ -271,8 +291,20 @@
 (define_insn "addacr_noshift_hi"
   [(set (match_operand: HI    0 "pic30_accumulator_operand" "=w")
         (plus:HI
-           (match_operand: HI 1 "pic30_mode3_operand"       "%RS<>r")
+           (match_operand: HI 1 "pic30_mode3_operand"       " RS<>r")
            (match_dup 0)))]
+  ""
+  "add %1, #0, %0"
+  [
+    (set_attr "cc" "unchanged")
+  ]
+)
+
+(define_insn "addacr_noshift1_hi"
+  [(set (match_operand: HI    0 "pic30_accumulator_operand" "=w")
+        (plus:HI
+           (match_dup 0)
+           (match_operand: HI 1 "pic30_mode3_operand"       " RS<>r")))]
   ""
   "add %1, #0, %0"
   [
@@ -283,8 +315,24 @@
 (define_insn "addacr_noshift_hi_errata"
   [(set (match_operand: HI    0 "pic30_accumulator_operand" "=w,w")
         (plus:HI
-           (match_operand: HI 1 "pic30_mode3_operand"       "%r,RS<>")
+           (match_operand: HI 1 "pic30_mode3_operand"       " r,RS<>")
            (match_dup 0)))
+   (clobber (match_scratch:HI 2                             "=X,r"))
+  ]
+  ""
+  "@
+   add %1, #0, %0
+   mov %1,%2\;add %2,#0,%0"
+  [
+    (set_attr "cc" "unchanged")
+  ]
+)
+
+(define_insn "addacr_noshift1_hi_errata"
+  [(set (match_operand: HI    0 "pic30_accumulator_operand" "=w,w")
+        (plus:HI
+           (match_dup 0)
+           (match_operand: HI 1 "pic30_mode3_operand"       " r,RS<>")))
    (clobber (match_scratch:HI 2                             "=X,r"))
   ]
   ""
@@ -1038,41 +1086,37 @@
 
 ; ********* to support automagic generation
 
-(define_insn "movhi_accumulator"
+(define_expand "movhi_accumulator"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (match_operand: HI 1 "pic30_mode3_operand" "RS<>r"))]
   ""
-  "*
-   {
+  "{
      /* lac %1, %0 */
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_lac() instead\");
-     return \"; bad op\";
+     FAIL;
    }
   "
-  [(set_attr "cc" "unchanged")]
 )  
 
-(define_insn "movhi_accumulator2"
+(define_expand "movhi_accumulator2"
   [(set (match_operand:HI 0 "pic30_mode3_operand" "=RS<>r")
         (match_operand:HI 1 "pic30_accumulator_operand" "w"))]
   ""
-  "*
-   {
+  "{
      /* sac %1, %0 */
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_sac() instead\");
-     return \"; bad op\";
+     FAIL;
    }
   "
-  [(set_attr "cc" "unchanged")]
 )
 
-(define_insn "movhi_accumulator3"
+(define_expand "movhi_accumulator3"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (match_operand:HI 1 "immediate_operand" "i"))]
   ""
-  "*
+  "
    {
      if (INTVAL(operands[1]) == 0) {
        /* clr %0 */
@@ -1083,13 +1127,12 @@
        error(\"Automatic generation of DSP instructions not yet supported; \"
              \"use __builtin_lac() instead\");
      }
-     return \"; bad op\";
+     FAIL;
    }
   "
-  [(set_attr "cc" "unchanged")]
 )
 
-(define_insn "auto_mac"
+(define_expand "auto_mac"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (plus:HI
           (match_operand:HI 1 "pic30_accumulator_operand" "0")
@@ -1100,22 +1143,23 @@
               (sign_extend:SI
                 (match_operand: HI 3 "pic30_mac_input_operand" "z"))) 0)))]
   ""
-  "*
+  "
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_mac() instead\");
-     return \"; bad op\";
+     FAIL;
+#if 0
      if (REGNO(operands[2]) < REGNO(operands[3])) {
        return \"mac %2*%3, %0\";
      } else {
        return \"mac %3*%2, %0\";
      }
+#endif
    }
   "
-  [(set_attr "cc" "unchanged")]
 )
 
-(define_insn "auto_mac1"
+(define_expand "auto_mac1"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (plus:HI
           (subreg:HI
@@ -1126,22 +1170,23 @@
                 (match_operand: HI 2 "pic30_mac_input_operand" "z"))) 0)
           (match_operand:HI 3 "pic30_accumulator_operand" "0")))]
   ""
-  "*
+  "
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_mac() instead\");
-     return \"; bad op\";
+     FAIL;
+#if 0
      if (REGNO(operands[1]) < REGNO(operands[2])) {
        return \"mac %1*%2, %0\";
      } else {
        return \"mac %2*%1, %0\";
      }
+#endif
    }
   "
-  [(set_attr "cc" "unchanged")]
 )
 
-(define_insn "auto_mpy"
+(define_expand "auto_mpy"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (neg: HI
           (subreg:HI
@@ -1151,22 +1196,23 @@
               (sign_extend:SI
                 (match_operand: HI 2 "pic30_mac_input_operand" "z"))) 0)))]
   ""
-  "*
+  "
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_mpy() instead\");
-     return \"; bad op\";
+     FAIL;
+#if 0
      if (REGNO(operands[1]) < REGNO(operands[2])) {
        return \"mpy.n %1*%2, %0\";
      } else {
        return \"mpy.n %2*%1, %0\";
      }
+#endif
    }
   "
-  [(set_attr "cc" "unchanged")]
 )
 
-(define_insn "auto_msc"
+(define_expand "auto_msc"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (minus:HI
           (match_operand:HI 1 "pic30_accumulator_operand" "0")
@@ -1177,22 +1223,23 @@
               (sign_extend:SI
                 (match_operand: HI 3 "pic30_mac_input_operand" "z"))) 0)))]
   ""
-  "*
+  "
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_msc() instead\");
-     return \"; bad op\";
+     FAIL;
+#if 0
      if (REGNO(operands[2]) < REGNO(operands[3])) {
        return \"msc %2*%3, %0\";
      } else {
        return \"msc %3*%2, %0\";
      }
+#endif
    }
   "
-  [(set_attr "cc" "unchanged")]
 )
 
-(define_insn "auto_msc1"
+(define_expand "auto_msc1"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (minus:HI
           (subreg:HI
@@ -1203,95 +1250,88 @@
                 (match_operand: HI 2 "pic30_mac_input_operand" "z"))) 0)
           (match_operand:HI 3 "pic30_accumulator_operand" "0")))]
   ""
-  "*
+  "
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_msc() instead\");
-     return \"; bad op\";
+     FAIL;
+#if 0
      if (REGNO(operands[1]) < REGNO(operands[2])) {
        return \"msc %1*%2, %0\";
      } else {
        return \"msc %2*%1, %0\";
      }
+#endif
    }
   "
-  [(set_attr "cc" "unchanged")]
 )
 
-(define_insn "auto_sftacr"
+(define_expand "auto_sftacr"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (ashiftrt:HI
           (match_dup 0)
           (match_operand:HI 1 "immediate_operand"       "W")))]
   "(INTVAL(operands[1]) > 0)"
-  "*
+  "
    {
      /* sftac %0, #%1 */
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_sftac() instead\");
-     return \"; bad op\";
+     FAIL;
    }
   "
-  [
-    (set_attr "cc" "unchanged")
-  ]
 )
 
-(define_insn "auto_sftacl"
+(define_expand "auto_sftacl"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (ashift:HI 
           (match_dup 0)
           (match_operand:HI 1 "immediate_operand"       "W")))]
   "(INTVAL(operands[1]) > 0)"
-  "*
+  "
    { static char buffer[20];
 
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_sftac() instead\");
-     return \"; bad op\";
+     FAIL;
+#if 0
      sprintf(buffer,\"sftac %%0, #%d\", -INTVAL(operands[1]));
      return buffer;
+#endif
    }
   "
-  [(set_attr "cc" "unchanged")]
 )
 
-(define_insn "addacr_hi"
+(define_expand "addacr_hi"
   [(set (match_operand: HI 0 "pic30_accumulator_operand" "=w")
         (plus:HI
            (match_operand: HI 1 "pic30_mode3_operand" "RS<>r")
            (match_operand: HI 2 "pic30_accumulator_operand" "0")))]
   ""
-  "*
+  "
    {
      /* add %1, %0 */
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_add() instead\");
-     return \"; bad op\";
+     FAIL;
    }
   "
-  [
-    (set_attr "cc" "unchanged")
-  ]
 )
 
-(define_insn "addacr1_hi"
+(define_expand "addacr1_hi"
   [(set (match_operand: HI 0 "pic30_accumulator_operand" "=w")
         (plus:HI
            (match_operand: HI 1 "pic30_accumulator_operand" "0")
            (match_operand: HI 2 "pic30_mode3_operand" "RS<>r")))]
   ""
-  "*
+  "
    {
      /* add %2, %0 */
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_add() instead\");
-     return \"; bad op\";
+     FAIL;
    }
   "
-  [
-    (set_attr "cc" "unchanged")
-  ]
 )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2720,7 +2760,7 @@
   "setm %0"
   [(set_attr "cc" "unchanged")])
 
-(define_insn "*movhi_const0"
+(define_insn "movhi_const0"
   [(set (match_operand:HI 0 "pic30_mode2_operand" "=r,R,<>")
 	(const_int 0))]
   ""
@@ -2887,6 +2927,14 @@
   "mov #psvptr(%1),%0"
   [(set_attr "cc" "change0")])
 
+(define_insn "p24progptr"
+  [(set (match_operand:P24PROG 0 "pic30_register_operand" "=r")
+        (unspec:P24PROG [(match_operand 1 "pic30_symbolic_address_operand" "g")]
+                         UNSPECV_P24PROGPTR))]
+  ""
+  "mov #psvptr(%1),%0\;mov #psvpage(%1),%d0"
+  [(set_attr "cc" "change0")])
+
 (define_insn "dmaoffset"
   [(set (match_operand:HI 0 "pic30_register_operand"              "=r")
         (unspec:HI [(match_operand 1 "pic30_symbolic_address_operand" "g")]
@@ -2895,6 +2943,37 @@
   "mov #dmaoffset(%1),%0"
   [(set_attr "cc" "change0")])
 
+(define_insn "p24prog_psv"
+  [(set (match_operand:QI 0 "pic30_register_operand"  "=r")
+        (unspec:QI [(match_operand:P24PROG 1 "pic30_register_operand" "r")]
+                    UNSPECV_P24PROG_PSV))]
+  ""
+  "mov %d1,%0"
+  [(set_attr "cc" "change0")])
+
+(define_insn "p24prog_off"
+  [(set (match_operand:HI 0 "pic30_register_operand"  "=r")
+        (unspec:HI [(match_operand:P24PROG 1 "pic30_register_operand" "r")]
+                    UNSPECV_P24PROG_OFF))]
+  ""
+  "rrnc %1,%0"
+  [(set_attr "cc" "change0")])
+
+(define_insn "p24psv_psv"
+  [(set (match_operand:QI 0 "pic30_register_operand"  "=r")
+        (unspec:QI [(match_operand:P24PSV 1 "pic30_register_operand" "r")]
+                    UNSPECV_P24PSV_PSV))]
+  ""
+  "mov %d1,%0"
+  [(set_attr "cc" "change0")])
+
+(define_insn "p24psv_off"
+  [(set (match_operand:HI 0 "pic30_register_operand"  "=r")
+        (unspec:HI [(match_operand:P24PSV 1 "pic30_register_operand" "r")]
+                    UNSPECV_P24PSV_OFF))]
+  ""
+  "rrnc %1,%0"
+  [(set_attr "cc" "change0")])
 
 ;;;;;;;;;;;;;;;
 ;; general case
@@ -2990,31 +3069,43 @@
 ;    once we have the new operator
 ;
 
-(define_insn_and_split "movP24PROG_address"
+(define_expand "movP24PROG_address"
   [(set 
      (match_operand:P24PROG 0 "pic30_move_operand"             "=r,R,<>,QSTU")
      (match_operand:P24PROG 1 "pic30_symbolic_address_operand" " g,g,g ,g"))
-   (clobber (match_scratch:HI 2                                "=X,r,r,r"))]
+  ]
+;  (clobber (match_scratch:HI 2                                "=X,&r,&r,&r"))]
+;  "@
+;   mov #psvptr(%1),%0\;mov #psvpage(%1),%d0
+;   mov #psvptr(%1),%2\;mov %2,%I0\;mov #psvpage(%1),%2\;mov %2,%D0
+;   mov #psvptr(%1),%2\;mov %2,%0\;mov #psvpage(%1),%2\;mov %2,%0
+;   ;mov #psvptr(%1),%2\;mov %2,%0\;mov #psvpage(%1),%2\;mov %2,%0+2"
+;  "reload_completed && REG_P(operands[0])"
+;   [(set (match_operand:HI 3 "pic30_register_operand" "=r")
+;        (unspec:HI [(match_dup 1)] UNSPECV_PSVPAGE))
+;   (set (match_operand:HI 4 "pic30_register_operand" "=r")
+;        (unspec:HI [(match_dup 1)] UNSPECV_PSVPTR))]
+;  "operands[3] = gen_rtx_REG(HImode, REGNO(operands[0])+1);
+;   operands[4] = gen_rtx_REG(HImode, REGNO(operands[0]));"
+;)
   ""
-  "@
-   mov #psvptr(%1),%0\;mov #psvpage(%1),%d0
-   mov #psvptr(%1),%2\;mov %2,%I0\;mov #psvpage(%1),%2\;mov %2,%D0
-   mov #psvptr(%1),%2\;mov %2,%0\;mov #psvpage(%1),%2\;mov %2,%0
-   mov #psvptr(%1),%2\;mov %2,%0\;mov #psvpage(%1),%2\;mov %2,%0+2"
-  "reload_completed && REG_P(operands[0])"
-  [(set (match_operand:HI 3 "pic30_register_operand" "=r")
-        (unspec:HI [(match_dup 1)] UNSPECV_PSVPAGE))
-   (set (match_operand:HI 4 "pic30_register_operand" "=r")
-        (unspec:HI [(match_dup 1)] UNSPECV_PSVPTR))]
-  "operands[3] = gen_rtx_REG(HImode, REGNO(operands[0])+1);
-   operands[4] = gen_rtx_REG(HImode, REGNO(operands[0]));"
-)
+  "
+{
+  rtx op2 = gen_reg_rtx(P24PROGmode);
+  emit_insn(
+     gen_p24progptr(op2,operand1)
+  );
+  emit_insn(
+     gen_movP24PROG_gen(operand0,op2)
+  );
+  DONE;
+}")
 
 (define_insn_and_split "movP24PSV_address"
   [(set (match_operand:P24PSV 0 "pic30_move_operand"             "=r,R,<>,QSTU")
         (match_operand:P24PSV 1 "pic30_symbolic_address_operand" " g,g,g,g")
    )
-   (clobber (match_scratch:HI 2                                  "=X,r,r,r"))]
+   (clobber (match_scratch:HI 2                                  "=X,&r,&r,&r"))]
   ""
   "@
    mov #psvptr(%1),%0\;mov #psvpage(%1),%d0
@@ -3128,8 +3219,7 @@
 }"
   [
    (set_attr "cc" "clobber")
-   (set_attr "type"
-             "def,defuse,etc,etc,def,etc")
+   (set_attr "type" "def,defuse,etc,etc,def,etc")
   ]
 )
 
@@ -3154,20 +3244,23 @@
 
 (define_insn "set_P24PROG_psvpage"
    [(set (reg:QI PSVPAG)
-         (subreg:QI (match_operand:P24PROG 0 "pic30_psv_operand" "r,RQ") 2))]
+         (subreg:QI (match_operand:P24PROG 0 "pic30_psv_operand" "r,RQ") 2))
+    (clobber (match_scratch:QI 1 "=X,r"))
+   ]
    ""
    "@
-    mov %d0, _PSVPAG
-    mov.b %Q0, _PSVPAG"
+    mov %d0,_PSVPAG
+    mov.b %Q0,%1\;mov.b %1,_PSVPAG"
 )
 
 (define_insn "set_P24PSV_psvpage"
    [(set (reg:QI PSVPAG)
-         (subreg:QI (match_operand:P24PSV 0 "pic30_psv_operand" "r,RQ") 2))]
+         (subreg:QI (match_operand:P24PSV 0 "pic30_psv_operand" "r,RQ") 2))
+    (clobber (match_scratch:QI 1 "=X,r"))]
    ""
    "@
-    mov %d0, _PSVPAG
-    mov.b %Q0, _PSVPAG"
+    mov %d0,_PSVPAG
+    mov.b %Q0,%1\;mov.b %1,_PSVPAG"
 )
 
 (define_insn "set_psv"
@@ -3175,21 +3268,21 @@
          (unspec_volatile: QI
            [(match_operand:QI 0 "pic30_register_operand" "r")] UNSPECV_SETPSV))]
    ""
-   "mov %0, _PSVPAG"
+   "mov %0,_PSVPAG"
 )
 
 (define_insn "set_psv2"
    [(set (reg:QI PSVPAG)
          (match_operand:QI 0 "pic30_register_operand" "r"))]
    ""
-   "mov %0, _PSVPAG"
+   "mov %0,_PSVPAG"
 )
 
 (define_insn "copy_psv"
    [(set (match_operand:QI 0 "pic30_register_operand" "=r")
          (reg:QI PSVPAG))]
    ""
-   "mov _PSVPAG, %0"
+   "mov _PSVPAG,%0"
 )
 
 (define_insn "rotlhi3"
@@ -3197,7 +3290,7 @@
         (rotate:HI (match_operand:HI 1 "pic30_mode2_operand"  "=rR<>")
                    (const_int 1)))]
   ""
-  "rlnc %1, %0"
+  "rlnc %1,%0"
   [ 
     (set_attr "cc" "math") 
   ]
@@ -3208,7 +3301,7 @@
         (rotatert:HI (match_operand:HI 1 "pic30_mode2_operand" "=rR<>")
                      (const_int 1)))]
   ""
-  "rrnc %1, %0"
+  "rrnc %1,%0"
   [ 
     (set_attr "cc" "math") 
   ]
@@ -3220,7 +3313,7 @@
             (subreg:HI (match_operand:P24PROG 1 "pic30_psv_operand" "rR") 0)
             (const_int 1)))]
    ""
-   "rrnc %1, %0"
+   "rrnc %1,%0"
    [
      (set_attr "cc" "math")
    ]
@@ -3232,7 +3325,7 @@
             (subreg:HI (match_operand:P24PSV 1 "pic30_psv_operand" "rR") 0)
             (const_int 1)))]
    ""
-   "rrnc %1, %0"
+   "rrnc %1,%0"
    [
      (set_attr "cc" "math")
    ]
@@ -3249,7 +3342,7 @@
 (define_insn "P24PROGread_qi"
   [(set (match_operand:QI 0 "pic30_mode2_operand" "=rR<>")
         (unspec_volatile:QI
-          [(match_operand:P24PROG 1 "pic30_register_operand" "r")
+          [(mem:QI (match_operand:HI 1 "pic30_register_operand" "r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
   ]
@@ -3257,21 +3350,21 @@
   "mov.b [%1],%0"
 )
 
-(define_insn "P24PSVread_qi"
-  [(set (match_operand:QI 0 "pic30_mode2_operand" "=rR<>")
-        (unspec_volatile:QI
-          [(match_operand:P24PSV 1 "pic30_register_operand" "r")
-           (reg:QI PSVPAG)]
-          UNSPECV_PSVRD))
-  ]
-  ""
-  "mov.b [%1],%0"
-)
+;(define_insn "P24PSVread_qi"
+;  [(set (match_operand:QI 0 "pic30_mode2_operand" "=rR<>")
+;        (unspec_volatile:QI
+;          [(mem:QI (match_operand:HI 1 "pic30_register_operand" "r"))
+;           (reg:QI PSVPAG)]
+;          UNSPECV_PSVRD))
+;  ]
+;  ""
+;  "mov.b [%1],%0"
+;)
 
 (define_insn "P24PROGread_hi"
   [(set (match_operand:HI 0 "pic30_mode2_operand" "=rR<>")
         (unspec_volatile:HI
-          [(match_operand:P24PROG 1 "pic30_register_operand" "r")
+          [(mem:HI (match_operand:HI 1 "pic30_register_operand" "r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
   ]
@@ -3279,24 +3372,25 @@
   "mov [%1],%0"
 )
 
-(define_insn "P24PSVread_hi"
-  [(set (match_operand:HI 0 "pic30_mode2_operand" "=rR<>")
-        (unspec_volatile:HI
-          [(match_operand:P24PSV 1 "pic30_register_operand" "r")
-           (reg:QI PSVPAG)]
-          UNSPECV_PSVRD))
-  ]
-  ""
-  "mov [%1],%0"
-)
+;(define_insn "P24PSVread_hi"
+;  [(set (match_operand:HI 0 "pic30_mode2_operand" "=rR<>")
+;        (unspec_volatile:HI
+;          [(mem:HI (match_operand:HI 1 "pic30_register_operand" "r"))
+;           (reg:QI PSVPAG)]
+;          UNSPECV_PSVRD))
+;  ]
+;  ""
+;  "mov [%1],%0"
+;)
 
-(define_insn "P24PROGread_SI"
-  [(set (match_operand:SI 0 "pic30_mode2_operand" "=r,R")
+(define_insn "P24PROGread_si"
+  [(set (match_operand:SI 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:SI
-          [(match_operand:P24PROG 1 "pic30_register_operand" "&r,&r")
+          [(mem:SI (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
+   (clobber (match_dup 1))
   ]
   ""
   "@
@@ -3304,10 +3398,10 @@
    mov [%1++],%I0\;btss %1,#15\;inc _PSVPAG\;bset %1,#15\;mov [%1],%D0"
 )
 
-(define_insn "P24PSVread_SI"
-  [(set (match_operand:SI 0 "pic30_mode2_operand" "=r,R")
+(define_insn "P24PSVread_si"
+  [(set (match_operand:SI 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:SI
-          [(match_operand:P24PSV 1 "pic30_register_operand" "r,r")
+          [(mem:SI (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
@@ -3318,13 +3412,14 @@
    mov [%1++],%I0\;mov [%1--],%D0"
 )
 
-(define_insn "P24PROGread_SF"
-  [(set (match_operand:SF 0 "pic30_mode2_operand" "=r,R")
+(define_insn "P24PROGread_sf"
+  [(set (match_operand:SF 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:SF
-          [(match_operand:P24PROG 1 "pic30_register_operand" "&r,&r")
+          [(mem:SF (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
+   (clobber (match_dup 1))
   ]
   ""
   "@
@@ -3332,10 +3427,10 @@
    mov [%1++],%I0\;btss %1,#15\;inc _PSVPAG\;bset %1,#15\;mov [%1],%D0"
 )
 
-(define_insn "P24PSVread_SF"
-  [(set (match_operand:SF 0 "pic30_mode2_operand" "=r,R")
+(define_insn "P24PSVread_sf"
+  [(set (match_operand:SF 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:SF
-          [(match_operand:P24PSV 1 "pic30_register_operand" "r,r")
+          [(mem:SF (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
@@ -3347,12 +3442,14 @@
 )
 
 (define_insn "P24PROGread_P24PROG"
-  [(set (match_operand:P24PROG 0 "pic30_mode2_operand" "=r,R")
+  [(set (match_operand:P24PROG 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:P24PROG
-          [(match_operand:P24PROG 1 "pic30_register_operand" "&r,&r")
+          [(mem:P24PROG 
+             (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
+   (clobber (match_dup 1))
   ]
   ""
   "@
@@ -3361,9 +3458,9 @@
 )
 
 (define_insn "P24PSVread_P24PROG"
-  [(set (match_operand:P24PROG 0 "pic30_mode2_operand" "=r,R")
+  [(set (match_operand:P24PROG 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:P24PROG
-          [(match_operand:P24PSV 1 "pic30_register_operand" "r,r")
+          [(mem:P24PROG (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
@@ -3375,12 +3472,14 @@
 )
 
 (define_insn "P24PROGread_P24PSV"
-  [(set (match_operand:P24PSV 0 "pic30_mode2_operand" "=r,R")
+  [(set (match_operand:P24PSV 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:P24PSV
-          [(match_operand:P24PROG 1 "pic30_register_operand" "&r,&r")
+          [(mem: P24PSV 
+              (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
+   (clobber (match_dup 1))
   ]
   ""
   "@
@@ -3389,9 +3488,9 @@
 )
 
 (define_insn "P24PSVread_P24PSV"
-  [(set (match_operand:P24PSV 0 "pic30_mode2_operand" "=r,R")
+  [(set (match_operand:P24PSV 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:P24PSV
-          [(match_operand:P24PSV 1 "pic30_register_operand" "r,r")
+          [(mem:P24PSV (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
@@ -3403,12 +3502,13 @@
 )
 
 (define_insn "P24PROGread_di"
-  [(set (match_operand:DI 0 "pic30_mode2_operand" "=r,R")
+  [(set (match_operand:DI 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:DI
-          [(match_operand:P24PROG 1 "pic30_register_operand" "&r,&r")
+          [(mem:DI (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
+   (clobber (match_dup 1))
   ]
   ""
   "@
@@ -3417,26 +3517,27 @@
 )
 
 (define_insn "P24PSVread_di"
-  [(set (match_operand:DI 0 "pic30_mode2_operand" "=r,R")
+  [(set (match_operand:DI 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:DI
-          [(match_operand:P24PSV 1 "pic30_register_operand" "&r,&r")
+          [(mem:DI (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
   ]
   ""
   "@
-   mov [%1++],%0\;mov [%1++],%d0\;mov [%1++],%t0\;mov [%1],%q0
+   mov [%1++],%0\;mov [%1++],%d0\;mov [%1++],%t0\;mov [%1],%q0\;sub %r0,#6,%r0
    mov [%1++],%I0\;mov [%1++],%I0\;mov [%1++],%I0\;mov [%1],%0\;sub %r0,#6,%r0"
 )
 
 (define_insn "P24PROGread_df"
-  [(set (match_operand:DF 0 "pic30_mode2_operand" "=r,R")
+  [(set (match_operand:DF 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:DF
-          [(match_operand:P24PROG 1 "pic30_register_operand" "&r,&r")
+          [(mem:DF (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
+   (clobber (match_dup 1))
   ]
   ""
   "@
@@ -3445,77 +3546,18 @@
 )
 
 (define_insn "P24PSVread_df"
-  [(set (match_operand:DF 0 "pic30_mode2_operand" "=r,R")
+  [(set (match_operand:DF 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:DF
-          [(match_operand:P24PSV 1 "pic30_register_operand" "r,r")
+          [(mem:DF (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRD))
    (clobber (reg:QI PSVPAG))
   ]
   ""
   "@
-   mov [%1++],%0\;mov [%1++],%d0\;mov [%1++],%t0\;mov [%1],%q0
+   mov [%1++],%0\;mov [%1++],%d0\;mov [%1++],%t0\;mov [%1],%q0\;sub %r0,#6,%r0
    mov [%1++],%I0\;mov [%1++],%I0\;mov [%1++],%I0\;mov [%1],%0\;sub %r0,#6,%r0"
 )
-
-;(define_insn "addp24prog3"
-;  [(set (match_operand:P24PROG 0 "pic30_register_operand"      "=r,r")
-;        (plus:P24PROG 
-;           (match_operand:P24PROG 1 "pic30_register_operand"   "%r,r")
-;           (zero_extend:P24PROG 
-;             (match_operand:HI 2 "pic30_reg_or_imm_operand"   "+r,i"))))]
-;  ""
-;  "*
-;   { static char buffer[80];
-;
-;     if (which_alternative == 0) {
-;        return \"sl %2,%2\;add %1,%2,%0\;addc %d1,#0,%d0\";
-;     } else {
-;       int imm = INTVAL(operands[1]) * 2;
-;       
-;       if (CONST_OK_FOR_LETTER_P(imm, 'P')) {
-;         sprintf(buffer,\"add %1,#%d,%0\;addc %%d1,#0,%%d0\", imm);
-;       } else {
-;         sprintf(buffer,\"mov #%d,%%0\;add %%0,%%1,%%0\;addc %%d1,#0,%%d0\", 
-;                        imm);
-;       }
-;       return buffer;
-;     }
-;   }
-;  "
-;  [(set_attr "cc" "math,math")]
-;)
-
-;
-; the P24PSV versions do not have to worry about the offset overflowing a PSVPAGe
-;
-;(define_insn "addP24PSV3"
-;  [(set (match_operand:P24PSV 0 "pic30_register_operand"      "=r,r")
-;        (plus:P24PSV
-;           (match_operand:P24PSV 1 "pic30_register_operand"   "%r,r")
-;           (sign_extend:P24PSV
-;             (match_operand:HI 2 "pic30_reg_or_imm_operand"   "+r,i"))))]
-;  ""
-;  "*
-;   { static char buffer[80];
-;
-;     if (which_alternative == 0) {
-;        return \"sl %2,%2\;add %1,%2,%0\;\";
-;     } else {
-;       int imm = INTVAL(operands[1]) * 2;
-;
-;       if (CONST_OK_FOR_LETTER_P(imm, 'P')) {
-;         sprintf(buffer,\"add %1,#%d,%0\", imm);
-;       } else {
-;         sprintf(buffer,\"mov #%d,%%0\;add %%0,%%1,%%0\",
-;                        imm);
-;       }
-;       return buffer;
-;     }
-;   }
-;  "
-;  [(set_attr "cc" "math,math")]
-;)
 
 ;
 ;
@@ -3523,50 +3565,44 @@
 ; ie, a shift
 ; 
 ;
-(define_insn "seP24PSV3HI"
-  [(set (match_operand:P24PSV 0 "pic30_register_operand"      "=r,r")
+(define_expand "seP24PSVHI"
+  [(set (match_operand:P24PSV 0 "pic30_register_operand"      "=r")
         (sign_extend:P24PSV
-           (match_operand:HI 1 "pic30_reg_or_imm_operand"   "+r,i")))]
+           (match_operand:HI 1 "pic30_reg_or_imm_operand"   "r")))]
   ""
-  "@
-   sl %1,%0
-   mov %o1,%0"
-  [(set_attr "cc" "math,math")]
-)
-
-(define_insn "zeP24PSV3HI"
-  [(set (match_operand:P24PSV 0 "pic30_register_operand"      "=r,r")
-        (zero_extend:P24PSV
-           (match_operand:HI 1 "pic30_reg_or_imm_operand"   "+r,i")))]
-  ""
-  "*
-   {
-     if ((which_alternative == 0) &&
-         (REGNO(operands[0]) == REGNO(operands[1]))) {
-       return \"\";
-     }
-     return \"mov %1,%0\";
-   }
   "
-  [(set_attr "cc" "math,math")]
+{  emit_insn(gen_seP24PSVHI_helper(operand0,operand1)); }
+")
+
+(define_insn "seP24PSVHI_helper"
+  [(set (match_operand:P24PSV 0 "pic30_register_operand"      "=r")
+        (unspec:P24PSV
+           [(match_operand:HI 1 "pic30_reg_or_imm_operand"   "r")] 
+           UNSPECV_HI2PSV))]
+  ""
+  "mov %1,%0"
+  [(set_attr "cc" "clobber")]
 )
 
-
-(define_insn "seP24PROGHI"
+(define_expand "seP24PROGHI"
   [(set (match_operand:P24PROG 0 "pic30_register_operand" "=r")
         (sign_extend:P24PROG 
            (match_operand:HI   1 "pic30_register_operand" " r")))]
   ""
-  "clr %d0\;sl %1,%0\;rlc %d0,%d0"
-  [(set_attr "cc" "clobber")]
-)
+  "
+{
+  emit_insn(gen_seP24PROGHI_helper(operand0,operand1));
+  DONE;
+}")
 
-(define_insn "zeP24PROGHI"
+
+(define_insn "seP24PROGHI_helper"
   [(set (match_operand:P24PROG 0 "pic30_register_operand" "=r")
-        (zero_extend:P24PROG
-           (match_operand:HI   1 "pic30_register_operand" " r")))]
+        (unspec: P24PROG
+          [(match_operand:HI   1 "pic30_register_operand" " r")] 
+          UNSPECV_HI2PROG))]
   ""
-  "clr %d0\;sl %1,%0\;rlc %d0,%d0"
+  "mul.uu %1,#2,%0"
   [(set_attr "cc" "clobber")]
 )
 
@@ -3610,20 +3646,31 @@
 )
 
 (define_insn "addp24prog3"
-  [(set (match_operand:P24PROG    0 "pic30_register_operand" "=r")
+  [(set (match_operand:P24PROG    0 
+             "pic30_mode2_operand"    "=r,r,r,r,r,<>,<>,<>,<>,<>,R,R,R,R,R")
         (plus:P24PROG 
-           (match_operand:P24PROG 1 "pic30_register_operand" "r")
-           (match_operand:P24PROG 2 "pic30_register_operand" "r")))]
+           (match_operand:P24PROG 1 
+             "pic30_register_operand" "%r,r,r,r,r,r,r,r,r,r,r,r,r,r,r")
+           (match_operand:P24PROG 2 
+             "pic30_math_operand"     " r,<>,R,MN,PJ,r,<>,R,N,P,r,<>,R,N,P")))]
   ""
-  "*
-{
-   static char *patterns[] = {
-      \"add %2,%1,%0\;addc %d2,%d1,%d0\",
-      0};
- 
-  return patterns[which_alternative];
-}"
-  [(set_attr "cc" "math")]
+  "@
+   add %1,%2,%0\;addc %d1,%d2,%d0
+   add %1,%2,%0\;addc %d1,%2,%d0
+   add %1,%I2,%0\;addc %d1,%D2,%d0
+   sub %1,#%O2,%0\;subb %d1,#0,%d0
+   add %1,#%o2,%0\;addc %d1,#0,%d0
+   add %1,%2,%0\;addc %d1,%d2,%0
+   add %1,%2,%0\;addc %d1,%2,%0
+   add %1,%I2,%0\;addc %d1,%D2,%0
+   sub %1,#%O2,%0\;subb %d1,#0,%0
+   add %1,#%o2,%0\;addc %d1,#0,%0
+   add %1,%2,%I0\;addc %d1,%d2,%D0
+   add %1,%2,%I0\;addc %d1,%2,%D0
+   add %1,%I2,%I0\;addc %d1,%D2,%D0
+   sub %1,#%O2,%I0\;subb %d1,#0,%D0
+   add %1,#%o2,%I0\;addc %d1,#0,%D0"
+ [(set_attr "cc" "math")]
 )
 
 (define_insn "add2P24PSV3_lit"
@@ -3660,500 +3707,869 @@
   [(set_attr "cc" "math")]
 )
 
-(define_insn "addp24psv3"
-  [(set (match_operand:P24PSV    0 "pic30_register_operand" "=r,r")
+(define_insn "addp24psv3_e"
+  [(set (match_operand:P24PSV    0 
+             "pic30_mode2_operand"   "=r,r,r,r,r,r,<>,<>,<>,R,R,R")
         (plus:P24PSV
-           (match_operand:P24PSV 1 "pic30_register_operand" "0,r")
-           (match_operand:P24PSV 2 "pic30_register_operand" "r,r")))]
+           (match_operand:P24PSV 1 
+             "pic30_register_operand" "0,r,0,r,r,r,r,r,r,r,r,r")
+           (match_operand:P24PSV 2 
+             "pic30_mode2_operand"    "r,r,<>,<>,R,R,r,<>,R,r,<>,R")))]
   ""
-  "*
-{
-   static char *patterns[] = {
-      \"add %1,%2,%0\",
-      \"add %1,%2,%0\;mov %d1,%d0\",
-      0};
-
-  return patterns[which_alternative];
-}"
-  [(set_attr "cc" "math")]
+  "@
+   add %1,%2,%0
+   add %1,%2,%0\;mov %d1,%d0
+   add %1,%2,%0\;mov %2,[w15]
+   add %1,%2,%0\;mov %d1,%d0\;mov %2,[w15]
+   add %1,%2,%0
+   add %1,%2,%0\;mov %d1,%d0
+   add %1,%2,%0\;mov %d1,%0
+   add %1,%2,%0\;mov %d1,%0\;mov %2,[w15]
+   add %1,%2,%0\;mov %d1,%0
+   add %1,%2,%I0\;mov %d1,%D0
+   add %1,%2,%I0\;mov %d1,%D0\;mov %2,[w15]
+   add %1,%2,%I0\;mov %d1,%D0"
+ [(set_attr "cc" "math")]
 )
+
+(define_expand "addp24psv3"
+  [(set (match_operand:P24PSV 0 "pic30_mode2_operand" "")
+        (plus: P24PSV (match_operand:P24PSV 1 "pic30_register_operand" "")
+                      (match_operand:P24PSV 2 "pic30_mode1i_operand" "")))]
+  ""
+  "
+{  if (GET_CODE(operands[2]) == CONST_INT) {
+     int val = INTVAL(operands[2]);
+     rtx new_val = GEN_INT(val << 1);
+     if (pic30_JN_operand(new_val, HImode)) {
+       emit_insn(gen_add2P24PSV3_lit(operand0,operand1,operand2));  
+       DONE;
+     } else {
+       /* load the immediate separately */
+       rtx result = gen_reg_rtx(P24PSVmode);
+
+       emit_insn(gen_movP24PSV_lit(result, new_val));
+       emit_insn(gen_addp24psv3_e(operand0, operand1, result));
+       DONE;
+     }
+   }
+   emit_insn(gen_addp24psv3_e(operand0,operand1,operand2));
+   DONE;
+}")
 
 ;
 ;  These insns and splits define how to read via a P24PROG or P24PSV, decomposed
 ;    into smaller operations if the optimizer is turned on.
-;
 
-(define_insn_and_split "P24PROGrd_qi"
+;
+; The following style of pattern sometimes has trouble reloading addresses,
+;   best avoid it entirely
+;   all the rd_<MODE> patterns have been changed from this style to 
+;   define_expands
+;
+;(define_insn_and_split "P24PROGrd_qi"
+;   [(set (match_operand:QI 0 "pic30_move_operand"       "=r,R,rR,r,R")
+;         (mem:QI 
+;           (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,RQ,ST,ST")))
+;    (clobber (match_scratch:P24PROG 2 "=r,r,r,r,r"))
+;    (clobber (match_scratch:QI 3 "=r,r,r,r,r"))
+;   ]
+;   "(pic30_managed_psv = 1)"
+;   "@
+;    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%0\;mov.b [%0],%0\;mov %3,_PSVPAG
+;    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov.b [%2],%0\;mov %3,_PSVPAG
+;    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov.b [%2],%0\;mov %3,_PSVPAG
+;    mov _PSVPAG,%3\;mov #psvpage(%1),%0\;mov %0,_PSVPAG\;mov %1,%0\;mov %3,_PSVPAG
+;    mov _PSVPAG,%3\;mov #psvpage(%1),%2\;mov %2,_PSVPAG\;mov %1,%2\;mov.b %2,%0\;mov %3, _PSVPAG"
+;   "reload_completed"
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (set (match_dup 0)
+;         (unspec_volatile:QI [(match_dup 2) (match_dup 4)]
+;          UNSPECV_PSVRD))
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+;   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
+;)  
+
+(define_expand "P24PROGrd_qi"
    [(set (match_operand:QI 0 "pic30_move_operand"       "=r,R,rR,r,R")
          (mem:QI 
-           (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,RQ,ST,ST")))
-    (clobber (match_scratch:P24PROG 2 "=r,r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r,r"))
-   ]
+           (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,RQ,ST,ST")))]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%0\;mov.b [%0],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov.b [%2],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov.b [%2],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov #psvpage(%1),%0\;mov %0,_PSVPAG\;mov %1,%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov #psvpage(%1),%2\;mov %2,_PSVPAG\;mov %1,%2\;mov.b %2,%0\;mov %3, _PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (set (match_dup 0)
-         (unspec_volatile:QI [(match_dup 2) (match_dup 4)]
-          UNSPECV_PSVRD))
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)  
-  
-(define_insn_and_split "P24PSVrd_qi"
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+   
+
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24prog_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24prog_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_qi(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+ 
+(define_expand "P24PSVrd_qi"
    [(set (match_operand:QI 0 "pic30_move_operand" "=r,R,rR,r,R")
          (mem:QI (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,RQ,ST,ST")))
-    (clobber (match_scratch:P24PSV 2 "=r,r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%0\;mov.b [%0],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov.b [%2],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov.b [%2],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov #psvpage(%1),%0\;mov %0,_PSVPAG\;mov %1,%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov #psvpage(%1),%2\;mov %2,_PSVPAG\;mov %1,%2\;mov.b %2,%0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4 "pic30_psvpage_operand" "=r")
-         (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (set (match_dup 0)
-         (unspec_volatile:QI [(match_dup 2) (match_dup 4)]
-          UNSPECV_PSVRD))
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PROGrd_hi"
+   emit_insn(
+     gen_movP24PSV_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24psv_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24psv_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_qi(operand0, op2_)  // P24PSVread_qi would be identical
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+
+;  [
+;   (set (match_dup 2) (match_dup 1))
+;   (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;   (set (match_operand:QI 4 "pic30_psvpage_operand" "=r")
+;        (subreg:QI (match_dup 2) 2))
+;   (set (subreg:HI (match_dup 2) 0)
+;        (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;   (set (match_dup 0)
+;        (unspec_volatile:QI [(match_dup 2) (match_dup 4)]
+;         UNSPECV_PSVRD))
+;   (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;  ]
+
+(define_expand "P24PROGrd_hi"
    [(set (match_operand:HI 0 "pic30_move_operand" "=r,R,rR,r,R")
          (mem:HI (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,RQ,ST,ST")))
-    (clobber (match_scratch:P24PROG 2 "=r,r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%0\;mov [%0],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov #psvpage(%1),%0\;mov %0,_PSVPAG\;mov.b %1,%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov #psvpage(%1),%2\;mov %2,_PSVPAG\;mov.b %1,%2\;mov %2,%0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (set (match_dup 0)
-         (unspec_volatile:HI [(match_dup 2) (match_dup 4)] 
-          UNSPECV_PSVRD))
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PSVrd_hi"
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24prog_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24prog_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_hi(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (set (match_dup 0)
+;         (unspec_volatile:HI [(match_dup 2) (match_dup 4)] 
+;          UNSPECV_PSVRD))
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PSVrd_hi"
    [(set (match_operand:HI 0 "pic30_move_operand" "=r,R,rR,r,R")
          (mem:HI (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,RQ,ST,ST")))
-    (clobber (match_scratch:P24PSV 2 "=r,r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%0\;mov [%0],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2],%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov #psvpage(%1),%0\;mov %0,_PSVPAG\;mov %1,%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov #psvpage(%1),%2\;mov %2,_PSVPAG\;mov %1,%2\;mov %2,%0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (set (match_dup 0)
-         (unspec_volatile:HI [(match_dup 2) (match_dup 4)]
-          UNSPECV_PSVRD))
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PROGrd_si"
+   emit_insn(
+     gen_movP24PSV_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24psv_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24psv_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_hi(operand0, op2_)  // P24PSVread_hi would be identical
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (set (match_dup 0)
+;         (unspec_volatile:HI [(match_dup 2) (match_dup 4)]
+;          UNSPECV_PSVRD))
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PROGrd_si"
    [(set (match_operand:SI 0 "pic30_move_operand" "=r,R,r,R")
          (mem:SI (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PROG 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:SI [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PSVrd_si"
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24prog_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24prog_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_si(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:SI [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PSVrd_si"
    [(set (match_operand:SI 0 "pic30_move_operand" "=r,R,r,R")
          (mem:SI (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PSV 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;mov [%2],%D0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;mov [%2],%D0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:SI [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PROGrd_sf"
+   emit_insn(
+     gen_movP24PSV_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24psv_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24psv_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PSVread_si(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:SI [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PROGrd_sf"
    [(set (match_operand:SF 0 "pic30_move_operand" "=r,R,r,R")
          (mem:SF (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PROG 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:SF [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PSVrd_sf"
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24prog_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24prog_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_sf(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:SF [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PSVrd_sf"
    [(set (match_operand:SF 0 "pic30_move_operand" "=r,R,r,R")
          (mem:SF (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PSV 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;mov [%2],%D0\;mov %3,_PSVPAG
-   mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;mov [%2],%d0\;mov %3,_PSVPAG
-   mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;mov [%2],%D0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:SF [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PROGrd_P24PROG"
+   emit_insn(
+     gen_movP24PSV_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24psv_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24psv_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PSVread_sf(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:SF [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PROGrd_P24PROG"
    [(set (match_operand:P24PROG 0 "pic30_move_operand" "=r,R,r,R")
          (mem:P24PROG (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PROG 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:P24PROG [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PSVrd_P24PROG"
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24prog_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24prog_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_P24PROG(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:P24PROG [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PSVrd_P24PROG"
    [(set (match_operand:P24PROG 0 "pic30_move_operand" "=r,R,r,R")
          (mem:P24PROG (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PSV 2 "=r,r,r,r"))
-	 (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;mov [%2],%D0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;mov [%2],%D0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:P24PROG [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PROGrd_P24PSV"
+   emit_insn(
+     gen_movP24PSV_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24psv_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24psv_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PSVread_P24PROG(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:P24PROG [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PROGrd_P24PSV"
    [(set (match_operand:P24PSV 0 "pic30_move_operand" "=r,R,r,R")
          (mem:P24PSV (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PROG 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:P24PSV [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PSVrd_P24PSV"
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24prog_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24prog_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_P24PSV(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:P24PSV [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PSVrd_P24PSV"
    [(set (match_operand:P24PSV 0 "pic30_move_operand" "=r,R,r,R")
          (mem:P24PSV (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PSV 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;mov [%2],%D0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;mov [%2],%d0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;mov [%2],%D0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:P24PSV [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PROGrd_di"
+   emit_insn(
+     gen_movP24PSV_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24psv_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24psv_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PSVread_P24PSV(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:P24PSV [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PROGrd_di"
    [(set (match_operand:DI 0 "pic30_move_operand" "=r,R,r,R")
          (mem:DI (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PROG 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%d0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%t0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%q0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;sub %0,#6,%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%d0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%t0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%q0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;sub %0,#6,%0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:DI [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PSVrd_di"
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24prog_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24prog_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_di(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:DI [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PSVrd_di"
    [(set (match_operand:DI 0 "pic30_move_operand" "=r,R,r,R")
          (mem:DI (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,R,R")))
     (clobber (match_scratch:P24PSV 2 "=r,r,r,r"))
     (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;mov [%2++],%d0\;mov [%2++],%t0\;mov [%2],%q0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;mov [%2++],%I0\;mov [%2++],%I0\;mov [%2],%D0\;sub %0,#6,%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;mov [%2++],%d0\;mov [%2++],%t0\;mov [%2],%q0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;mov [%2++],%I0\;mov [%2++],%I0\;mov [%2],%D0\;sub %0,#6,%0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:DI [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PROGrd_df"
+   emit_insn(
+     gen_movP24PSV_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24psv_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24psv_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PSVread_di(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:DI [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PROGrd_df"
    [(set (match_operand:DF 0 "pic30_move_operand" "=r,R,r,R")
          (mem:DF (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PROG 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%d0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%t0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%q0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;sub %0,#6,%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%d0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%t0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%q0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2++],%I0\;btss %2,#15\;inc _PSVPAG\;bset %2,#15\;mov [%2],%D0\;sub %0,#6,%0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:DF [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
 
-(define_insn_and_split "P24PSVrd_df"
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24prog_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24prog_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PROGread_df(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:DF [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
+
+(define_expand "P24PSVrd_df"
    [(set (match_operand:DF 0 "pic30_move_operand" "=r,R,r,rR")
          (mem:DF (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,R,R")))
-    (clobber (match_scratch:P24PSV 2 "=r,r,r,r"))
-    (clobber (match_scratch:QI 3 "=r,r,r,r"))
    ]
    "(pic30_managed_psv = 1)"
-   "@
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%0\;mov [%2++],%d0\;mov [%2++],%t0\;mov [%2],%q0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov %d1,_PSVPAG\;rrnc %1,%2\;mov [%2++],%I0\;mov [%2++],%I0\;mov [%2++],%I0\;mov [%2],%D0\;sub %0,#6,%0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%0\;mov [%2++],%d0\;mov [%2++],%t0\;mov [%2],%q0\;mov %3,_PSVPAG
-    mov _PSVPAG,%3\;mov.d %1,%2\;mov %d2,_PSVPAG\;rrnc %2,%2\;mov [%2++],%I0\;mov [%2++],%I0\;mov [%2++],%I0\;mov [%2],%D0\;sub %0,#6,%0\;mov %3,_PSVPAG"
-   "reload_completed"
-   [
-    (set (match_dup 2) (match_dup 1))
-    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-    (set (subreg:HI (match_dup 2) 0)
-         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-    (parallel [(set (match_dup 0)
-               (unspec_volatile:DF [(match_dup 2) (match_dup 4)]
-                  UNSPECV_PSVRD))
-               (clobber (reg:QI PSVPAG))
-              ])
-    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-   ]
-   "operands[4] = gen_rtx_REG(QImode, PSVPAG);"
-)
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op2_ = gen_reg_rtx(HImode);
+   rtx op1_ = gen_reg_rtx(QImode);
+  
+
+   emit_insn(
+     gen_movP24PSV_gen(op2, operand1)
+   );
+   emit_insn(
+     gen_copy_psv(op3)
+   );
+   emit_insn(
+     gen_p24psv_psv(op1_,op2)
+   );
+   emit_insn(
+     gen_set_psv(op1_)
+   );
+   emit_insn(
+     gen_p24psv_off(op2_, op2)
+   );
+   emit_insn(
+     gen_P24PSVread_df(operand0, op2_)
+   );
+   emit_insn(
+     gen_set_psv(op3)
+   );
+   DONE;
+}")
+;   [
+;    (set (match_dup 2) (match_dup 1))
+;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
+;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
+;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
+;    (set (subreg:HI (match_dup 2) 0)
+;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
+;    (parallel [(set (match_dup 0)
+;               (unspec_volatile:DF [(match_dup 2) (match_dup 4)]
+;                  UNSPECV_PSVRD))
+;               (clobber (reg:QI PSVPAG))
+;              ])
+;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
+;   ]
 
 (define_insn "movhi_P24PROGaddress_low"
   [(set (match_operand:HI 0 "pic30_register_operand"              "=r")
@@ -4214,8 +4630,8 @@
   if (pic30_symbolic_address_operand(operands[1],P24PSVmode)) {
     sprintf(buffer,\"mov #psvptr(%%1),%%0\;mov #psvpage(%%1),%%d0\");
   } else {
-    sprintf(buffer,\"mov #%d,%%0\;mov #%d,%%d0\",((i & 0x7FFF) << 1), 
-                   (i & 0x7F8000) >> 15);
+    sprintf(buffer,\"mov #%d,%%0\;mov #%d,%%d0\",(i & 0xFFFF), 
+                   (i & 0xFF0000) >> 16);
   }
   return buffer;
 }
@@ -4270,7 +4686,7 @@
 }
 ")
 
-(define_insn "*movsi_const0"
+(define_insn "movsi_const0"
   [(set (match_operand:SI 0 "pic30_mode2res_operand" "=r,R,<,>")
 	(const_int 0))]
   ""
@@ -5364,19 +5780,23 @@ static	char insn[48];
   ])
 
 (define_insn "*addhi3_sfr0"
-  [(set (match_operand:HI 0 "pic30_near_operand"         "=U")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"   "=U,r")
         (plus:HI (match_dup 0)
-                 (match_operand:HI 1 "pic30_wreg_operand" "a")))]
+                 (match_operand:HI 1 "pic30_wreg_operand" "a,a")))]
   ""
-  "add %0"
+  "@
+   add %0
+   add %0,%1,%0"
   [(set_attr "cc" "math")])
 
 (define_insn "*addhi3_sfr1"
-  [(set (match_operand:HI 0 "pic30_near_operand"         "=U")
-        (plus:HI (match_operand:HI 1 "pic30_wreg_operand" "a")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"   "=U,r")
+        (plus:HI (match_operand:HI 1 "pic30_wreg_operand" "a,a")
                  (match_dup 0)))]
   ""
-  "add %0"
+  "@
+   add %0
+   add %0,%1,%0"
   [(set_attr "cc" "math")])
 
 (define_insn_and_split "*addhi3_sfr2"
@@ -5627,7 +6047,7 @@ static	char insn[48];
   [(set (match_operand:SI   0 "pic30_mode2mres_operand" "=r,&r,&r,R,R,R,>,>,>")
         (plus:SI 
           (match_operand:SI 1 "pic30_register_operand"  "%r, r, r,r,r,r,r,r,r")
-          (match_operand:SI 2 "pic30_mode2mres_operand" "r, R, >,r,R,>,r,R,>")))
+          (match_operand:SI 2 "pic30_mode2mres_operand" "r,  R, >,r,R,>,r,R,>")))
   ]
   "(!(pic30_errata_mask & psv_errata))"
   "*
@@ -5828,11 +6248,13 @@ static	char insn[48];
   ])
 
 (define_insn "subhi3_sfr0"
-  [(set (match_operand:HI 0 "pic30_near_operand"          "=U")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"    "=U,r")
         (minus:HI (match_dup 0)
-                  (match_operand:HI 1 "pic30_wreg_operand" "a")))]
+                  (match_operand:HI 1 "pic30_wreg_operand" "a,a")))]
   ""
-  "sub %0"
+  "@
+   sub %0
+   sub %0,%1,%0"
   [(set_attr "cc" "math")])
 
 (define_insn_and_split "*subhi3_sfr1"
@@ -5955,7 +6377,7 @@ static	char insn[48];
 (define_insn "subsi3_noerrata"
   [(set (match_operand:SI   0 "pic30_reg_or_R_operand" "=r,r,r,&r,R,R,R,&r,R,R")
         (minus:SI 
-          (match_operand:SI 1 "pic30_reg_or_R_operand" "r,0,r, r,r,r,r, R,0,R")
+          (match_operand:SI 1 "pic30_reg_or_R_operand" "r,0,r, r,r,r,r,  R,0,R")
           (match_operand:SI 2 "pic30_reg_or_R_operand" "r,r,0, R,r,0,R, r,r,r")
    ))
   ]
@@ -6474,6 +6896,55 @@ static	char insn[48];
                 } else {
                   return("mov.d w0,[w15++]\;repeat #18-1\;"
                          "div.sd %1,%2\;mov w1,%0\;mov.d [--w15],w0");
+                }
+     }
+  }
+  [
+    (set_attr "cc" "math")
+    (set_attr "type" "def")
+  ]
+)
+
+(define_insn "divf"
+  [(set (match_operand:HI 0 "pic30_register_operand"              "=a,?b,??e")
+        (unspec_volatile:HI [
+                    (match_operand:HI 1 "pic30_register_operand"   "r, r,  r")
+                    (match_operand:HI 2 "pic30_ereg_operand" "e, e,  e")
+                   ] UNSPECV_DIVF))
+   (clobber (reg:HI RCOUNT))
+  ]
+  ""
+  {
+     rtx w0 = gen_rtx_REG(HImode, WR0_REGNO);
+     rtx w1 = gen_rtx_REG(HImode, WR1_REGNO);
+     switch (which_alternative) {
+       case 0:  /*
+              ** wm/wn -> w0
+              */
+                if (pic30_dead_or_set_p(insn, w1)) {
+                  return("repeat #18-1\;divf %1,%2");
+                } else {
+                    return("mov w1,[w15++]\;repeat #18-1\;"
+                           "divf %1,%2\;mov [--w15],w1");
+              }
+       case 1:  /*
+                ** wm/wn -> w1
+                */
+                if (pic30_dead_or_set_p(insn, w0)) {
+                  return("repeat #18-1\;divf %1,%2\;mov w0,%0");
+                } else {
+                  return("mov w0,[w15++]\;repeat #18-1\;divf %1,%2\;"
+                       "mov w0,%0\;mov [--w15],w0");
+                }
+       default: /*
+                ** wm/wn -> we
+                */
+                if (pic30_dead_or_set_p(insn, w0) &&
+                    pic30_dead_or_set_p(insn, w1)) {
+                  return("repeat #18-1\;divf %1,%2\;mov w0,%0");
+                } else {
+                  return("mov.d w0,[w15++]\;repeat #18-1\;"
+                         "divf %1,%2\;mov w0,%0\;mov.d [--w15],w0");
                 }
      }
   }
@@ -7218,10 +7689,12 @@ static	char insn[48];
 )
 
 (define_insn "*neghi2_sfr0"
-  [(set (match_operand:HI 0 "pic30_wreg_operand"        "=a")
-        (neg:HI (match_operand:HI 1 "pic30_near_operand" "U")))]
+  [(set (match_operand:HI 0 "pic30_wreg_operand"                "=a,a")
+        (neg:HI (match_operand:HI 1 "pic30_reg_or_near_operand" " U,r")))]
   ""
-  "neg %1,WREG"
+  "@
+   neg %1,WREG
+   neg %1,%0"
   [
    (set_attr "cc" "set")
    (set_attr "type" "def")
@@ -7229,7 +7702,7 @@ static	char insn[48];
 )
 
 (define_insn "*neghi2_sfr1"
-  [(set (match_operand:HI 0 "pic30_near_operand"        "=U")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"        "=Ur")
         (neg:HI (match_dup 0)))]
   ""
   "neg %0"
@@ -7973,8 +8446,7 @@ static	char insn[48];
 ;;;;;;;;;;;;;;;;;
 ;; single integer
 ;;;;;;;;;;;;;;;;;
-
-(define_insn "andsi3"
+(define_expand "andsi3"
  [(set (match_operand:SI 0 "pic30_mode2_operand"
 			"=r<>,r<>,&r<>,R,R,R,R, R, r<>")
        (and:SI (match_operand:SI 1 "pic30_mode1P_operand"
@@ -7982,21 +8454,74 @@ static	char insn[48];
                (match_operand:SI 2 "pic30_mode1P_operand"
 			 "r  ,<>,  R,  0,R,r,<>,P, P")))]
  ""
- "@
-  and %1,%2,%0\;and %d1,%d2,%d0
-  and %1,%2,%0\;and %d1,%d2,%d0
-  and %1,%I2,%0\;and %d1,%D2,%d0
-  and %1,%2,%0\;and %d1,%P2,%D0
-  and %1,%I2,%I0\;and %d1,%D2,%D0
-  and %1,%2,%I0\;and %d1,%d2,%D0
-  and %1,%2,%I0\;and %d1,%2,%D0
-  and %1,#%2,%I0\;clr %D0
-  and %1,#%2,%0\;clr %d0"
- [
-  (set_attr "cc" "clobber")
-  (set_attr "type" "def,defuse,defuse,use,use,etc,use,etc,def")
- ]
-)
+ "
+{ rtx operand0_lo,operand0_hi;
+  rtx operand1_lo,operand1_hi;
+  rtx operand2_lo,operand2_hi;
+  rtx operand_0;
+
+  if (GET_CODE(operands[2]) == CONST_INT) {
+    operand0_lo = gen_reg_rtx(HImode);
+    operand1_lo = gen_reg_rtx(HImode);
+    operand1_hi = gen_reg_rtx(HImode);
+    operand_0 = gen_reg_rtx(SImode);
+  
+    emit_insn(gen_movhi(operand1_lo, gen_rtx_SUBREG(HImode,operands[1],0)));
+    emit_insn(gen_movhi(operand1_hi, gen_rtx_SUBREG(HImode,operands[1],2)));
+    emit_insn(gen_andhi3(operand0_lo, operand1_lo, operands[2]));
+    emit_insn(gen_movsi_const0(operands[0]));
+    emit_insn(gen_movsi(operand_0,gen_rtx_ZERO_EXTEND(SImode, operand0_lo)));
+    emit_insn(gen_iorsi3(operands[0], operands[0], operand_0));
+    DONE;
+  } else {
+    operand0_lo = gen_reg_rtx(HImode);
+    operand0_hi = gen_reg_rtx(HImode);
+    operand1_lo = gen_reg_rtx(HImode);
+    operand1_hi = gen_reg_rtx(HImode);
+    operand2_lo = gen_reg_rtx(HImode);
+    operand2_hi = gen_reg_rtx(HImode);
+    operand_0 = gen_reg_rtx(SImode);
+
+    emit_insn(gen_movhi(operand1_lo, gen_rtx_SUBREG(HImode,operands[1],0)));
+    emit_insn(gen_movhi(operand1_hi, gen_rtx_SUBREG(HImode,operands[1],2)));
+    emit_insn(gen_movhi(operand2_lo, gen_rtx_SUBREG(HImode,operands[2],0)));
+    emit_insn(gen_movhi(operand2_hi, gen_rtx_SUBREG(HImode,operands[2],2)));
+    emit_insn(gen_andhi3(operand0_lo, operand1_lo, operand2_lo));
+    emit_insn(gen_andhi3(operand0_hi, operand1_hi, operand2_hi));
+    emit_insn(gen_movsi(operand_0,gen_rtx_ZERO_EXTEND(SImode, operand0_hi)));
+    emit_insn(gen_ashlsi3(operands[0],
+                          operand_0,
+                          GEN_INT(16)));
+    emit_insn(gen_movsi(operand_0,gen_rtx_ZERO_EXTEND(SImode, operand0_lo)));
+    emit_insn(gen_iorsi3(operands[0], operands[0], operand_0));
+    DONE;
+  }
+
+}")
+
+;(define_insn "andsi3"
+; [(set (match_operand:SI 0 "pic30_mode2_operand"
+;			"=r<>,r<>,&r<>,R,R,R,R, R, r<>")
+;       (and:SI (match_operand:SI 1 "pic30_mode1P_operand"
+;			"%r,  r,   r,  r,r,r,r, r, r")
+;               (match_operand:SI 2 "pic30_mode1P_operand"
+;			 "r  ,<>,  R,  0,R,r,<>,P, P")))]
+; ""
+; "@
+;  and %1,%2,%0\;and %d1,%d2,%d0
+;  and %1,%2,%0\;and %d1,%d2,%d0
+;  and %1,%I2,%0\;and %d1,%D2,%d0
+;  and %1,%2,%0\;and %d1,%P2,%D0
+;  and %1,%I2,%I0\;and %d1,%D2,%D0
+;  and %1,%2,%I0\;and %d1,%d2,%D0
+;  and %1,%2,%I0\;and %d1,%2,%D0
+;  and %1,#%2,%I0\;clr %D0
+;  and %1,#%2,%0\;clr %d0"
+; [
+;  (set_attr "cc" "clobber")
+;  (set_attr "type" "def,defuse,defuse,use,use,etc,use,etc,def")
+; ]
+;)
 
 (define_insn_and_split "*andsi3_sfr0"
   [(set (match_operand:SI 0 "pic30_data_operand"      "=T")
@@ -8153,30 +8678,25 @@ static	char insn[48];
 ;;;;;;;;;;;;;;;
 
 (define_insn "iorhi3_sfr0"
-  [(set (match_operand:HI 0 "pic30_near_operand"         "=U,??U")
-        (ior:HI (match_operand:HI 1 "pic30_register_operand"   "a,!??r")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"        "=U,r")
+        (ior:HI (match_operand:HI 1 "pic30_register_operand"   "a,r")
                 (match_dup 0)))
-                (clobber (match_scratch:HI 2             "=X, d"))]
+  ]
   ""
   "@
    ior %0
-   mov %0,%2\;ior %2,%1,%2\;mov %2,%0"
+   ior %0,%1,%0"
   [(set_attr "cc" "set")])
 
 (define_insn "iorhi3_sfr0a"
-  [(set (match_operand:HI 0 "pic30_near_operand"         "=U,??U")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"        "=U,r")
         (ior:HI (match_dup 0)
-                (match_operand:HI 1 "pic30_register_operand"   "a,!??r")))]
+                (match_operand:HI 1 "pic30_register_operand"   "a,r")))
+  ]
   ""
-  "*
-   switch (which_alternative) {
-     case 0: return \"ior %0\";
-     case 1: if (pic30_errata_mask & exch_errata)
-                  return \"push w0\;mov %1,w0\;ior %0\;pop w0\";
-                else
-                  return \"exch %1,w0\;ior %0\;exch %1,w0\";
-   }
-  "
+  "@
+   ior %0
+   ior %0,%1,%0"
   [(set_attr "cc" "set")])
 
 
@@ -9134,19 +9654,196 @@ static	char insn[48];
    (clobber (match_scratch:HI        3                          "=&r"))]
   ""
   "*
-{
-      return( 
-#if (1)
-      	      \".set ___BP___,0\;\"
-#endif
-              \"mov #%2,%3\n\"
-              \".LB%=:\;\"
-              \"sl %1,%0\;\"
-              \"rlc %d1,%d0\;\"
-              \"rlc %t1,%t0\;\"
-              \"rlc %q1,%q0\;\"
-              \"dec %3,%3\;\"
-              \"bra nz,.LB%=\");
+{ static char buffer[256];
+  char *f;
+  int results = 0;
+  rtx result_reg;
+      
+  /* how many results do we need?
+     if all but the low reg is dead we can shift fewer values */
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0]));
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg))) 
+    results = 1;
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0])+1);
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg)))
+    results = 1+1;
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0])+2);
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg)))
+    results = 1+2;
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0])+3);
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg)))
+    results = 1+3;
+
+  f = buffer;
+  f += sprintf(buffer,\".set ___BP___,0 ; (%d,%d)\;\", 
+               INTVAL(operands[2]), results);
+  if (INTVAL(operands[2]) < 16) {
+    switch (results) {
+      case 4:
+        if (!optimize_size) {
+          f += sprintf(f,
+             \"sl %%q1,#%%2,%%q0\;\"
+             \"lsr %%t1,#%d,%%3\;\"
+             \"ior %%3,%%q0,%%q0\;\"
+             \"sl %%t1,#%%2,%%t0\;\"
+             \"lsr %%d1,#%d,%%3\;\"
+             \"ior %%3,%%t0,%%t0\;\"
+             \"sl %%d1,#%%2,%%d0\;\"
+             \"lsr %%1,#%d,%%3\;\"
+             \"ior %%3,%%d0,%%d0\;\"
+             \"sl %%1,#%%2,%%0\",
+             16 - INTVAL(operands[2]), 
+             16 - INTVAL(operands[2]), 
+             16 - INTVAL(operands[2]));
+        } else {
+          f += sprintf(f,
+            \"mov #%%2,%%3\;\"
+            \".LB%%=:\;\"
+            \"sl %%1,%%0\;\"
+            \"rlc %%d1,%%d0\;\"
+            \"rlc %%t1,%%t0\;\"
+            \"rlc %%q1,%%q0\;\"
+            \"dec %%3,%%3\;\"
+            \"bra nz,.LB%%=\");
+        }
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 3:
+        f += sprintf(f,
+           \"sl %%t1,#%%2,%%t0\;\"
+           \"lsr %%d1,#%d,%%3\;\"
+           \"ior %%3,%%t0,%%t0\;\"
+           \"sl %%d1,#%%2,%%d0\;\"
+           \"lsr %%1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\;\"
+           \"sl %%1,#%%2,%%0\", 
+           16 - INTVAL(operands[2]), 
+           16 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 2:
+        f += sprintf(f,
+           \"sl %%d1,#%%2,%%d0\;\"
+           \"lsr %%1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\;\"
+           \"sl %%1,#%%2,%%0\", 
+           16 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 1:
+        f += sprintf(f,
+          \"sl %%1,#%%2,%%0\");
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+    }
+  } else if (INTVAL(operands[2]) < 32) {
+    switch (results) {
+      case 4:
+        f += sprintf(f,
+           \"sl %%t1,#%d,%%q0\;\"
+           \"lsr %%d1,#%d,%%3\;\"
+           \"ior %%3,%%q0,%%q0\;\"
+           \"sl %%d1,#%d,%%t0\;\"
+           \"lsr %%1,#%d,%%3\;\"
+           \"ior %%3,%%t0,%%t0\;\"
+           \"sl %%1,#%d,%%d0\;\"
+           \"clr %%0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 3:
+        f += sprintf(f,
+           \"sl %%d1,#%d,%%t0\;\"
+           \"lsr %%1,#%d,%%3\;\"
+           \"ior %%3,%%t0,%%t0\;\"
+           \"sl %%1,#%d,%%d0\;\"
+           \"clr %%0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 2:
+        f += sprintf(f,
+           \"sl %%1,#%d,%%d0\;\"
+           \"clr %%0\",
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 1:
+        f += sprintf(f,\"clr %%0\");
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+    }
+  } else if (INTVAL(operands[2]) < 48) {
+    switch (results) {
+      case 4:
+        f += sprintf(f,
+           \"sl %%d1,#%d,%%q0\;\"
+           \"lsr %%1,#%d,%%3\;\"
+           \"ior %%3,%%q0,%%q0\;\"
+           \"sl %%1,#%d,%%t0\;\"
+           \"mul.uu %%0,#0,%%0\",
+           INTVAL(operands[2]) - 32,
+           48 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 32);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 3:
+        f += sprintf(f,
+           \"sl %%1,#%d,%%t0\;\"
+           \"mul.uu %%0,#0,%%0\",
+           INTVAL(operands[2]) - 32);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 2:
+        f += sprintf(f, \"mul.uu %%0,#0,%%0\");
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 1:
+        f += sprintf(f, \"clr %%0\");
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+    }
+  } else if (INTVAL(operands[2]) < 64) {
+    switch (results) {
+      case 4: 
+        f += sprintf(f, \"sl %%1,#%d,%%q0\;\", INTVAL(operands[2])-48);
+        /* FALLSTHROUGH */
+      case 3:
+        f += sprintf(f, \"clr %%t0\;\");
+        /* FALLSTHROUGH */
+      case 2:
+        f += sprintf(f, \"mul.uu %%0,#0,%%0\"); 
+        break;
+      case 1:
+        f += sprintf(f, \"clr %%0\");
+        break;
+    }
+    if ((unsigned)f - (unsigned)buffer > 256) 
+      error(\"Unexpected error during assembly generation\");
+    return buffer;
+  }
 }"
   [
    (set_attr "cc" "clobber")
@@ -9529,19 +10226,238 @@ static	char insn[48];
 		     (clobber (match_scratch:HI 3           "=&r"))]
   ""
   "*
-{
-      return( 
-#if (1)
-      	      \".set ___BP___,0\;\"
-#endif
-              \"mov #%2,%3\n\"
-              \".LB%=:\;\"
-              \"lsr %q1,%q0\;\"
-              \"rrc %t1,%t0\;\"
-              \"rrc %d1,%d0\;\"
-              \"rrc %1,%0\;\"
-              \"dec %3,%3\;\"
-              \"bra nz,.LB%=\");
+{ static char buffer[256];
+  char *f;
+  int results = 0;
+  rtx result_reg;
+      
+  /* how many results do we need?
+     if all but the low reg is dead we can shift fewer values */
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0]));
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg))) 
+    results = 1;
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0])+1);
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg)))
+    results = 1+1;
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0])+2);
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg)))
+    results = 1+2;
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0])+3);
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg)))
+    results = 1+3;
+
+  f = buffer;
+  f += sprintf(buffer,\".set ___BP___,0 ; (%d,%d)\;\", 
+               INTVAL(operands[2]), results);
+  if (INTVAL(operands[2]) < 16) {
+    switch (results) {
+      case 4:
+        if (!optimize_size) {
+          f += sprintf(f,
+             \"lsr %%1,#%%2,%%0\;\"
+             \"sl %%d1,#%d,%%3\;\"
+             \"ior %%3,%%0,%%0\;\"
+             \"lsr %%d1,#%%2,%%d0\;\"
+             \"sl %%t1,#%d,%%3\;\"
+             \"ior %%3,%%d0,%%d0\;\"
+             \"lsr %%t1,#%%2,%%t0\;\"
+             \"sl %%q1,#%d,%%3\;\"
+             \"ior %%3,%%t0,%%t0\;\"
+             \"lsr %%q1,#%%2,%%q0\",
+             16 - INTVAL(operands[2]), 
+             16 - INTVAL(operands[2]), 
+             16 - INTVAL(operands[2]));
+        } else {
+          f += sprintf(f,
+            \"mov #%%2,%%3\;\"
+            \".LB%%=:\;\"
+            \"lsr %%q1,%%q0\;\"
+            \"rrc %%t1,%%t0\;\"
+            \"rrc %%d1,%%d0\;\"
+            \"rrc %%1,%%0\;\"
+            \"dec %%3,%%3\;\"
+            \"bra nz,.LB%%=\");
+        }
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 3:
+        f += sprintf(f,
+           \"lsr %%1,#%%2,%%0\;\"
+           \"sl %%d1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%d1,#%%2,%%d0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\;\"
+           \"lsr %%t1,#%%2,%%t0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%t0,%%t0\",
+           16 - INTVAL(operands[2]), 
+           16 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 2:
+        f += sprintf(f,
+           \"lsr %%1,#%%2,%%0\;\"
+           \"sl %%d1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%d1,#%%2,%%d0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\",
+           16 - INTVAL(operands[2]), 
+           16 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 1:
+        f += sprintf(f,
+          \"lsr %%1,#%%2,%%0\;\"
+          \"sl %%d1,#%d,%%3\;\"
+          \"ior %%3,%%0, %%0\;\",
+           16 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+    }
+  } else if (INTVAL(operands[2]) < 32) {
+    switch (results) {
+      case 4:
+        f += sprintf(f,
+           \"lsr %%d1,#%d,%%0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%t1,#%d,%%d0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\;\"
+           \"lsr %%q1,#%d,%%t0\;\"
+           \"clr %%q0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 3:
+        f += sprintf(f,
+           \"lsr %%d1,#%d,%%0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%t1,#%d,%%d0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\;\"
+           \"lsr %%q1,#%d,%%t0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 2:
+        f += sprintf(f,
+           \"lsr %%d1,#%d,%%0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%t1,#%d,%%d0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 1:
+        f += sprintf(f,
+           \"lsr %%d1,#%d,%%0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+    }
+  } else if (INTVAL(operands[2]) < 48) {
+    switch (results) {
+      case 4:
+        f += sprintf(f,
+           \"lsr %%t1,#%d,%%0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%q1,#%d,%%d0\;\"
+           \"mul.uu %%t0,#0,%%t0\",
+           INTVAL(operands[2]) - 32,
+           48 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 32);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 3:
+        f += sprintf(f,
+           \"lsr %%t1,#%d,%%0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%q1,#%d,%%d0\;\"
+           \"clr %%t0\",
+           INTVAL(operands[2]) - 32,
+           48 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 32);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 2:
+        f += sprintf(f,
+           \"lsr %%t1,#%d,%%0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%q1,#%d,%%d0\",
+           INTVAL(operands[2]) - 32,
+           48 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 32);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 1:
+        f += sprintf(f,
+           \"lsr %%t1,#%d,%%0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\",
+           INTVAL(operands[2]) - 32,
+           48 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+    }
+  } else if (INTVAL(operands[2]) < 64) {
+    f += sprintf(f, \"lsr %%q1,#%d,%%0\", INTVAL(operands[2])-48);
+    switch (results) {
+      case 4: 
+        f += sprintf(f,
+          \"\;mul.uu %%t0,#0,%%t0\;\"
+          \"clr %%d0\");
+        break;
+      case 3:
+        f += sprintf(f,
+          \"\;clr %%t0\;\"
+          \"clr %%d0\"); 
+        break;
+      case 2:
+        f += sprintf(f,
+          \"\;clr %%d0\"); 
+        break;
+    }
+    if ((unsigned)f - (unsigned)buffer > 256) 
+      error(\"Unexpected error during assembly generation\");
+    return buffer;
+  }
 }"
   [
    (set_attr "cc" "clobber")
@@ -9912,19 +10828,240 @@ static	char insn[48];
 		     (clobber (match_scratch:HI 3           "=&r"))]
   ""
   "*
-{
-      return( 
-#if (1)
-      	      \".set ___BP___,0\;\"
-#endif
-              \"mov #%2,%3\n\"
-              \".LB%=:\;\"
-              \"asr %q1,%q0\;\"
-              \"rrc %t1,%t0\;\"
-              \"rrc %d1,%d0\;\"
-              \"rrc %1,%0\;\"
-              \"dec %3,%3\;\"
-              \"bra nz,.LB%=\");
+{ static char buffer[256];
+  char *f;
+  int results = 0;
+  rtx result_reg;
+      
+  /* how many results do we need?
+     if all but the low reg is dead we can shift fewer values */
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0]));
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg))) 
+    results = 1;
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0])+1);
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg)))
+    results = 1+1;
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0])+2);
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg)))
+    results = 1+2;
+  result_reg = gen_rtx_REG(HImode, REGNO(operands[0])+3);
+  if (!pic30_dead_or_set_p(insn, result_reg) &&
+      !find_regno_note(insn, REG_UNUSED, REGNO(result_reg)))
+    results = 1+3;
+
+  f = buffer;
+  f += sprintf(buffer,\".set ___BP___,0 ; (%d,%d)\;\", 
+               INTVAL(operands[2]), results);
+  if (INTVAL(operands[2]) < 16) {
+    switch (results) {
+      case 4:
+        if (!optimize_size) {
+          f += sprintf(f,
+             \"lsr %%1,#%%2,%%0\;\"
+             \"sl %%d1,#%d,%%3\;\"
+             \"ior %%3,%%0,%%0\;\"
+             \"lsr %%d1,#%%2,%%d0\;\"
+             \"sl %%t1,#%d,%%3\;\"
+             \"ior %%3,%%d0,%%d0\;\"
+             \"lsr %%t1,#%%2,%%t0\;\"
+             \"sl %%q1,#%d,%%3\;\"
+             \"ior %%3,%%t0,%%t0\;\"
+             \"asr %%q1,#%%2,%%q0\",
+             16 - INTVAL(operands[2]), 
+             16 - INTVAL(operands[2]), 
+             16 - INTVAL(operands[2]));
+        } else {
+          f += sprintf(f,
+            \"mov #%%2,%%3\;\"
+            \".LB%%=:\;\"
+            \"asr %%q1,%%q0\;\"
+            \"rrc %%t1,%%t0\;\"
+            \"rrc %%d1,%%d0\;\"
+            \"rrc %%1,%%0\;\"
+            \"dec %%3,%%3\;\"
+            \"bra nz,.LB%%=\");
+        }
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 3:
+        f += sprintf(f,
+           \"lsr %%1,#%%2,%%0\;\"
+           \"sl %%d1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%d1,#%%2,%%d0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\;\"
+           \"lsr %%t1,#%%2,%%t0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%t0,%%t0\",
+           16 - INTVAL(operands[2]), 
+           16 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 2:
+        f += sprintf(f,
+           \"lsr %%1,#%%2,%%0\;\"
+           \"sl %%d1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%d1,#%%2,%%d0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\",
+           16 - INTVAL(operands[2]), 
+           16 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 1:
+        f += sprintf(f,
+          \"lsr %%1,#%%2,%%0\;\"
+          \"sl %%d1,#%d,%%3\;\"
+          \"ior %%3,%%0, %%0\;\",
+           16 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+    }
+  } else if (INTVAL(operands[2]) < 32) {
+    switch (results) {
+      case 4:
+        f += sprintf(f,
+           \"lsr %%d1,#%d,%%0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%t1,#%d,%%d0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\;\"
+           \"lsr %%q1,#%d,%%t0\;\"
+           \"asr %%q1,#15,%%q0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 3:
+        f += sprintf(f,
+           \"lsr %%d1,#%d,%%0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%t1,#%d,%%d0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%d0,%%d0\;\"
+           \"lsr %%q1,#%d,%%t0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 2:
+        f += sprintf(f,
+           \"lsr %%d1,#%d,%%0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%t1,#%d,%%d0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 1:
+        f += sprintf(f,
+           \"lsr %%d1,#%d,%%0\;\"
+           \"sl %%t1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\",
+           INTVAL(operands[2]) - 16,
+           32 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 16);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+    }
+  } else if (INTVAL(operands[2]) < 48) {
+    switch (results) {
+      case 4:
+        f += sprintf(f,
+           \"lsr %%t1,#%d,%%0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%q1,#%d,%%d0\;\"
+           \"asr %%q1,#15,%%t0\;\"
+           \"asr %%q1,#15,%%q0\",
+           INTVAL(operands[2]) - 32,
+           48 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 32);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 3:
+        f += sprintf(f,
+           \"lsr %%t1,#%d,%%0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%q1,#%d,%%d0\;\"
+           \"asr %%q1,#15,%%t0\",
+           INTVAL(operands[2]) - 32,
+           48 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 32);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 2:
+        f += sprintf(f,
+           \"lsr %%t1,#%d,%%0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\;\"
+           \"lsr %%q1,#%d,%%d0\",
+           INTVAL(operands[2]) - 32,
+           48 - INTVAL(operands[2]),
+           INTVAL(operands[2]) - 32);
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+      case 1:
+        f += sprintf(f,
+           \"lsr %%t1,#%d,%%0\;\"
+           \"sl %%q1,#%d,%%3\;\"
+           \"ior %%3,%%0,%%0\",
+           INTVAL(operands[2]) - 32,
+           48 - INTVAL(operands[2]));
+        if ((unsigned)f - (unsigned)buffer > 256) 
+          error(\"Unexpected error during assembly generation\");
+        return buffer;
+    }
+  } else if (INTVAL(operands[2]) < 64) {
+    f += sprintf(f, \"asr %%q1,#%d,%%0\", INTVAL(operands[2])-48);
+    switch (results) {
+      case 4: 
+        f += sprintf(f,
+          \"\;asr %%q1,#15,%%d0\;\"
+          \"asr %%q1,#15,%%t0\;\"
+          \"asr %%q1,#15,%%q0\;\");
+        break;
+      case 3:
+        f += sprintf(f,
+          \"\;asr %%q1,#15,%%d0\;\"
+          \"asr %%q1,#15,%%t0\;\");
+        break;
+      case 2:
+        f += sprintf(f,
+          \"\;asr %%q1,#15,%%d0\;\");
+        break;
+    }
+    if ((unsigned)f - (unsigned)buffer > 256) 
+      error(\"Unexpected error during assembly generation\");
+    return buffer;
+  }
 }"
   [
    (set_attr "cc" "clobber")
@@ -10140,33 +11277,29 @@ static	char insn[48];
         *SIGH* */
 
      for (i = 0; i < INTVAL(operands[1]); i++) {
-       mask = 1 << i;
-       if ((INTVAL(operands[3]) & mask) == 0) {
+       mask =  (1 << (INTVAL(operands[2]) +i));
+       if ((INTVAL(operands[3]) & (1 << i)) == 0) {
           if (REG_P(operands[0]) || (GET_CODE(operands[0]) == SUBREG)) {
-            mask =  ~(1 << (INTVAL(operands[2]) + i));
-            mask_rtx = gen_rtx_CONST_INT(HImode, mask);
+            mask_rtx = gen_rtx_CONST_INT(HImode, ~mask);
             emit(gen_bitclrhi(operands[0], operands[0], mask_rtx));
           } else {
-            mask =  ~(1 << (INTVAL(operands[2]) +i));
             if (mode == HImode) {
-              mask_rtx = gen_rtx_CONST_INT(HImode, mask);
+              mask_rtx = gen_rtx_CONST_INT(HImode, ~mask);
               emit(gen_bitclrhi_sfr(operands[0], mask_rtx));
             } else if (mode == QImode) {
               if (mask > 0x80) {
                 FAIL;
                 break;
               }
-              mask_rtx = gen_rtx_CONST_INT(HImode, mask);
+              mask_rtx = gen_rtx_CONST_INT(HImode, ~mask);
               emit(gen_bitclrqi_sfr(modifybit, mask_rtx));
             }
           }
        } else {
           if (REG_P(operands[0]) || (GET_CODE(operands[0]) == SUBREG)) {
-            mask =  (1 << (INTVAL(operands[2]) +i));
             mask_rtx = gen_rtx_CONST_INT(HImode, mask);
             emit(gen_bitsethi(operands[0], operands[0], mask_rtx));
           } else {
-            mask =  (1 << (INTVAL(operands[2]) +i));
             if (mode == HImode) {
               mask_rtx = gen_rtx_CONST_INT(HImode, mask);
               emit(gen_bitsethi_sfr(operands[0], mask_rtx));
@@ -10838,28 +11971,34 @@ static	char insn[48];
 )
 
 (define_insn "write_oscconl"
-  [(unspec_volatile [(match_operand 0 "pic30_register_operand" "=&r")
+  [(set (match_operand:HI 0 "pic30_register_operand" "=&r")
+        (unspec_volatile [
                      (match_operand 1 "pic30_register_operand" "r")
                      (match_operand 2 "pic30_register_operand" "r")
                      (match_operand 3 "pic30_register_operand" "r")]
-    UNSPECV_WRITEOSCCONL)]
+           UNSPECV_WRITEOSCCONL)
+   )]
   ""
   "mov #_OSCCON,%0\;mov.b %1,[%0]\;mov.b %2,[%0]\;mov.b %3,[%0]"
 )
 
 (define_insn "write_oscconh"
-  [(unspec_volatile [(match_operand 0 "pic30_register_operand" "=&r")
+  [(set (match_operand:HI 0 "pic30_register_operand" "=&r")
+        (unspec_volatile [
                      (match_operand 1 "pic30_register_operand" "r")
                      (match_operand 2 "pic30_register_operand" "r")
                      (match_operand 3 "pic30_register_operand" "r")]
-    UNSPECV_WRITEOSCCONH)]
+    UNSPECV_WRITEOSCCONH)
+   )]
   ""
   "mov #_OSCCON+1,%0\;mov.b %1,[%0]\;mov.b %2,[%0]\;mov.b %3,[%0]"
 )
 
 (define_insn "write_nvm"
-  [(unspec_volatile [(match_operand 0 "pic30_wreg_operand" "=a")]
-   UNSPECV_WRITEONVM)]
+  [(set (match_operand:HI 0 "pic30_register_operand" "=&r")
+        (unspec_volatile [ 
+                     (match_operand:HI 1 "pic30_register_operand" "0") 
+         ] UNSPECV_WRITEONVM))]
   ""
   "mov #0x55,%0\;mov %0,_NVMKEY\;mov #0xAA,%0\;mov %0,_NVMKEY\;bset _NVMCON,#15\;nop\;nop"
 )

@@ -404,7 +404,13 @@ get_name (tree t)
 static inline tree
 create_tmp_from_val (tree val)
 {
-  return create_tmp_var (TREE_TYPE (val), get_name (val));
+  tree new_tree=create_tmp_var (TREE_TYPE (val), get_name (val));
+  if (is_gimple_hard_reg(val)) {
+    DECL_HARD_REGISTER(new_tree) = 1;
+    SET_DECL_ASSEMBLER_NAME(new_tree, DECL_ASSEMBLER_NAME(val));
+    DECL_REGISTER(new_tree) = 1;
+  }
+  return new_tree;
 }
 
 /* Create a temporary to hold the value of VAL.  If IS_FORMAL, try to reuse
@@ -1692,7 +1698,12 @@ gimplify_arg (tree *expr_p, tree *pre_p)
      aggregates into temporaries only to copy the temporaries to
      the argument list.  Make optimizers happy by pulling out to
      temporaries those types that fit in registers.  */
-  if (is_gimple_reg_type (TREE_TYPE (*expr_p)))
+  /* make users happy that when they specify a hard register for something
+     it stays in the hard reg unless it has to move; GIMPLE doesn't know
+     know when that is */
+  if (is_gimple_hard_reg(*expr_p)) 
+    test = is_gimple_asm_val, fb = fb_either;
+  else if (is_gimple_reg_type (TREE_TYPE (*expr_p)))
     test = is_gimple_val, fb = fb_rvalue;
   else
     test = is_gimple_lvalue, fb = fb_either;

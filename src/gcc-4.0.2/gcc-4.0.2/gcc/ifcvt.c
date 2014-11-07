@@ -2002,6 +2002,8 @@ noce_process_if_block (struct ce_if_block * ce_info)
   if (! cond)
     return FALSE;
 
+  if (side_effects_p(cond)) return FALSE;
+
   /* If the conditional jump is more than just a conditional
      jump, then we can not do if-conversion on this block.  */
   if (! onlyjump_p (jump))
