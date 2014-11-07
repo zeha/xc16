@@ -2756,6 +2756,12 @@ build_unary_op (enum tree_code code, tree xarg, int flag)
 	 restricted pointer by taking the address of something, so we
 	 only have to deal with `const' and `volatile' here.  */
       if (DECL_P (arg) || REFERENCE_CLASS_P (arg)) {
+#ifdef _PIC30_H_
+          if (TYPE_TARGET_QUALIFIER(argtype)) {
+            argtype = build_qualified_type(argtype,TYPE_QUALS(argtype));
+                      
+          } else 
+#endif
           if (TREE_READONLY (arg) || TREE_THIS_VOLATILE (arg)) {
 	    argtype = c_build_type_variant (argtype,
 					    TREE_READONLY (arg),

@@ -57,6 +57,7 @@ Boston, MA 02111-1307, USA.  */
   { "pic30_psv_operand", { MEM }}, \
   { "pic30_tbl_operand", { MEM }}, \
   { "pic30_register_operand", { REG, SUBREG }}, \
+  { "pic30_D_register_operand", { REG, SUBREG }}, \
   { "pic30_mode1_operand", { REG, MEM, SUBREG, CONST_INT }}, \
   { "pic30_mode1P_operand", { REG, MEM, SUBREG, CONST_INT }}, \
   { "pic30_mode1PN_operand", { REG, MEM, SUBREG, CONST_INT }}, \
@@ -72,6 +73,7 @@ Boston, MA 02111-1307, USA.  */
   { "pic30_xprefetch_operand", { REG }}, \
   { "pic30_yprefetch_operand", { REG }}, \
   { "pic30_mode2_operand", { SUBREG, REG, MEM }}, \
+  { "pic30_D_mode2_operand", { SUBREG, REG, MEM }}, \
   { "pic30_mode2res_operand", { SUBREG, REG, MEM }}, \
   { "pic30_mode2mres_operand", { SUBREG, REG, MEM }}, \
   { "pic30_modek_operand", { MEM }}, \
@@ -141,6 +143,7 @@ enum pic30_builtins
    PIC30_BUILTIN_MULUS,       /*  __builtin_mulus(...) */
    PIC30_BUILTIN_MULUU,       /*  __builtin_muluu(...) */
    PIC30_BUILTIN_BTG,         /*  __builtin_btg(...) */
+   PIC30_BUILTIN_DMAPAGE,     /*  __builtin_dmapage() */
    PIC30_BUILTIN_DMAOFFSET,   /*  __builtin_dmaoffset() */
    PIC30_BUILTIN_ADDAB,
    PIC30_BUILTIN_ADD,
@@ -325,8 +328,10 @@ extern char * pic30_default_include_path(void) __attribute__((weak));
             MPLABC30_COMMON_INCLUDE_PATH ":" \
             MPLABC30_PIC24F_INCLUDE_PATH ":" \
             MPLABC30_PIC24H_INCLUDE_PATH ":" \
+            MPLABC30_PIC24E_INCLUDE_PATH ":" \
             MPLABC30_PIC30F_INCLUDE_PATH ":" \
-            MPLABC30_PIC33F_INCLUDE_PATH )
+            MPLABC30_PIC33F_INCLUDE_PATH ":" \
+            MPLABC30_PIC33E_INCLUDE_PATH )
 #ifndef TARGET_EXTRA_INCLUDES
 extern void pic30_system_include_paths(const char *root, const char *system, 
                                        int nostdinc);
@@ -355,7 +360,8 @@ extern void pic30_system_include_paths(const char *root, const char *system,
          MPLABC30_PIC24F_LIB_PATH PATH_SEPARATOR_STR \
          MPLABC30_PIC24H_LIB_PATH PATH_SEPARATOR_STR \
          MPLABC30_PIC30F_LIB_PATH PATH_SEPARATOR_STR \
-         MPLABC30_PIC33F_LIB_PATH
+         MPLABC30_PIC33F_LIB_PATH PATH_SEPARATOR_STR \
+         MPLABC30_PIC33E_LIB_PATH
         
 
 /*----------------------------------------------------------------------*/
@@ -382,7 +388,7 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 #define TARGET_MASK_ARCH_PIC24H         0x00004000
 #define TARGET_MASK_ARCH_GENERIC        0x00008000
 #define TARGET_MASK_CONST_IN_PSV        0x00010000
-#define TARGET_MASK_CONST_IN_PROG       0x00020000
+#define TARGET_MASK_CONST_IN_AUXCODE    0x00020000
 #define TARGET_MASK_SKIP_DOT_FILE       0x00040000
 #define TARGET_MASK_ARCH_PIC24FK        0x00080000
 #define TARGET_MASK_ABI_CHECK           0x00100000
@@ -392,6 +398,11 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 #define TARGET_MASK_BIG                 0x01000000
 #define TARGET_MASK_ARCH_DA_GENERIC     0x02000000
 #define TARGET_MASK_TRACE_ALL_ADDR      0x04000000
+#define TARGET_MASK_ARCH_PIC33E         0x08000000
+#define TARGET_MASK_ARCH_PIC24E         0x10000000
+#define TARGET_MASK_AUX_FLASH           0x20000000
+#define TARGET_MASK_ALT_TEXT            0x40000000
+#define TARGET_MASK_ARCH_EP_GENERIC     0x02000000
 
 /*
 ** Small data model means that data objects can be
@@ -437,11 +448,11 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 /*
 ** Constants in data means that the .const section is in a chosen space.
 */
-#define TARGET_CONST_IN_DATA ((target_flags & TARGET_MASK_CONST_IN_DATA) != 0)
-#define TARGET_CONST_IN_PSV  ((target_flags & TARGET_MASK_CONST_IN_PSV) != 0)
-#define TARGET_CONST_IN_PROG ((target_flags & TARGET_MASK_CONST_IN_PROG) != 0)
-#define TARGET_CONST_IN_CODE ((!TARGET_CONST_IN_DATA) && \
-                              (!TARGET_CONST_IN_PSV) && (!TARGET_CONST_IN_PROG))
+#define TARGET_CONST_IN_DATA    ((target_flags &TARGET_MASK_CONST_IN_DATA) != 0)
+#define TARGET_CONST_IN_PSV     ((target_flags & TARGET_MASK_CONST_IN_PSV) != 0)
+#define TARGET_CONST_IN_AUXCODE \
+   ((target_flags & TARGET_MASK_CONST_IN_AUXCODE) != 0)
+#define TARGET_CONST_IN_CODE ((!TARGET_CONST_IN_DATA) && (!TARGET_CONST_IN_PSV))
 #define TARGET_EDS ((target_flags & TARGET_MASK_EDS))
 
 #if TARGET_USE_PA
@@ -528,9 +539,11 @@ extern void pic30_system_include_paths(const char *root, const char *system,
     TARGET_MASK_CONST_IN_DATA, \
     "Put constants in data space"}, \
  {"const-in-code", \
-    -(TARGET_MASK_CONST_IN_DATA | TARGET_MASK_CONST_IN_PSV | \
-      TARGET_MASK_CONST_IN_PROG), \
+    -(TARGET_MASK_CONST_IN_DATA | TARGET_MASK_CONST_IN_PSV) , \
     "Put constants in code space"}, \
+ {"const-in-auxflash", \
+    TARGET_MASK_CONST_IN_AUXCODE, \
+    "When combined with -mconst-inc-code, put constants in auxiliary FLASH"}, \
  {"pa", \
     TARGET_MASK_PA, \
     "Run procedural abstraction stage"}, \
@@ -564,6 +577,9 @@ extern void pic30_system_include_paths(const char *root, const char *system,
  { "debug", \
    (TARGET_MASK_TRACE_ALL_ADDR), \
    "enable extra debugging\n"}, \
+ { "auxflash", \
+   (TARGET_MASK_AUX_FLASH), \
+   "Place all code into auxiliary flash\n" }, \
  { "", TARGET_DEFAULT,NULL} \
 }
 
@@ -1065,6 +1081,7 @@ enum reg_class
    AE_REGS,         /* 'a+e': data regs (w0,w2..w14) */
    D_REGS,          /* 'd': data regs (w1..w14) */
    W_REGS,          /* 'w': working regs (w0..w15) */
+   ER_REGS,         /* even working regs (w0..w12) */
    SINK_REGS,       /* sink */
    ALL_REGS,        /* 'r': (w0..w14) */
    LIM_REG_CLASSES
@@ -1108,7 +1125,8 @@ enum reg_class
   "W0+W2..W14", \
   "W1..W14",    \
   "W0..W15",    \
-  "SINK", \
+  "ERREGS",     \
+  "SINK",       \
   "ALL_REGS"    \
 }
 
@@ -1145,6 +1163,7 @@ enum reg_class
         { 0x0000fffd, 0x00000000 }, \
         { 0x0000fffe, 0x00000000 }, \
         { 0xfe00ffff, 0x00000001 }, \
+/*ER*/  { 0x00001555, 0x00000000 }, \
         { 0xfe000000, 0x00000001 }, \
         { 0x0000ffff, 0x00000000 }  \
 }
@@ -1228,7 +1247,7 @@ enum reg_class
  c   - [C30 - see below]
  C   - [C30 - see below]
  d   - [C30 - see below]
- D   - unused
+ D   - [C30 - see below]
  e   - [C30 - see below]
  E   - const double vector
  f   - unused
@@ -1293,6 +1312,7 @@ enum reg_class
 ** `c' is the class of multiply support registers (W2).
 ** `C' is the class of multiply support registers 32bit (W2-W3).
 ** `d' is the class of general-purpose data registers (W1..W14).
+** `D' is the class of even general-purpose data registers (W0..W12).
 ** `e' is the class of non-divide support general registers (W2..W14).
 ** 't' is the class of very restricted product registes (W7)
 ** 'u' is the class of restricted product registers (W4-W6)
@@ -1307,6 +1327,7 @@ enum reg_class
 #define REG_CLASS_FROM_LETTER(Q) (      \
      ((Q) == 'e') ? E_REGS :            \
      ((Q) == 'd') ? D_REGS :            \
+     ((Q) == 'D') ? ER_REGS :            \
      ((Q) == 'c') ? C_REGS :            \
      ((Q) == 'C') ? CC_REGS :           \
      ((Q) == 'b') ? B_REGS :            \
@@ -2054,33 +2075,35 @@ typedef struct pic30_args
 #else
 /* the flags may be any length if surrounded by | */
 #define PIC30_EXTENDED_FLAG  "|"
-#define PIC30_PROG_FLAG       PIC30_EXTENDED_FLAG "pm" PIC30_EXTENDED_FLAG
-#define PIC30_DATA_FLAG       PIC30_EXTENDED_FLAG "dm" PIC30_EXTENDED_FLAG
-#define PIC30_X_FLAG          PIC30_EXTENDED_FLAG "xm" PIC30_EXTENDED_FLAG
-#define PIC30_Y_FLAG          PIC30_EXTENDED_FLAG "ym" PIC30_EXTENDED_FLAG
-#define PIC30_EXT_FLAG        PIC30_EXTENDED_FLAG "ext" PIC30_EXTENDED_FLAG
-#define PIC30_PMP_FLAG        PIC30_EXTENDED_FLAG "pmp" PIC30_EXTENDED_FLAG
-#define PIC30_APSV_FLAG       PIC30_EXTENDED_FLAG "apsv" PIC30_EXTENDED_FLAG
+#define PIC30_PROG_FLAG       PIC30_EXTENDED_FLAG "pm"      PIC30_EXTENDED_FLAG
+#define PIC30_DATA_FLAG       PIC30_EXTENDED_FLAG "dm"      PIC30_EXTENDED_FLAG
+#define PIC30_X_FLAG          PIC30_EXTENDED_FLAG "xm"      PIC30_EXTENDED_FLAG
+#define PIC30_Y_FLAG          PIC30_EXTENDED_FLAG "ym"      PIC30_EXTENDED_FLAG
+#define PIC30_EXT_FLAG        PIC30_EXTENDED_FLAG "ext"     PIC30_EXTENDED_FLAG
+#define PIC30_PMP_FLAG        PIC30_EXTENDED_FLAG "pmp"     PIC30_EXTENDED_FLAG
+#define PIC30_APSV_FLAG       PIC30_EXTENDED_FLAG "apsv"    PIC30_EXTENDED_FLAG
 #define PIC30_PRST_FLAG       PIC30_EXTENDED_FLAG "persist" PIC30_EXTENDED_FLAG
-#define PIC30_PSV_FLAG        PIC30_EXTENDED_FLAG "psv" PIC30_EXTENDED_FLAG
-#define PIC30_EE_FLAG         PIC30_EXTENDED_FLAG "ee" PIC30_EXTENDED_FLAG
-#define PIC30_BSS_FLAG        PIC30_EXTENDED_FLAG "bss" PIC30_EXTENDED_FLAG
+#define PIC30_PSV_FLAG        PIC30_EXTENDED_FLAG "psv"     PIC30_EXTENDED_FLAG
+#define PIC30_EE_FLAG         PIC30_EXTENDED_FLAG "ee"      PIC30_EXTENDED_FLAG
+#define PIC30_BSS_FLAG        PIC30_EXTENDED_FLAG "bss"     PIC30_EXTENDED_FLAG
 
-#define PIC30_MERGE_FLAG      PIC30_EXTENDED_FLAG "mrg" PIC30_EXTENDED_FLAG
-#define PIC30_NOLOAD_FLAG     PIC30_EXTENDED_FLAG "nl" PIC30_EXTENDED_FLAG
-#define PIC30_ALGN_FLAG       PIC30_EXTENDED_FLAG "a" PIC30_EXTENDED_FLAG
-#define PIC30_RALGN_FLAG      PIC30_EXTENDED_FLAG "ra" PIC30_EXTENDED_FLAG
-#define PIC30_ADDR_FLAG       PIC30_EXTENDED_FLAG "addr" PIC30_EXTENDED_FLAG
+#define PIC30_MERGE_FLAG      PIC30_EXTENDED_FLAG "mrg"     PIC30_EXTENDED_FLAG
+#define PIC30_NOLOAD_FLAG     PIC30_EXTENDED_FLAG "nl"      PIC30_EXTENDED_FLAG
+#define PIC30_ALGN_FLAG       PIC30_EXTENDED_FLAG "a"       PIC30_EXTENDED_FLAG
+#define PIC30_RALGN_FLAG      PIC30_EXTENDED_FLAG "ra"      PIC30_EXTENDED_FLAG
+#define PIC30_ADDR_FLAG       PIC30_EXTENDED_FLAG "addr"    PIC30_EXTENDED_FLAG
 
-#define PIC30_FCNN_FLAG       PIC30_EXTENDED_FLAG "Nf" PIC30_EXTENDED_FLAG
-#define PIC30_FCNS_FLAG       PIC30_EXTENDED_FLAG "Sf" PIC30_EXTENDED_FLAG
-#define PIC30_EDS_FLAG        PIC30_EXTENDED_FLAG "eds" PIC30_EXTENDED_FLAG
-#define PIC30_PAGE_FLAG       PIC30_EXTENDED_FLAG "pge" PIC30_EXTENDED_FLAG
-#define PIC30_SFR_FLAG        PIC30_EXTENDED_FLAG "sfr" PIC30_EXTENDED_FLAG
-#define PIC30_NEAR_FLAG       PIC30_EXTENDED_FLAG "near" PIC30_EXTENDED_FLAG
-#define PIC30_DMA_FLAG        PIC30_EXTENDED_FLAG "dma" PIC30_EXTENDED_FLAG
+#define PIC30_FCNN_FLAG       PIC30_EXTENDED_FLAG "Nf"      PIC30_EXTENDED_FLAG
+#define PIC30_FCNS_FLAG       PIC30_EXTENDED_FLAG "Sf"      PIC30_EXTENDED_FLAG
+#define PIC30_EDS_FLAG        PIC30_EXTENDED_FLAG "eds"     PIC30_EXTENDED_FLAG
+#define PIC30_PAGE_FLAG       PIC30_EXTENDED_FLAG "pge"     PIC30_EXTENDED_FLAG
+#define PIC30_SFR_FLAG        PIC30_EXTENDED_FLAG "sfr"     PIC30_EXTENDED_FLAG
+#define PIC30_NEAR_FLAG       PIC30_EXTENDED_FLAG "near"    PIC30_EXTENDED_FLAG
+#define PIC30_DMA_FLAG        PIC30_EXTENDED_FLAG "dma"     PIC30_EXTENDED_FLAG
 #define PIC30_BOOT_FLAG       PIC30_EXTENDED_FLAG "boot" 
 #define PIC30_SECURE_FLAG     PIC30_EXTENDED_FLAG "sec" 
+#define PIC30_AUXFLASH_FLAG   PIC30_EXTENDED_FLAG "aux"     PIC30_EXTENDED_FLAG
+#define PIC30_AUXPSV_FLAG     PIC30_EXTENDED_FLAG "xpsv"    PIC30_EXTENDED_FLAG
 
 #define PIC30_SFR_NAME_P(NAME) (strstr(NAME, PIC30_SFR_FLAG))
 #define PIC30_PGM_NAME_P(NAME) (strstr(NAME, PIC30_PROG_FLAG))

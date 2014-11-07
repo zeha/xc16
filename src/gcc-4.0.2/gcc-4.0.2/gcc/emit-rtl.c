@@ -1963,7 +1963,7 @@ offset_address (rtx memref, rtx offset, unsigned HOST_WIDE_INT pow2)
     }
 
   update_temp_slot_address (XEXP (memref, 0), new);
-  new = change_address_1 (memref, pointer_mode, new, 1);
+  new = change_address_1 (memref, VOIDmode, new, 1);
 
   /* If there are no changes, just return the original memory reference.  */
   if (new == memref)

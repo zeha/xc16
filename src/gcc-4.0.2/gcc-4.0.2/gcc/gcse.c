@@ -4034,22 +4034,37 @@ insert_insn_end_bb (struct expr *expr, basic_block bb, int pre)
 	        (GET_CODE(XEXP(PATTERN(insn),1)) == REG)) {
 	      for (p_insn = PREV_INSN(insn); !NOTE_INSN_BASIC_BLOCK_P(p_insn);
 	           p_insn = PREV_INSN(p_insn)) {
+                rtx p;
+                int i = 0,okay;
+
 	        if (!INSN_P(p_insn)) continue;
 	        if (GET_CODE(p_insn) == CALL_INSN) {
 	          if (insn_uses_mem) break;
 	        }
-	        if (REG_P(XEXP(PATTERN(p_insn),0))) {
-	          /* if p_insn sets a register used in the new instruction,
-	             give up */
-         	  if (reg_mentioned_p(XEXP(PATTERN(p_insn),0), pat)) break;
-		   /* otherwise, we can move it before this insn */
-		   insn = p_insn;
-		 } else if (GET_CODE(XEXP(PATTERN(p_insn),0)) == MEM) {
-		   /* if pat uses a mem, and the current instructions modifies
-		      a mem, stop - we don't do alias checking */
-		  if (insn_uses_mem) break;
-		  insn = p_insn;
-		}
+                p = PATTERN(p_insn);
+                okay=1;
+                do {
+                  if (GET_CODE(PATTERN(p_insn)) == PARALLEL) {
+                    if (i < XVECLEN(PATTERN(p_insn),0)) {
+                      p = XVECEXP(PATTERN(p_insn),0,i++);
+                      if (GET_CODE(p) != SET) continue;
+                    } else {
+                      p = 0;
+                      continue;
+                    }
+                  }
+	          if (REG_P(XEXP(p,0))) {
+	            /* if p_insn sets a register used in the new instruction,
+	               give up */
+         	    if (reg_mentioned_p(XEXP(p,0), pat)) okay=0;
+		   } else if (GET_CODE(XEXP(p,0)) == MEM) {
+		     /* if pat uses a mem, and the current instructions modifies
+		        a mem, stop - we don't do alias checking */
+		    if (insn_uses_mem) okay=0;
+		  }
+		} while ((GET_CODE(PATTERN(p_insn)) == PARALLEL) && p && okay);
+		if (!okay) break;
+                insn = p_insn;
 	      }
 	    }
 	  }

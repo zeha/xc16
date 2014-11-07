@@ -297,7 +297,7 @@ is_gimple_reg (tree t)
      it seems safest to not do too much optimization with these at the
      tree level at all.  We'll have to rely on the rtl optimizers to
      clean this up, as there we've got all the appropriate bits exposed.  */
-  if (TREE_CODE (t) == VAR_DECL && DECL_HARD_REGISTER (t)) 
+  if (TREE_CODE (t) == VAR_DECL && DECL_HARD_REGISTER (t))  
     return false;
 
   return true;

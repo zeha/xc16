@@ -876,8 +876,12 @@ chain_of_csts_start (struct loop *loop, tree x)
   basic_block bb;
   use_optype uses;
 
+#if 1
   if (stmt) bb = bb_for_stmt (stmt);
   else return NULL_TREE;
+#else
+  bb = bb_for_stmt(stmt);
+#endif
   if (!bb
       || !flow_bb_inside_loop_p (loop, bb))
     return NULL_TREE;

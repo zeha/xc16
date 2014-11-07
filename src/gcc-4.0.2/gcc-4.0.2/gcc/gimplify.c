@@ -1549,7 +1549,7 @@ gimplify_compound_lval (tree *expr_p, tree *pre_p,
 	  if (!is_gimple_min_invariant (TREE_OPERAND (t, 1)))
 	    {
 	      tret = gimplify_expr (&TREE_OPERAND (t, 1), pre_p, post_p,
-				    is_gimple_formal_tmp_asm_reg, fb_rvalue);
+				    is_gimple_formal_tmp_reg, fb_rvalue);
 	      ret = MIN (ret, tret);
 	    }
 	}
