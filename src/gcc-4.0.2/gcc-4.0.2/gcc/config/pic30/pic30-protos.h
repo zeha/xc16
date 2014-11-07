@@ -236,6 +236,7 @@ extern int  pic30_modek_possible_operand(rtx, enum machine_mode);
 extern int  pic30_modek_operand(rtx, enum machine_mode);
 extern int  pic30_math_operand(rtx, enum machine_mode);
 extern int  pic30_math_APSV_operand(rtx, enum machine_mode);
+extern int  pic30_moveb_operand(rtx, enum machine_mode);
 extern int  pic30_move_operand(rtx, enum machine_mode);
 extern int  pic30_move_APSV_operand(rtx, enum machine_mode);
 extern int  pic30_move2_operand(rtx, enum machine_mode);

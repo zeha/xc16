@@ -1518,6 +1518,10 @@ rest_of_compilation (void)
 	TREE_SYMBOL_REFERENCED (DECL_ASSEMBLER_NAME (parent)) = 1;
   }
 
+#ifdef _PIC30_H_
+  pic30_merge_accumulators();
+#endif
+
   /* We are now committed to emitting code for this function.  Do any
      preparation, such as emitting abstract debug info for the inline
      before it gets mangled by optimization.  */
@@ -1630,6 +1634,10 @@ rest_of_compilation (void)
 
   rest_of_handle_life ();
   timevar_pop (TV_FLOW);
+
+#ifdef _PIC30_H_
+  pic30_validate_dsp_instructions();
+#endif
 
   if (optimize > 0)
     rest_of_handle_combine ();

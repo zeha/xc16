@@ -405,11 +405,13 @@ static inline tree
 create_tmp_from_val (tree val)
 {
   tree new_tree=create_tmp_var (TREE_TYPE (val), get_name (val));
+#if 0
   if (is_gimple_hard_reg(val)) {
     DECL_HARD_REGISTER(new_tree) = 1;
     SET_DECL_ASSEMBLER_NAME(new_tree, DECL_ASSEMBLER_NAME(val));
     DECL_REGISTER(new_tree) = 1;
   }
+#endif
   return new_tree;
 }
 
@@ -1701,9 +1703,12 @@ gimplify_arg (tree *expr_p, tree *pre_p)
   /* make users happy that when they specify a hard register for something
      it stays in the hard reg unless it has to move; GIMPLE doesn't know
      know when that is */
+#if 0
   if (is_gimple_hard_reg(*expr_p)) 
     test = is_gimple_asm_val, fb = fb_either;
-  else if (is_gimple_reg_type (TREE_TYPE (*expr_p)))
+  else 
+#endif
+  if (is_gimple_reg_type (TREE_TYPE (*expr_p)))
     test = is_gimple_val, fb = fb_rvalue;
   else
     test = is_gimple_lvalue, fb = fb_either;
@@ -3971,9 +3976,7 @@ gimplify_expr (tree *expr_p, tree *pre_p, tree *post_p,
 	case ALIGN_INDIRECT_REF:
 	case MISALIGNED_INDIRECT_REF:
 	  ret = gimplify_expr (&TREE_OPERAND (*expr_p, 0), pre_p, post_p,
-			       is_gimple_hard_reg_r(*expr_p) ? 
-				   is_gimple_hard_reg : is_gimple_reg, 
-			       fb_rvalue);
+				   is_gimple_reg, fb_rvalue);
 	  recalculate_side_effects (*expr_p);
 	  break;
 

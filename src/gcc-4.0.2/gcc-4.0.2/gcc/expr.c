@@ -758,6 +758,9 @@ convert_modes (enum machine_mode mode, enum machine_mode oldmode, rtx x, int uns
      non-volatile MEM.  Except for the constant case where MODE is no
      wider than HOST_BITS_PER_WIDE_INT, we must be narrowing the operand.  */
 
+#ifdef _PIC30_H_
+  if ((mode != P32PEDSmode) && (mode != P32EDSmode))
+#endif
   if ((GET_CODE (x) == CONST_INT
        && GET_MODE_BITSIZE (mode) <= HOST_BITS_PER_WIDE_INT)
       || (GET_MODE_CLASS (mode) == MODE_INT
@@ -776,7 +779,7 @@ convert_modes (enum machine_mode mode, enum machine_mode oldmode, rtx x, int uns
 	 X does not need sign- or zero-extension.   This may not be
 	 the case, but it's the best we can do.  */
       if (GET_CODE (x) == CONST_INT && oldmode != VOIDmode
-	  && GET_MODE_SIZE (mode) > GET_MODE_SIZE (oldmode))
+	  && GET_MODE_SIZE (mode) >= GET_MODE_SIZE (oldmode))
 	{
 	  HOST_WIDE_INT val = INTVAL (x);
 	  int width = GET_MODE_BITSIZE (oldmode);
@@ -1330,8 +1333,8 @@ emit_block_move_via_libcall (rtx dst, rtx src, rtx size, bool tailcall)
      pseudos.  We can then place those new pseudos into a VAR_DECL and
      use them later.  */
 
-  dst_addr = copy_to_mode_reg (Pmode, XEXP (dst, 0));
-  src_addr = copy_to_mode_reg (Pmode, XEXP (src, 0));
+  dst_addr = copy_to_mode_reg (GET_MODE(XEXP(dst,0)), XEXP (dst, 0));
+  src_addr = copy_to_mode_reg (GET_MODE(XEXP(src,0)), XEXP (src, 0));
 
   dst_addr = convert_memory_address (ptr_mode, dst_addr);
   src_addr = convert_memory_address (ptr_mode, src_addr);

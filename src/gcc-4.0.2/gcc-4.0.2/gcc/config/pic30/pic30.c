@@ -490,6 +490,13 @@ static tree pic30_identUnordered[2];
 tree pic30_identUnsafe[2];
 static tree pic30_identAligned[2];
 
+typedef struct cheap_rtx_list {
+  tree t;
+  rtx x;
+  int flag;  // variable uses
+  struct cheap_rtx_list *next;
+} cheap_rtx_list;
+
 typedef enum pic30_interesting_fn_info_ {
   info_invalid,
   info_I,
@@ -645,12 +652,16 @@ tree pic30_write_externals(enum pic30_special_trees);
 
 static char this_default_name[sizeof("*_012345670123456701234567")];
 static time_t current_time = 0;
+static int size_t_used_externally = 0;
 
 /*----------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------*/
 /*    L O C A L    F U N C T I O N    P R O T O T Y P E S        */
 /*----------------------------------------------------------------------*/
+static void push_cheap_rtx(cheap_rtx_list **l, rtx x, tree t, int flag);
+static rtx pop_cheap_rtx(cheap_rtx_list **l, tree *t, int *flag);
+
 void initialize_object_signatures(void);
 static int pic30_address_cost(rtx op);
 static int pic30_function_arg_partial_nregs(CUMULATIVE_ARGS *cum,
@@ -829,6 +840,8 @@ const struct attribute_spec pic30_attribute_table[] = {
  */
 #undef TARGET_INIT_BUILTINS
 #define TARGET_INIT_BUILTINS pic30_init_builtins
+
+struct cheap_rtx_list *dsp_builtin_list = 0;
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -1433,7 +1446,60 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
   int eedata = 0;
   int pmp=0;
   pic30_external_memory *memory=0;
+  tree paramtype;
 
+  if (TREE_CODE(decl) == FUNCTION_DECL) {
+    if (TREE_PUBLIC(decl)) {
+      paramtype = TREE_TYPE(decl);
+      if (TYPE_NAME(paramtype)) {
+        if ((TREE_CODE(TYPE_NAME(paramtype))) == IDENTIFIER_NODE) {
+          if (strcmp(IDENTIFIER_POINTER(TYPE_NAME(paramtype)),
+                     "size_t") == 0) {
+            size_t_used_externally = 1;
+          }
+        } else if (TREE_CODE(TYPE_NAME(paramtype)) == TYPE_DECL) {
+          if (strcmp(IDENTIFIER_POINTER(DECL_NAME(TYPE_NAME(paramtype))),
+                     "size_t") == 0) {
+            size_t_used_externally = 1;
+          }
+        }
+      }
+      if (!size_t_used_externally) {
+        tree arglist = TYPE_ARG_TYPES(TREE_TYPE(decl));
+  
+        for (; arglist; arglist = TREE_CHAIN(arglist)) {
+          paramtype = TREE_VALUE(arglist);
+          if (TYPE_NAME(paramtype)) {
+            if ((TREE_CODE(TYPE_NAME(paramtype))) == IDENTIFIER_NODE) {
+              if (strcmp(IDENTIFIER_POINTER(TYPE_NAME(paramtype)),
+                         "size_t") == 0) {
+                size_t_used_externally = 1;
+                break;
+              }
+            } else if (TREE_CODE(TYPE_NAME(paramtype)) == TYPE_DECL) {
+              if (strcmp(IDENTIFIER_POINTER(DECL_NAME(TYPE_NAME(paramtype))),
+                         "size_t") == 0) {
+                size_t_used_externally = 1;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  } else if ((TREE_CODE(decl) == VAR_DECL) && TREE_PUBLIC(decl)) {
+   
+    if (TYPE_NAME(TREE_TYPE(decl))) {
+      if (TREE_CODE(TYPE_NAME(TREE_TYPE(decl))) == IDENTIFIER_NODE) {
+        if (strcmp(IDENTIFIER_POINTER(TYPE_NAME(TREE_TYPE(decl))),"size_t") == 0)
+          size_t_used_externally = 1;
+      } else if (TREE_CODE(TYPE_NAME(TREE_TYPE(decl))) == TYPE_DECL) {
+        if (strcmp(IDENTIFIER_POINTER(DECL_NAME(TYPE_NAME(TREE_TYPE(decl)))),
+                   "size_t") == 0)
+          size_t_used_externally = 1;
+      }
+    }
+  }
   if (fnear == -1) {
     section_type_set = 1;
     fnear = 0;
@@ -2820,14 +2886,16 @@ static void pic30_init_builtins(void) {
   /*
    * DSP builtins
    */
+   p0_type = build_pointer_type(unsigned_type_node);
+   p1_type = build_qualified_type(unsigned_type_node, TYPE_QUAL_CONST);
    fn_type = build_function_type_list(integer_type_node,
-                                      void_type_node, NULL_TREE);
+                                      integer_type_node, integer_type_node, NULL_TREE);
    builtin_function("__builtin_addab", fn_type,
                    PIC30_BUILTIN_ADDAB, BUILT_IN_MD, NULL, NULL_TREE);
 
    fn_type = build_function_type_list(integer_type_node,
-                                      integer_type_node, integer_type_node,
-                                      NULL_TREE);
+                                      integer_type_node, integer_type_node, 
+                                      integer_type_node, NULL_TREE);
    builtin_function("__builtin_add", fn_type,
                     PIC30_BUILTIN_ADD, BUILT_IN_MD, NULL, NULL_TREE);
 
@@ -2842,7 +2910,7 @@ static void pic30_init_builtins(void) {
    fn_type = build_function_type_list(integer_type_node, 
                                       p1_type, p0_type, integer_type_node,
                                       p1_type, p0_type, integer_type_node,
-                                      p0_type, NULL_TREE);
+                                      p0_type, integer_type_node, NULL_TREE);
    builtin_function("__builtin_clr_prefetch", fn_type, 
                     PIC30_BUILTIN_CLR_PREFETCH, BUILT_IN_MD, NULL, NULL_TREE);
 
@@ -2856,7 +2924,12 @@ static void pic30_init_builtins(void) {
    builtin_function("__builtin_ed", fn_type,
                     PIC30_BUILTIN_ED, BUILT_IN_MD, NULL, NULL_TREE);
 
-   /* same type as __builtin_ed */
+   fn_type = build_function_type_list(integer_type_node,
+                                      integer_type_node,
+                                      integer_type_node, 
+                                      p1_type, integer_type_node,
+                                      p1_type, integer_type_node,
+                                      p0_type, NULL_TREE);
    builtin_function("__builtin_edac", fn_type,
                     PIC30_BUILTIN_EDAC, BUILT_IN_MD, NULL, NULL_TREE);
 
@@ -2874,10 +2947,10 @@ static void pic30_init_builtins(void) {
    p0_type = build_pointer_type(integer_type_node);
    p1_type = build_pointer_type(p0_type);
    fn_type = build_function_type_list(integer_type_node,
-                                      integer_type_node, integer_type_node,
+                                      integer_type_node, integer_type_node, integer_type_node,
                                       p1_type, p0_type, integer_type_node,
                                       p1_type, p0_type, integer_type_node,
-                                      p0_type, NULL_TREE);
+                                      p0_type, integer_type_node, NULL_TREE);
    builtin_function("__builtin_mac", fn_type, 
                     PIC30_BUILTIN_MAC, BUILT_IN_MD, NULL, NULL_TREE);
 
@@ -2886,7 +2959,7 @@ static void pic30_init_builtins(void) {
    fn_type = build_function_type_list(integer_type_node,
                                       p1_type, p0_type, integer_type_node,
                                       p1_type, p0_type, integer_type_node,
-                                      p0_type, NULL_TREE);
+                                      p0_type, integer_type_node, NULL_TREE);
    builtin_function("__builtin_movsac", fn_type,
                     PIC30_BUILTIN_MOVSAC, BUILT_IN_MD, NULL, NULL_TREE);
 
@@ -2921,10 +2994,10 @@ static void pic30_init_builtins(void) {
    p0_type = build_pointer_type(integer_type_node);
    p1_type = build_pointer_type(p0_type);
    fn_type = build_function_type_list(integer_type_node,
-                                      integer_type_node, integer_type_node,
+                                      integer_type_node, integer_type_node, integer_type_node,
                                       p1_type, p0_type, integer_type_node,
                                       p1_type, p0_type, integer_type_node,
-                                      p0_type, NULL_TREE);
+                                      p0_type, integer_type_node, NULL_TREE);
    builtin_function("__builtin_msc", fn_type,
                     PIC30_BUILTIN_MSC, BUILT_IN_MD, NULL, NULL_TREE);
 
@@ -2941,12 +3014,13 @@ static void pic30_init_builtins(void) {
                     PIC30_BUILTIN_SACR, BUILT_IN_MD, NULL, NULL_TREE);
 
    fn_type = build_function_type_list(integer_type_node,
-                                      integer_type_node, NULL_TREE);
+                                      integer_type_node, integer_type_node, NULL_TREE);
    builtin_function("__builtin_sftac", fn_type,
                     PIC30_BUILTIN_SFTAC, BUILT_IN_MD, NULL, NULL_TREE);
 
    fn_type = build_function_type_list(integer_type_node,
-                                      void_type_node, NULL_TREE);
+                                      integer_type_node, integer_type_node, 
+                                      NULL_TREE);
    builtin_function("__builtin_subab", fn_type,
                    PIC30_BUILTIN_SUBAB, BUILT_IN_MD, NULL, NULL_TREE);
  
@@ -3151,6 +3225,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
   tree fndecl = TREE_OPERAND(TREE_OPERAND(exp, 0), 0);
   unsigned int fcode = DECL_FUNCTION_CODE(fndecl);
   tree arglist = TREE_OPERAND(exp, 1);
+  tree accum;
   tree arg0;
   tree arg1;
   tree arg2;
@@ -3160,6 +3235,8 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
   tree arg6;
   tree arg7;
   tree arg8;
+  tree arg9;
+  tree arg10;
   rtx r0 = 0;
   rtx r1 = 0;
   rtx r2 = 0;
@@ -3169,9 +3246,23 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
   rtx r6 = 0;
   rtx r7 = 0;
   rtx r8 = 0;
+  rtx r9 = 0;
+  rtx r10 = 0;
+  rtx accum_r;
   rtx (*fn2)(rtx,rtx) = 0;
   enum machine_mode reqd_mode;
   const char *id = 0;
+  rtx (*gen)(rtx,rtx) = 0;
+  rtx (*gen3)(rtx,rtx,rtx) = 0;
+  rtx other_accumulator = NULL_RTX;
+  rtx scratch0 =  gen_rtx_REG(HImode,SINK0);
+  rtx scratch1 =  gen_rtx_REG(HImode,SINK1);
+  rtx scratch2 =  gen_rtx_REG(HImode,SINK2);
+  rtx scratch3 =  gen_rtx_REG(HImode,SINK3);
+  rtx scratch4 =  gen_rtx_REG(HImode,SINK4);
+  rtx scratch5 =  gen_rtx_REG(HImode,SINK5);
+  rtx scratch6 =  gen_rtx_REG(HImode,SINK6);
+  rtx scratch7 =  gen_rtx_REG(HImode,SINK7);
 
   switch (fcode)
   {
@@ -3748,27 +3839,57 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 
     case PIC30_BUILTIN_SUBAB:
       id = "subab";
+      gen3 = gen_subac_hi;
     case PIC30_BUILTIN_ADDAB: {
-      rtx (*gen)(rtx,rtx);
-      rtx other_accumulator = NULL_RTX;
 
-      if (id == 0) id = "addab";
+      if (id == 0) {
+        id = "addab";
+        gen3 = gen_addac_hi;
+      }
       if (!(pic30_device_mask & HAS_DSP)) {
         error("__builtin_%s is not supported on this target", id);
         return NULL_RTX;
       }
-      if (fcode == PIC30_BUILTIN_SUBAB) gen = gen_subac_hi; 
-      else gen = gen_addac_hi;
-      if (!target ||
-          (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
-        error("result for __builtin_%s should be an accumulator register",id);
-        return NULL_RTX;
-      } else {
-        other_accumulator = gen_raw_REG(HImode,OTHER_ACCUM_REG(REGNO(target)));
+#if 0
+      if ((fcode == PIC30_BUILTIN_SUBAB) || (fcode == PIC30_BUILTIN_ADDAB)) {
+        if (!target ||
+            (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
+          error("result for __builtin_%s should be an accumulator register",id);
+          return NULL_RTX;
+        } else {
+          other_accumulator = 
+            gen_raw_REG(HImode,OTHER_ACCUM_REG(REGNO(target)));
+        }
       }
+#endif
+      arg0 = TREE_VALUE(arglist);
+      arglist = TREE_CHAIN(arglist);
+      arg1 = TREE_VALUE(arglist);
+      r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
+      r1 = expand_expr(arg1, NULL_RTX, HImode, EXPAND_NORMAL);
+      if (!pic30_reg_for_builtin(r0)) {
+        rtx reg = NULL_RTX;
+
+        reg = gen_reg_rtx(HImode);
+        emit_insn(
+          gen_movhi(reg, r0)
+        );
+        r0 = reg;
+      }
+      if (!pic30_reg_for_builtin(r1)) {
+        rtx reg = NULL_RTX;
+
+        reg = gen_reg_rtx(HImode);
+        emit_insn(
+          gen_movhi(reg, r1)
+        );
+        r1 = reg;
+      }
+
       emit_insn(
-        gen(target, other_accumulator)
+        gen ? gen(target, r0) : gen3(target, r0, r1)
       );
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       return target;
     }
 
@@ -3780,11 +3901,15 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         error("__builtin_%s is not supported on this target", id);
         return NULL_RTX;
       }
+#if 0
       if (!target ||
           (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_add should be an accumulator register");
         return NULL_RTX;
       }
+#endif
+      accum = TREE_VALUE(arglist);
+      arglist = TREE_CHAIN(arglist);
       arg0 = TREE_VALUE(arglist);
       arglist = TREE_CHAIN(arglist);
       arg1 = TREE_VALUE(arglist);
@@ -3797,6 +3922,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         );
         r0 = reg;
       }
+      accum_r = expand_expr(accum, NULL_RTX, HImode, EXPAND_NORMAL);
       r1 = expand_expr(arg1, NULL_RTX, HImode, EXPAND_NORMAL);
       if ((GET_CODE(r1) != CONST_INT) || 
           (!CONST_OK_FOR_LETTER_P(INTVAL(r1),'Z'))) {
@@ -3807,51 +3933,53 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       if (pic30_errata_mask & psv_errata) {
         emit_insn(
           (INTVAL(r1) < 0) ? gen_addacr_shiftlt_hi_errata(target, r0, 
-                                                       GEN_INT(-1*INTVAL(r1))) :
-          (INTVAL(r1) > 0) ? gen_addacr_shiftrt_hi_errata(target, r0, r1) :
-                             gen_addacr_noshift_hi_errata(target, r0)
+                                              GEN_INT(-1*INTVAL(r1)),accum_r) :
+          (INTVAL(r1) > 0) ? gen_addacr_shiftrt_hi_errata(target, r0, r1, accum_r) :
+                             gen_addacr_noshift_hi_errata(target, r0, accum_r)
         );
       } else {
         emit_insn(
           (INTVAL(r1) < 0) ? gen_addacr_shiftlt_hi(target, r0, 
-                                                   GEN_INT(-1*INTVAL(r1))) :
-          (INTVAL(r1) > 0) ? gen_addacr_shiftrt_hi(target, r0, r1) :
-                             gen_addacr_noshift_hi(target, r0)
+                                              GEN_INT(-1*INTVAL(r1)),accum_r) :
+          (INTVAL(r1) > 0) ? gen_addacr_shiftrt_hi(target, r0, r1, accum_r) :
+                             gen_addacr_noshift_hi(target, r0, accum_r)
         );
       }
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       return target;
       break;
     }
 
     case PIC30_BUILTIN_CLR: {
-      rtx scratch = gen_rtx_CONST_INT(HImode,0);
 
       id = "clr";
       if (!(pic30_device_mask & HAS_DSP)) {
         error("__builtin_%s is not supported on this target", id);
         return NULL_RTX;
       }
+#if 0
       if (!target ||
           (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_clr should be an accumulator register");
       }
+#endif
       emit_insn(
         gen_clrac_gen_hi(target,
-                         scratch,
-                         scratch,
-                         scratch,
-                         scratch,
-                         scratch,
-                         scratch,
-                         scratch,
-                         scratch)
+                         scratch0,
+                         scratch1,
+                         scratch2,
+                         GEN_INT(0),
+                         scratch4,
+                         scratch5,
+                         scratch6,
+                         GEN_INT(0))
       );
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       return target;
       break;
     }
 
     case PIC30_BUILTIN_CLR_PREFETCH: {
-      rtx scratch = gen_rtx_CONST_INT(HImode,0);
       rtx p_xreg = NULL_RTX;
       rtx p_yreg = NULL_RTX;
       rtx d_xreg = NULL_RTX;
@@ -3877,17 +4005,32 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       arg5 = TREE_VALUE(arglist);
       arglist = TREE_CHAIN(arglist);
       arg6 = TREE_VALUE(arglist);
+      arglist = TREE_CHAIN(arglist);
+      arg7 = TREE_VALUE(arglist);
       r2 = NULL_RTX;
       r5 = NULL_RTX;
 
+#if 0
       if (!target ||
           (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_clr_prefetch should be "
               "an accumulator register");
-        awb_to = scratch;
+        awb_to = scratch6;
       } else {
         awb_to = gen_raw_REG(HImode,OTHER_ACCUM_REG(REGNO(target)));
       }
+#else 
+      awb_to = expand_expr(arg7, NULL_RTX, HImode, EXPAND_NORMAL);
+      if (!pic30_reg_for_builtin(awb_to)) {
+        rtx reg = NULL_RTX;
+
+        reg = gen_reg_rtx(HImode);
+        emit_insn(
+          gen_movhi(reg, awb_to)
+        );
+        awb_to = reg;
+      }
+#endif
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
@@ -3959,32 +4102,33 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       r6 = expand_expr(arg6, NULL_RTX, HImode, EXPAND_NORMAL);
       if ((GET_CODE(r6) != CONST_INT) || (INTVAL(r6) != 0)) {
         awb = gen_reg_rtx(HImode);
-      } else awb_to = scratch;
+      } else awb_to = scratch6;
       if (awb) {
         emit_insn(
           gen_clracawb_gen_hi(target,
-                           d_xreg ? d_xreg : scratch,
-                           p_xreg ? p_xreg : scratch,
-                           p_xreg && (r2) ? p_xreg : scratch,
+                           d_xreg ? d_xreg : scratch0,
+                           p_xreg ? p_xreg : scratch1,
+                           p_xreg && (r2) ? p_xreg : scratch2,
                            (r2)   ? r2 : gen_rtx_CONST_INT(HImode,0),
-                           d_yreg ? d_yreg : scratch,
-                           p_yreg ? p_yreg : scratch,
-                           p_yreg && (r5) ? p_yreg : scratch,
+                           d_yreg ? d_yreg : scratch3,
+                           p_yreg ? p_yreg : scratch4,
+                           p_yreg && (r5) ? p_yreg : scratch5,
                            (r5)   ? r5 : gen_rtx_CONST_INT(HImode,0),
                            awb,
                            awb_to)
         );
       } else emit_insn(
         gen_clrac_gen_hi(target, 
-                         d_xreg ? d_xreg : scratch,
-                         p_xreg ? p_xreg : scratch,
-                         p_xreg && (r2) ? p_xreg : scratch,
+                         d_xreg ? d_xreg : scratch0,
+                         p_xreg ? p_xreg : scratch1,
+                         p_xreg && (r2) ? p_xreg : scratch2,
                          (r2)   ? r2 : gen_rtx_CONST_INT(HImode,0),
-                         d_yreg ? d_yreg : scratch,
-                         p_yreg ? p_yreg : scratch,
-                         p_yreg && (r5) ? p_yreg : scratch,
+                         d_yreg ? d_yreg : scratch3,
+                         p_yreg ? p_yreg : scratch4,
+                         p_yreg && (r5) ? p_yreg : scratch5,
                          (r5)   ? r5 : gen_rtx_CONST_INT(HImode,0))
       );
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       if (p_xreg && r2) {
         emit_insn(
           gen_movhi(gen_rtx_MEM(HImode,r0), p_xreg)
@@ -4029,13 +4173,14 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 
     case PIC30_BUILTIN_EDAC:
       id = "edac";
+      accum = TREE_VALUE(arglist);
+      arglist = TREE_CHAIN(arglist);
+      accum_r = expand_expr(accum, NULL_RTX, HImode, EXPAND_NORMAL);
       /* FALLSTHROUGH */
     case PIC30_BUILTIN_ED: {
-      rtx scratch = gen_rtx_CONST_INT(HImode,0);
       rtx distance = NULL_RTX;
       rtx p_xreg = NULL_RTX;
       rtx p_yreg = NULL_RTX;
-      rtx (*gen_an_ed)(rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx) =
          (fcode == PIC30_BUILTIN_EDAC ? gen_ed_hi : gen_edac_hi);
 
       if (id == 0) id = "ed";
@@ -4043,10 +4188,12 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         error("__builtin_%s is not supported on this target", id);
         return NULL_RTX;
       }
+#if 0
       if (!target ||
           (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_%s should be an accumulator register",id);
       }
+#endif
       arg0 = TREE_VALUE(arglist);
       arglist = TREE_CHAIN(arglist);
       arg1 = TREE_VALUE(arglist);
@@ -4102,17 +4249,31 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       }
       distance = gen_reg_rtx(HImode);
       emit_insn(
-          gen_an_ed(
+          fcode == PIC30_BUILTIN_ED ?
+            gen_ed_hi(
                   target, 
                   r0,
                   distance,
                   p_xreg,
                   p_yreg,
-                  INTVAL(r2) != 0 ? p_xreg : scratch,
+                  INTVAL(r2) != 0 ? p_xreg : scratch0,
                   r2,
-                  INTVAL(r4) != 0 ? p_yreg : scratch,
+                  INTVAL(r4) != 0 ? p_yreg : scratch1,
+                  r4)
+          : 
+            gen_edac_hi(
+                  target, 
+                  accum_r,
+                  r0,
+                  distance,
+                  p_xreg,
+                  p_yreg,
+                  INTVAL(r2) != 0 ? p_xreg : scratch0,
+                  r2,
+                  INTVAL(r4) != 0 ? p_yreg : scratch1,
                   r4)
       );
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       if (p_xreg && (INTVAL(r2) != 0)) {
         emit_insn(
           gen_movhi(gen_rtx_MEM(HImode,r1), p_xreg)
@@ -4173,11 +4334,13 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         );
         r0 = reg;
       }
+#if 0
       if (!target || (GET_CODE(target) != REG) || 
           (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result of __builtin_lac should be an accumulator register");
         return NULL_RTX;
       }
+#endif
       if ((GET_CODE(r1) != CONST_INT) ||
           (!CONST_OK_FOR_LETTER_P(INTVAL(r1),'Z'))) {
         error("parameter 2 for __builtin_lac should fall in the literal "
@@ -4193,10 +4356,10 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           gen_lac_hi(target, r0, r1)
         );
       }
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       return target;
 
     case PIC30_BUILTIN_MAC: {
-      rtx scratch = gen_rtx_CONST_INT(HImode,0);
       rtx p_xreg = NULL_RTX;
       rtx p_yreg = NULL_RTX;
       rtx d_xreg = NULL_RTX;
@@ -4226,9 +4389,14 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       arg7 = TREE_VALUE(arglist);
       arglist = TREE_CHAIN(arglist);
       arg8 = TREE_VALUE(arglist);
-      r4 = NULL_RTX;
-      r7 = NULL_RTX;
+      arglist = TREE_CHAIN(arglist);
+      arg9 = TREE_VALUE(arglist);
+      arglist = TREE_CHAIN(arglist);
+      arg10 = TREE_VALUE(arglist);
+      r5 = NULL_RTX;
+      r8 = NULL_RTX;
 
+#if 0
       if (!target ||
           (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_mac should be an accumulator register");
@@ -4236,21 +4404,26 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       } else {
         awb_to = gen_raw_REG(HImode,OTHER_ACCUM_REG(REGNO(target)));
       }
+#else
+      r10 = expand_expr(arg10, NULL_RTX, HImode, EXPAND_NORMAL);
+      if (!pic30_reg_for_builtin(r10)) {
+        rtx reg = NULL_RTX;
+
+        reg = gen_reg_rtx(HImode);
+        emit_insn(
+          gen_movhi(reg, r10)
+        );
+        r10 = reg;
+      }
+      awb_to = r10;
+#endif
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
       }
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       r1 = expand_expr(arg1, NULL_RTX, HImode, EXPAND_NORMAL);
-      if (!pic30_reg_for_builtin(r0)) {
-        rtx reg;
-
-        reg = gen_reg_rtx(HImode);
-        emit_insn(
-          gen_movhi(reg, r0)
-        );
-        r0 = reg;
-      }
+      r2 = expand_expr(arg2, NULL_RTX, HImode, EXPAND_NORMAL);
       if (!pic30_reg_for_builtin(r1)) {
         rtx reg;
 
@@ -4260,26 +4433,35 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         );
         r1 = reg;
       }
-      r2 = expand_expr(arg2, NULL_RTX, HImode, EXPAND_NORMAL);
-      if ((GET_CODE(r2) != CONST_INT) || (INTVAL(r2) != 0)) {
+      if (!pic30_reg_for_builtin(r2)) {
+        rtx reg;
+
+        reg = gen_reg_rtx(HImode);
+        emit_insn(
+          gen_movhi(reg, r2)
+        );
+        r2 = reg;
+      }
+      r3 = expand_expr(arg3, NULL_RTX, HImode, EXPAND_NORMAL);
+      if ((GET_CODE(r3) != CONST_INT) || (INTVAL(r3) != 0)) {
         /* contains an X prefetch */
-        r3 = expand_expr(arg3, NULL_RTX, HImode, EXPAND_NORMAL);
-        if ((GET_CODE(r3) == CONST_INT) && (INTVAL(r3) == 0)) {
+        r4 = expand_expr(arg4, NULL_RTX, HImode, EXPAND_NORMAL);
+        if ((GET_CODE(r4) == CONST_INT) && (INTVAL(r4) == 0)) {
           error("X prefetch destination to __builtin_mac should not be NULL");
           return NULL_RTX;
         }
-        r4 = expand_expr(arg4, NULL_RTX, HImode, EXPAND_NORMAL);
+        r5 = expand_expr(arg5, NULL_RTX, HImode, EXPAND_NORMAL);
         p_xreg = gen_reg_rtx(machine_Pmode);
         d_xreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r2))
+          gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r3))
         );
-        if (GET_CODE(r4) != CONST_INT) {
+        if (GET_CODE(r5) != CONST_INT) {
           error("X increment to __builtin_mac should be a literal");
           return NULL_RTX;
         }
-        switch (INTVAL(r4)) {
-          case 0:  r4 = NULL_RTX;
+        switch (INTVAL(r5)) {
+          case 0:  r5 = NULL_RTX;
           case -6:
           case -4:
           case -2:
@@ -4291,25 +4473,25 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
             return NULL_RTX;
         }
       }
-      r5 = expand_expr(arg5, NULL_RTX, HImode, EXPAND_NORMAL);
-      if ((GET_CODE(r5) != CONST_INT) || (INTVAL(r5) != 0)) {
+      r6 = expand_expr(arg6, NULL_RTX, HImode, EXPAND_NORMAL);
+      if ((GET_CODE(r6) != CONST_INT) || (INTVAL(r6) != 0)) {
         /* contains an Y prefetch */
-        r6 = expand_expr(arg6, NULL_RTX, HImode, EXPAND_NORMAL);
-        if ((GET_CODE(r6) == CONST_INT) && (INTVAL(r6) == 0)) {
+        r7 = expand_expr(arg7, NULL_RTX, HImode, EXPAND_NORMAL);
+        if ((GET_CODE(r7) == CONST_INT) && (INTVAL(r7) == 0)) {
           error("Y prefetch destination to __builtin_mac should not be NULL");
           return NULL_RTX;
         }
-        r7 = expand_expr(arg7, NULL_RTX, HImode, EXPAND_NORMAL);
+        r8 = expand_expr(arg8, NULL_RTX, HImode, EXPAND_NORMAL);
         p_yreg = gen_reg_rtx(machine_Pmode);
         d_yreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r5))
+          gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r6))
         );
-        if (GET_CODE(r7) != CONST_INT) {
+        if (GET_CODE(r8) != CONST_INT) {
           error("Y increment to __builtin_mac should be a literal");
           return NULL_RTX;
         }
-        switch (INTVAL(r7)) {
+        switch (INTVAL(r8)) {
           case 0:  r7 = NULL_RTX;
           case -6:
           case -4:
@@ -4322,23 +4504,24 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
             return NULL_RTX;
         }
       }
-      r8 = expand_expr(arg8, NULL_RTX, HImode, EXPAND_NORMAL);
-      if ((GET_CODE(r8) != CONST_INT) || (INTVAL(r8) != 0)) {
+      r9 = expand_expr(arg9, NULL_RTX, HImode, EXPAND_NORMAL);
+      if ((GET_CODE(r9) != CONST_INT) || (INTVAL(r9) != 0)) {
         awb = gen_reg_rtx(HImode);
-      } else awb_to = scratch;
+      } else awb_to = scratch6;
       if (awb) {
         emit_insn(
           gen_macawb_gen_hi(target,
                            r0,
                            r1,
-                           d_xreg ? d_xreg : scratch,
-                           p_xreg ? p_xreg : scratch,
-                           p_xreg && (r4) ? p_xreg : scratch,
-                           (r4)   ? r4 : gen_rtx_CONST_INT(HImode,0),
-                           d_yreg ? d_yreg : scratch,
-                           p_yreg ? p_yreg : scratch,
-                           p_yreg && (r7) ? p_yreg : scratch,
-                           (r7)   ? r7 : gen_rtx_CONST_INT(HImode,0),
+                           r2,
+                           d_xreg ? d_xreg : scratch0,
+                           p_xreg ? p_xreg : scratch1,
+                           p_xreg && (r5) ? p_xreg : scratch2,
+                           (r5)   ? r5 : gen_rtx_CONST_INT(HImode,0),
+                           d_yreg ? d_yreg : scratch3,
+                           p_yreg ? p_yreg : scratch4,
+                           p_yreg && (r8) ? p_yreg : scratch5,
+                           (r8)   ? r8 : gen_rtx_CONST_INT(HImode,0),
                            awb,
                            awb_to)
         );
@@ -4346,46 +4529,48 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         gen_mac_gen_hi(target,
                          r0,
                          r1,
-                         d_xreg ? d_xreg : scratch,
-                         p_xreg ? p_xreg : scratch,
-                         p_xreg && (r4) ? p_xreg : scratch,
-                         (r4)   ? r4 : gen_rtx_CONST_INT(HImode,0),
-                         d_yreg ? d_yreg : scratch,
-                         p_yreg ? p_yreg : scratch,
-                         p_yreg && (r7) ? p_yreg : scratch,
-                         (r7)   ? r7 : gen_rtx_CONST_INT(HImode,0))
+                         r2,
+                         d_xreg ? d_xreg : scratch0,
+                         p_xreg ? p_xreg : scratch1,
+                         p_xreg && (r5) ? p_xreg : scratch2,
+                         (r5)   ? r5 : gen_rtx_CONST_INT(HImode,0),
+                         d_yreg ? d_yreg : scratch3,
+                         p_yreg ? p_yreg : scratch4,
+                         p_yreg && (r8) ? p_yreg : scratch5,
+                         (r8)   ? r8 : gen_rtx_CONST_INT(HImode,0))
       );
-      if (p_xreg && r4) {
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
+      if (p_xreg && r5) {
         emit_insn(
-          gen_movhi(gen_rtx_MEM(HImode,r2), p_xreg)
+          gen_movhi(gen_rtx_MEM(HImode,r3), p_xreg)
         );
       }
-      if (p_yreg && r7) {
+      if (p_yreg && r8) {
         emit_insn(
-          gen_movhi(gen_rtx_MEM(HImode,r5), p_yreg)
+          gen_movhi(gen_rtx_MEM(HImode,r6), p_yreg)
         );
       }
       if (d_xreg) {
         emit_insn(
-          gen_movhi(gen_rtx_MEM(HImode,r3), d_xreg)
+          gen_movhi(gen_rtx_MEM(HImode,r4), d_xreg)
         );
       }
       if (d_yreg) {
         emit_insn(
-          gen_movhi(gen_rtx_MEM(HImode,r6), d_yreg)
+          gen_movhi(gen_rtx_MEM(HImode,r7), d_yreg)
         );
       }
       if (awb) {
-        rtx mem_of = r8;
+        rtx mem_of = r9;
 
-        if (GET_CODE(r8) == MEM) {
-          rtx in1 = XEXP(r8,0);
+        if (GET_CODE(r9) == MEM) {
+          rtx in1 = XEXP(r9,0);
 
           if (GET_CODE(in1) == SYMBOL_REF) {
             mem_of = gen_reg_rtx(machine_Pmode);
 
             emit_insn(
-               gen_movhi_address(mem_of, r8)
+               gen_movhi_address(mem_of, r9)
             );
           }
         }
@@ -4398,7 +4583,6 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
     }
 
     case PIC30_BUILTIN_MOVSAC: {
-      rtx scratch = gen_rtx_CONST_INT(HImode,0);
       rtx p_xreg = NULL_RTX;
       rtx p_yreg = NULL_RTX;
       rtx d_xreg = NULL_RTX;
@@ -4425,9 +4609,12 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       arg5 = TREE_VALUE(arglist);
       arglist = TREE_CHAIN(arglist);
       arg6 = TREE_VALUE(arglist);
+      arglist = TREE_CHAIN(arglist);
+      arg7 = TREE_VALUE(arglist);
       r2 = NULL_RTX;
       r5 = NULL_RTX;
 
+#if 0
       if (!target ||
           (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_movsac should be an accumulator register");
@@ -4435,6 +4622,18 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       } else {
         awb_to = gen_raw_REG(HImode,OTHER_ACCUM_REG(REGNO(target)));
       }
+#else
+      awb_to = expand_expr(arg7, NULL_RTX, HImode, EXPAND_NORMAL);
+      if (!pic30_reg_for_builtin(awb_to)) {
+        rtx reg = NULL_RTX;
+
+        reg = gen_reg_rtx(HImode);
+        emit_insn(
+          gen_movhi(reg, awb_to)
+        );
+        awb_to = reg;
+      }
+#endif
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
@@ -4506,32 +4705,35 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       r6 = expand_expr(arg6, NULL_RTX, HImode, EXPAND_NORMAL);
       if ((GET_CODE(r6) != CONST_INT) || (INTVAL(r6) != 0)) {
         awb = gen_reg_rtx(HImode);
-      } else awb_to = scratch;
+      } else awb_to = scratch6;
       if (awb) {
         emit_insn(
-          gen_movsacawb_gen_hi(target,
-                           d_xreg ? d_xreg : scratch,
-                           p_xreg ? p_xreg : scratch,
-                           p_xreg && (r2) ? p_xreg : scratch,
+          gen_movsacawb_gen_hi(
+                           d_xreg ? d_xreg : scratch0,
+                           p_xreg ? p_xreg : scratch1,
+                           p_xreg && (r2) ? p_xreg : scratch2,
                            (r2)   ? r2 : gen_rtx_CONST_INT(HImode,0),
-                           d_yreg ? d_yreg : scratch,
-                           p_yreg ? p_yreg : scratch,
-                           p_yreg && (r5) ? p_yreg : scratch,
+                           d_yreg ? d_yreg : scratch3,
+                           p_yreg ? p_yreg : scratch4,
+                           p_yreg && (r5) ? p_yreg : scratch5,
                            (r5)   ? r5 : gen_rtx_CONST_INT(HImode,0),
                            awb,
                            awb_to)
         );
-      } else emit_insn(
-        gen_movsac_gen_hi(target, 
-                         d_xreg ? d_xreg : scratch,
-                         p_xreg ? p_xreg : scratch,
-                         p_xreg && (r2) ? p_xreg : scratch,
-                         (r2)   ? r2 : gen_rtx_CONST_INT(HImode,0),
-                         d_yreg ? d_yreg : scratch,
-                         p_yreg ? p_yreg : scratch,
-                         p_yreg && (r5) ? p_yreg : scratch,
-                         (r5)   ? r5 : gen_rtx_CONST_INT(HImode,0))
-      );
+        push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
+      } else {
+        emit_insn(
+          gen_movsac_gen_hi(
+                           d_xreg ? d_xreg : scratch0,
+                           p_xreg ? p_xreg : scratch1,
+                           p_xreg && (r2) ? p_xreg : scratch2,
+                           (r2)   ? r2 : gen_rtx_CONST_INT(HImode,0),
+                           d_yreg ? d_yreg : scratch3,
+                           p_yreg ? p_yreg : scratch4,
+                           p_yreg && (r5) ? p_yreg : scratch5,
+                           (r5)   ? r5 : gen_rtx_CONST_INT(HImode,0))
+        );
+      }
       if (p_xreg && r2) {
         emit_insn(
           gen_movhi(gen_rtx_MEM(HImode,r0), p_xreg)
@@ -4577,7 +4779,6 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
     case PIC30_BUILTIN_MPYN:
       id = "mpyn";
     case PIC30_BUILTIN_MPY: {
-      rtx scratch = gen_rtx_CONST_INT(HImode,0);
       rtx p_xreg = NULL_RTX;
       rtx p_yreg = NULL_RTX;
       rtx d_xreg = NULL_RTX;
@@ -4610,10 +4811,12 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       r4 = NULL_RTX;
       r7 = NULL_RTX;
 
+#if 0
       if (!target ||
           (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_%s should be an accumulator register",id);
       }
+#endif
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
@@ -4706,15 +4909,16 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
          gen_mpy_gen_hi)(target,
                          r0,
                          r1,
-                         d_xreg ? d_xreg : scratch,
-                         p_xreg ? p_xreg : scratch,
-                         p_xreg && (r4) ? p_xreg : scratch,
+                         d_xreg ? d_xreg : scratch0,
+                         p_xreg ? p_xreg : scratch1,
+                         p_xreg && (r4) ? p_xreg : scratch2,
                          (r4)   ? r4 : gen_rtx_CONST_INT(HImode,0),
-                         d_yreg ? d_yreg : scratch,
-                         p_yreg ? p_yreg : scratch,
-                         p_yreg && (r7) ? p_yreg : scratch,
+                         d_yreg ? d_yreg : scratch3,
+                         p_yreg ? p_yreg : scratch4,
+                         p_yreg && (r7) ? p_yreg : scratch5,
                          (r7)   ? r7 : gen_rtx_CONST_INT(HImode,0))
       );
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       if (p_xreg && r4) {
         emit_insn(
           gen_movhi(gen_rtx_MEM(HImode,r2), p_xreg)
@@ -4740,7 +4944,6 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
     }
 
     case PIC30_BUILTIN_MSC: {
-      rtx scratch = gen_rtx_CONST_INT(HImode,0);
       rtx p_xreg = NULL_RTX;
       rtx p_yreg = NULL_RTX;
       rtx d_xreg = NULL_RTX;
@@ -4770,9 +4973,14 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       arg7 = TREE_VALUE(arglist);
       arglist = TREE_CHAIN(arglist);
       arg8 = TREE_VALUE(arglist);
-      r4 = NULL_RTX;
-      r7 = NULL_RTX;
+      arglist = TREE_CHAIN(arglist);
+      arg9 = TREE_VALUE(arglist);
+      arglist = TREE_CHAIN(arglist);
+      arg10 = TREE_VALUE(arglist);
+      r5 = NULL_RTX;
+      r8 = NULL_RTX;
 
+#if 0
       if (!target ||
           (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_msc should be an accumulator register");
@@ -4780,21 +4988,25 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       } else {
         awb_to = gen_raw_REG(HImode,OTHER_ACCUM_REG(REGNO(target)));
       }
+#else
+      awb_to = expand_expr(arg10, NULL_RTX, HImode, EXPAND_NORMAL);
+      if (!pic30_reg_for_builtin(awb_to)) {
+        rtx reg = NULL_RTX;
+
+        reg = gen_reg_rtx(HImode);
+        emit_insn(
+          gen_movhi(reg, awb_to)
+        );
+        awb_to = reg;
+      }
+#endif
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
       }
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       r1 = expand_expr(arg1, NULL_RTX, HImode, EXPAND_NORMAL);
-      if (!pic30_reg_for_builtin(r0)) {
-        rtx reg;
-
-        reg = gen_reg_rtx(HImode);
-        emit_insn(
-          gen_movhi(reg, r0)
-        );
-        r0 = reg;
-      }
+      r2 = expand_expr(arg2, NULL_RTX, HImode, EXPAND_NORMAL);
       if (!pic30_reg_for_builtin(r1)) {
         rtx reg;
 
@@ -4804,26 +5016,35 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         );
         r1 = reg;
       }
-      r2 = expand_expr(arg2, NULL_RTX, HImode, EXPAND_NORMAL);
-      if ((GET_CODE(r2) != CONST_INT) || (INTVAL(r2) != 0)) {
+      if (!pic30_reg_for_builtin(r2)) {
+        rtx reg;
+
+        reg = gen_reg_rtx(HImode);
+        emit_insn(
+          gen_movhi(reg, r2)
+        );
+        r2 = reg;
+      }
+      r3 = expand_expr(arg3, NULL_RTX, HImode, EXPAND_NORMAL);
+      if ((GET_CODE(r3) != CONST_INT) || (INTVAL(r3) != 0)) {
         /* contains an X prefetch */
-        r3 = expand_expr(arg3, NULL_RTX, HImode, EXPAND_NORMAL);
-        if ((GET_CODE(r3) == CONST_INT) && (INTVAL(r3) == 0)) {
+        r4 = expand_expr(arg4, NULL_RTX, HImode, EXPAND_NORMAL);
+        if ((GET_CODE(r4) == CONST_INT) && (INTVAL(r4) == 0)) {
           error("X prefetch destination to __builtin_msc should not be NULL");
           return NULL_RTX;
         }
-        r4 = expand_expr(arg4, NULL_RTX, HImode, EXPAND_NORMAL);
+        r5 = expand_expr(arg5, NULL_RTX, HImode, EXPAND_NORMAL);
         p_xreg = gen_reg_rtx(machine_Pmode);
         d_xreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r2))
+          gen_movhi(p_xreg, gen_rtx_MEM(machine_Pmode, r5))
         );
-        if (GET_CODE(r4) != CONST_INT) {
+        if (GET_CODE(r5) != CONST_INT) {
           error("X increment to __builtin_msc should be a literal");
           return NULL_RTX;
         }
-        switch (INTVAL(r4)) {
-          case 0:  r4 = NULL_RTX;
+        switch (INTVAL(r5)) {
+          case 0:  r5 = NULL_RTX;
           case -6:
           case -4:
           case -2:
@@ -4835,26 +5056,26 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
             return NULL_RTX;
         }
       }
-      r5 = expand_expr(arg5, NULL_RTX, HImode, EXPAND_NORMAL);
-      if ((GET_CODE(r5) != CONST_INT) || (INTVAL(r5) != 0)) {
+      r6 = expand_expr(arg6, NULL_RTX, HImode, EXPAND_NORMAL);
+      if ((GET_CODE(r6) != CONST_INT) || (INTVAL(r6) != 0)) {
         /* contains an Y prefetch */
-        r6 = expand_expr(arg6, NULL_RTX, HImode, EXPAND_NORMAL);
-        if ((GET_CODE(r6) == CONST_INT) && (INTVAL(r6) == 0)) {
+        r7 = expand_expr(arg7, NULL_RTX, HImode, EXPAND_NORMAL);
+        if ((GET_CODE(r7) == CONST_INT) && (INTVAL(r7) == 0)) {
           error("Y prefetch destination to __builtin_msc should not be NULL");
           return NULL_RTX;
         }
-        r7 = expand_expr(arg7, NULL_RTX, HImode, EXPAND_NORMAL);
+        r8 = expand_expr(arg8, NULL_RTX, HImode, EXPAND_NORMAL);
         p_yreg = gen_reg_rtx(machine_Pmode);
         d_yreg = gen_reg_rtx(HImode);
         emit_insn(
-          gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r5))
+          gen_movhi(p_yreg, gen_rtx_MEM(machine_Pmode, r6))
         );
-        if (GET_CODE(r7) != CONST_INT) {
+        if (GET_CODE(r8) != CONST_INT) {
           error("Y increment to __builtin_msc should be a literal");
           return NULL_RTX;
         }
-        switch (INTVAL(r7)) {
-          case 0:  r7 = NULL_RTX;
+        switch (INTVAL(r8)) {
+          case 0:  r8 = NULL_RTX;
           case -6:
           case -4:
           case -2:
@@ -4866,23 +5087,24 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
             return NULL_RTX;
         }
       }
-      r8 = expand_expr(arg8, NULL_RTX, HImode, EXPAND_NORMAL);
-      if ((GET_CODE(r8) != CONST_INT) || (INTVAL(r8) != 0)) {
+      r9 = expand_expr(arg9, NULL_RTX, HImode, EXPAND_NORMAL);
+      if ((GET_CODE(r9) != CONST_INT) || (INTVAL(r9) != 0)) {
         awb = gen_reg_rtx(HImode);
-      } else awb_to = scratch;
+      } else awb_to = scratch6;
       if (awb) {
         emit_insn(
           gen_mscawb_gen_hi(target,
                            r0,
                            r1,
-                           d_xreg ? d_xreg : scratch,
-                           p_xreg ? p_xreg : scratch,
-                           p_xreg && (r4) ? p_xreg : scratch,
-                           (r4)   ? r4 : gen_rtx_CONST_INT(HImode,0),
-                           d_yreg ? d_yreg : scratch,
-                           p_yreg ? p_yreg : scratch,
-                           p_yreg && (r7) ? p_yreg : scratch,
-                           (r7)   ? r7 : gen_rtx_CONST_INT(HImode,0),
+                           r2,
+                           d_xreg ? d_xreg : scratch0,
+                           p_xreg ? p_xreg : scratch1,
+                           p_xreg && (r5) ? p_xreg : scratch2,
+                           (r5)   ? r5 : gen_rtx_CONST_INT(HImode,0),
+                           d_yreg ? d_yreg : scratch3,
+                           p_yreg ? p_yreg : scratch4,
+                           p_yreg && (r8) ? p_yreg : scratch5,
+                           (r8)   ? r8 : gen_rtx_CONST_INT(HImode,0),
                            awb,
                            awb_to)
         );
@@ -4890,46 +5112,48 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         gen_msc_gen_hi(target,
                          r0,
                          r1,
-                         d_xreg ? d_xreg : scratch,
-                         p_xreg ? p_xreg : scratch,
-                         p_xreg && (r4) ? p_xreg : scratch,
-                         (r4)   ? r4 : gen_rtx_CONST_INT(HImode,0),
-                         d_yreg ? d_yreg : scratch,
-                         p_yreg ? p_yreg : scratch,
-                         p_yreg && (r7) ? p_yreg : scratch,
-                         (r7)   ? r7 : gen_rtx_CONST_INT(HImode,0))
+                         r2,
+                         d_xreg ? d_xreg : scratch0,
+                         p_xreg ? p_xreg : scratch1,
+                         p_xreg && (r5) ? p_xreg : scratch2,
+                         (r5)   ? r5 : gen_rtx_CONST_INT(HImode,0),
+                         d_yreg ? d_yreg : scratch3,
+                         p_yreg ? p_yreg : scratch4,
+                         p_yreg && (r8) ? p_yreg : scratch5,
+                         (r8)   ? r8 : gen_rtx_CONST_INT(HImode,0))
       );
-      if (p_xreg && r4) {
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
+      if (p_xreg && r5) {
         emit_insn(
-          gen_movhi(gen_rtx_MEM(HImode,r2), p_xreg)
+          gen_movhi(gen_rtx_MEM(HImode,r3), p_xreg)
         );
       }
-      if (p_yreg && r7) {
+      if (p_yreg && r8) {
         emit_insn(
-          gen_movhi(gen_rtx_MEM(HImode,r5), p_yreg)
+          gen_movhi(gen_rtx_MEM(HImode,r6), p_yreg)
         );
       }
       if (d_xreg) {
         emit_insn(
-          gen_movhi(gen_rtx_MEM(HImode,r3), d_xreg)
+          gen_movhi(gen_rtx_MEM(HImode,r4), d_xreg)
         );
       }
       if (d_yreg) {
         emit_insn(
-          gen_movhi(gen_rtx_MEM(HImode,r6), d_yreg)
+          gen_movhi(gen_rtx_MEM(HImode,r7), d_yreg)
         );
       }
       if (awb) {
-        rtx mem_of = r8;
+        rtx mem_of = r9;
 
-        if (GET_CODE(r8) == MEM) {
-          rtx in1 = XEXP(r8,0);
+        if (GET_CODE(r9) == MEM) {
+          rtx in1 = XEXP(r9,0);
 
           if (GET_CODE(in1) == SYMBOL_REF) {
             mem_of = gen_reg_rtx(machine_Pmode);
             
             emit_insn(
-               gen_movhi_address(mem_of, r8)
+               gen_movhi_address(mem_of, r9)
             );
           }
         }
@@ -4952,15 +5176,17 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       arg1 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       r1 = expand_expr(arg1, NULL_RTX, HImode, EXPAND_NORMAL);
+#if 0
       if ((GET_CODE(r0) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(r0)))) {
-        error("parameter 1 for __builtin_sac should be "
-              "an accumulator register");
+        error("parameter 1 for __builtin_%s should be "
+              "an accumulator register", id);
         return NULL_RTX;
       }
+#endif
       if ((GET_CODE(r1) != CONST_INT) || 
           (!CONST_OK_FOR_LETTER_P(INTVAL(r1),'Z'))) {
-        error("parameter 2 for __builtin_add should fall in the literal "
-              "range -8:7");
+        error("parameter 2 for __builtin_%s should fall in the literal "
+              "range -8:7", id);
         return NULL_RTX;
       }
       if (!target || !register_operand(target, HImode))
@@ -4970,6 +5196,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       emit_insn(
         gen_sac_gen_hi(target, r0, r1)
       );
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       return target;
       break;
 
@@ -4984,11 +5211,13 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       arg1 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       r1 = expand_expr(arg1, NULL_RTX, HImode, EXPAND_NORMAL);
+#if 0
       if ((GET_CODE(r0) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(r0)))) {
         error("parameter 1 for __builtin_sacr should be "
               "an accumulator register");
         return NULL_RTX;
       }
+#endif
       if ((GET_CODE(r1) != CONST_INT) || 
           (!CONST_OK_FOR_LETTER_P(INTVAL(r1),'Z'))) {
         error("parameter 2 for __builtin_add should fall in the literal "
@@ -5002,6 +5231,7 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       emit_insn(
         gen_sacr_gen_hi(target, r0, r1)
       );
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       return target;
       break;
 
@@ -5012,10 +5242,15 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         error("__builtin_%s is not supported on this target", id);
         return NULL_RTX;
       }
+#if 0
       if (!target ||
           (GET_CODE(target) != REG) || (!MAYBE_IS_ACCUM_REG(REGNO(target)))) {
         error("result for __builtin_sftac should be an accumulator register");
       }
+#endif
+      accum = TREE_VALUE(arglist);
+      arglist = TREE_CHAIN(arglist);
+      accum_r = expand_expr(accum, NULL_RTX, HImode, EXPAND_NORMAL);
       arg0 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       if ((GET_CODE(r0) == CONST_INT) && 
@@ -5032,8 +5267,9 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         r0 = reg;
       }
       emit_insn(
-        gen_sftac_gen_hi(target, r0)
+        gen_sftac_gen_hi(target, accum_r, r0)
       );
+      push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
       return target;
       break;
     }
@@ -7422,6 +7658,16 @@ int pic30_move_operand(rtx op, enum machine_mode mode) {
   return(fMoveOperand);
 }
 
+int pic30_moveb_operand(rtx op, enum machine_mode mode) {
+  int fMoveOperand;
+
+  fMoveOperand = pic30_mode3_operand(op, mode) ||
+                 pic30_near_operand(op, mode) ||
+                 pic30_data_operand(op, mode);
+
+  return(fMoveOperand);
+}
+
 int pic30_move_APSV_operand(rtx op, enum machine_mode mode) {
   int fMoveOperand;
 
@@ -7550,17 +7796,19 @@ int pic30_general_operand(rtx op, enum machine_mode mode) {
 
 int pic30_accumulator_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
 
+  int result = 0;
+
   switch (GET_CODE(op)) {
     case REG:
-      return (IS_ACCUM_REG(REGNO(op)) ||
-#if IGNORE_ACCUM_CHECK
-             (REGNO(op) >= FIRST_PSEUDO_REGISTER));
+      result = (IS_ACCUM_REG(REGNO(op)) ||
+#if 0
+              (!reload_in_progress && (REGNO(op) >= FIRST_PSEUDO_REGISTER)));
 #else
               0);
 #endif
     default:  break;
   } 
-  return 0;
+  return result;
 }
 
 int pic30_xprefetch_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
@@ -7568,7 +7816,8 @@ int pic30_xprefetch_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
   switch (GET_CODE(op)) {
     case CONST_INT: return 1;
     case REG:
-      return (IS_XPREFETCH_REG(REGNO(op)) ||
+      return (IS_XPREFETCH_REG(REGNO(op)) || 
+              (REGNO_REG_CLASS(REGNO(op)) == SINK_REGS) ||
               (REGNO(op) >= FIRST_PSEUDO_REGISTER));
     default:  break;
   }
@@ -7581,6 +7830,7 @@ int pic30_yprefetch_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
     case CONST_INT: return 1;
     case REG:
       return (IS_YPREFETCH_REG(REGNO(op)) ||
+              (REGNO_REG_CLASS(REGNO(op)) == SINK_REGS) ||
               (REGNO(op) >= FIRST_PSEUDO_REGISTER));
     default:  break;
   }
@@ -7593,6 +7843,7 @@ int pic30_mac_input_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
     case CONST_INT: return 1;
     case REG:
       return (IS_PRODUCT_REG(REGNO(op)) ||
+              (REGNO_REG_CLASS(REGNO(op)) == SINK_REGS) ||
               (REGNO(op) >= FIRST_PSEUDO_REGISTER));
     default:  break;
   }
@@ -8256,6 +8507,7 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
     emit_insn(fn_l(op0_l, op1_l));
     return 1;
   }
+#if 0
   if (pic30_accumulator_operand(op0,mode)) {
     /* op1 must be a REG or MEM (REG)) */
     if (pic30_T_constraint(op1) || pic30_U_constraint(op1,mode)) {
@@ -8273,20 +8525,27 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
       return 1;
     }
   }
+#endif
   if (!reload_in_progress && (GET_CODE(op0) == MEM)) {
     if (pic30_move_operand(op0,mode) == 0) {
       rtx new_inner = XEXP(op0,0);
+      rtx new_op0;
 
       new_inner = force_reg(GET_MODE(new_inner),new_inner);
-      op0 = gen_rtx_MEM(mode,new_inner);
+      new_op0 = gen_rtx_MEM(mode,new_inner);
+      MEM_COPY_ATTRIBUTES(new_op0, op0);
+      op0 = new_op0;
     }
   }
   if (!reload_in_progress && (GET_CODE(op1) == MEM)) {
     if (pic30_move_operand(op1,mode) == 0) {
       rtx new_inner = XEXP(op1,0);
+      rtx new_op1;
 
       new_inner = force_reg(GET_MODE(new_inner),new_inner);
-      op1 = gen_rtx_MEM(mode,new_inner);
+      new_op1 = gen_rtx_MEM(mode,new_inner);
+      MEM_COPY_ATTRIBUTES(new_op1, op1);
+      op1 = new_op1;
     }
   }
   /*
@@ -8685,7 +8944,7 @@ int pic30_U_constraint(rtx op, enum machine_mode mode) {
 
 ** The dsPIC30 specific codes are:
 ** 'a' is used
-** 'A' for a literal 24-bit address stored (opnd must be const int)
+** 'A' for the other accumulator
 ** 'b' for the bit number (for bit <set,clr,tog,test,test+set>)
 ** 'B' for the bit number of the 1's complement (for bit clear)
 ** 'c' is used
@@ -8732,6 +8991,12 @@ void pic30_print_operand(FILE *file, rtx x, int letter) {
     case REG:
       switch (letter)
       {
+        case 'A':
+          if (IS_ACCUM_REG(REGNO(x))) {
+             fprintf(file, "%s", reg_names[OTHER_ACCUM_REG(REGNO(x))]);
+          } else
+            error("Accumulator register expected\n");
+          break;
         case 'd':
           fprintf(file, "%s", reg_names[REGNO(x) + 1]);
           break;
@@ -8931,9 +9196,6 @@ void pic30_print_operand(FILE *file, rtx x, int letter) {
     case CONST_INT:
       switch (letter)
       {
-        case 'A':
-          fprintf(file, "%ld", (INTVAL(x)<<1)+1);
-          break;
         case 'b':
           fprintf(file, "%d", pic30_which_bit(INTVAL(x)));
           break;
@@ -9571,6 +9833,23 @@ static int pic30_scan_reg_sets(unsigned int regno) {
             (REGNO(SET_DEST(pattern)) + 
              HARD_REGNO_NREGS(0,GET_MODE(SET_DEST(pattern))) > regno)) 
            return 1;
+      } 
+      else if (GET_CODE(pattern) == PARALLEL) {
+        int i;
+
+        for (i = 0; i < XVECLEN(pattern,0); i++) {
+          rtx x = XVECEXP(pattern,0,i);
+
+          if ((GET_CODE(x) == SET) && (GET_CODE(SET_DEST(x)) == REG)) {
+            if (REGNO(SET_DEST(x)) == regno) {
+              return 1;
+            }
+            if ((REGNO(SET_DEST(x)) < regno) &&
+                (REGNO(SET_DEST(x)) + 
+                   HARD_REGNO_NREGS(0,GET_MODE(SET_DEST(x))) > regno)) 
+              return 1;
+          }
+        }
       }
     }
   }
@@ -9728,8 +10007,9 @@ void pic30_expand_prologue(void) {
   static char bootconst[] = "_bootconst_psvpage";
   static char secureconst[] = "_secureconst_psvpage";
   static char constconst[] = "_const_psvpage";
-  static char psvpage[] = "PSVPAG";
+  static char *psvpage;
 
+  psvpage = pic30_eds_target() ? "DSRPAG" : "PSVPAG";
   is_boot_fn = (lookup_attribute(IDENTIFIER_POINTER(pic30_identBoot[0]),
                                  DECL_ATTRIBUTES(current_function_decl)) != 0);
 
@@ -10143,8 +10423,9 @@ void pic30_expand_epilogue(void) {
   static char ACCBL[] = "ACCBL"; 
   static char ACCBH[] = "ACCBH";
   static char ACCBU[] = "ACCBU";
-  static char psvpage[] = "PSVPAG";
+  static char *psvpage;
 
+  psvpage = pic30_eds_target() ? "DSRPAG" : "PSVPAG";
   is_boot_fn = (lookup_attribute(IDENTIFIER_POINTER(pic30_identBoot[0]),
                                  DECL_ATTRIBUTES(current_function_decl)) != 0);
 
@@ -10802,7 +11083,7 @@ int pic30_check_legit_addr(enum machine_mode mode, rtx addr, int fStrict) {
                pic30_has_space_operand_p(addr, PIC30_APSV_FLAG);
       }
   }
-    switch (GET_CODE(addr))
+  switch (GET_CODE(addr))
     {
     case PRE_DEC:
     case PRE_INC:
@@ -10850,6 +11131,14 @@ int pic30_check_legit_addr(enum machine_mode mode, rtx addr, int fStrict) {
 
             switch (code0)
             {
+            case SUBREG:
+                if (GET_CODE(SUBREG_REG(op0)) == REG) {
+                  op0 = SUBREG_REG(op0);
+                } else {
+                  fLegit = FALSE;
+                  break;
+                }
+                /* FALLSTHROUGH */
             case REG:
                 base = op0;
                 if (REG_P(op1))
@@ -10903,6 +11192,7 @@ int pic30_check_legit_addr(enum machine_mode mode, rtx addr, int fStrict) {
             case P24PSVmode:
             case P24PROGmode:  if (reload_in_progress) return FALSE;
             case QImode:
+            case P16APSVmode:
             case HImode:
             case SImode:
             case DImode:
@@ -14261,13 +14551,16 @@ void pic30_asm_file_end(void) {
     fprintf(asm_out_file,
             "\n\t.section __c30_info, info, bss\n__psv_trap_errata:\n");
   }
-  if (external_options_mask.mask) {
+  {
+    if (size_t_used_externally) 
+      external_options_mask.bits.unsigned_long_size_t = 1;
     fprintf(asm_out_file,
             "\n\t.section __c30_signature, info, data\n"
             "\t.word 0x0001\n"
             "\t.word 0x%4.4x\n"
             "\t.word 0x%4.4x\n",
-            external_options_mask.mask, options_set.mask);
+            external_options_mask.mask,  
+            external_options_mask.mask & options_set.mask);
   }
   if (pic30_pmp_space_cs0 || pic30_pmp_space_cs1 || pic30_pmp_space_cs2) {
 
@@ -14780,10 +15073,13 @@ int pic30_extended_pointer_operand(rtx x, enum machine_mode mode) {
             if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PROG_FLAG)) {
               error("Accessing a variable in program space with a psv "
                     "pointer is dangerous");
-            } else if (!(PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PSV_FLAG))) {
-              return 0;
+              return 1;
+            } else if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PSV_FLAG)) {
+              return 1;
+            } else if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_APSV_FLAG)) {
+              return 1;
             }
-            return 1;
+            return 0;
           } else if (mode == P24PROGmode) {
             if ((PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PROG_FLAG)) ||
                 (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_APSV_FLAG)) ||
@@ -15721,12 +16017,14 @@ int pic30_emit_block_move(rtx x, rtx *y, rtx size, unsigned int align) {
   }
   switch (GET_MODE(innery)) {
     default: return 0;  /* cannot support this source mode */
+#if 0
     case P16APSVmode: {
       /* treat it like HImode */
       rtx z = gen_rtx_SUBREG(HImode, innery, 0);
       *y = gen_rtx_MEM(BLKmode, z);
       return 0;
     }
+#endif
     case P24PSVmode:
     case P24PROGmode:
       if (GET_MODE(innerx) == HImode) {
@@ -15789,7 +16087,7 @@ int pic30_emit_block_move(rtx x, rtx *y, rtx size, unsigned int align) {
         reg = gen_reg_rtx(P32PEDSmode);
         mode = P32PEDSmode;
         emit_insn(
-          gen_extendhip32peds2(reg,innerx)
+          gen_zero_extendhip32peds2(reg,innerx)
         );
       } else {
         reg = innerx;
@@ -16022,11 +16320,368 @@ void initialize_object_signatures(void) {
   /* intitialize values of external_options_mask, some of which are 
      externally significant only if certain code sequences are generated
      (so will be set at code-generation in the pic30.md file) while others 
-     are significant simply by command line optinos (and will be set here) */
-  external_options_mask.bits.unsigned_long_size_t = 1;
+     are significant simply by command line options (and will be set here) */
 
   /* intitialize values of options_set mask */
   if (TARGET_BIG_ARRAYS) options_set.bits.unsigned_long_size_t = 1;
+}
+
+void push_cheap_rtx(cheap_rtx_list **l, rtx x, tree t, int flag) {
+  cheap_rtx_list *item;
+
+  if (l == 0) return;
+  item = xmalloc(sizeof(cheap_rtx_list));
+
+  item->x = x;
+  item->t = t;
+  item->flag = flag;
+  item->next = *l;
+
+  *l = item;
+}
+
+rtx pop_cheap_rtx(cheap_rtx_list **l, tree *t, int *flag) {
+  cheap_rtx_list *item;
+  rtx result;
+
+  if (l == 0) return 0;
+  item = (*l);
+  if (item == 0) return 0;
+  *l = item->next;
+  if (t) *t = item->t;
+  if (flag) *flag = item->flag;
+  result = item->x;
+  free(item);
+  return result;
+}
+
+void pic30_merge_accumulators(void) {
+  rtx insn;
+  rtx prev_insn = 0;
+  int sreload_in_progress;
+  int changed=0;
+
+  /* as if were are reloading - accumulators become true */
+  sreload_in_progress = reload_in_progress;
+  reload_in_progress=1;
+
+  for (insn = get_insns(); insn; insn = NEXT_INSN(insn)) {
+    if (INSN_P (insn)) {
+      rtx p;
+      rtx prev_p;
+
+      p = PATTERN(insn);
+      if (GET_CODE(p) == PARALLEL) {
+        p = XVECEXP(p,0,0);
+      }
+      if ((GET_CODE(p) == SET) && 
+          pic30_accumulator_operand(SET_DEST(p),HImode) && prev_insn) {
+        for (; prev_insn; prev_insn = PREV_INSN(prev_insn)) {
+          if (!INSN_P(prev_insn)) continue;
+          prev_p = PATTERN(prev_insn);
+          if (GET_CODE(prev_p) == PARALLEL) {
+            prev_p = XVECEXP(prev_p, 0, 0);
+          }
+          if ((GET_CODE(prev_p) == SET) && (SET_DEST(prev_p) == SET_SRC(p))) {
+#if 0
+            fprintf(stderr,"merge: 0x%8.8x and 0x%8.8x\n",
+                    prev_insn, insn);
+#endif
+            changed=1;
+            replace_rtx(prev_insn, SET_SRC(p), SET_DEST(p));
+            delete_insn(insn);
+#if 0
+            debug_rtx(prev_insn);
+#endif
+            break;
+          }
+        }
+      } else prev_insn = insn;
+    }
+  }
+  reload_in_progress = sreload_in_progress;
+//  if (changed) recompute_reg_usage();
+}
+
+void pic30_validate_dsp_instructions(void) {
+  int i;
+  rtx o, p, v, x;
+  tree t;
+  unsigned int fcode;
+  location_t error_loc;
+  int dest_regno = -1;
+
+  for (x = pop_cheap_rtx(&dsp_builtin_list,&t,&fcode); x;
+       x = pop_cheap_rtx(&dsp_builtin_list,&t,&fcode)) {
+    int has_location=0;
+    int err_cnt=0;
+
+    if (INSN_DELETED_P(x)) continue;
+    // check result:
+    switch (fcode) {
+      case PIC30_BUILTIN_MOVSAC:
+      case PIC30_BUILTIN_SAC: 
+      case PIC30_BUILTIN_SACR: 
+        // result is not an accumulator
+        break;
+      case PIC30_BUILTIN_SUBAB:
+      case PIC30_BUILTIN_ADDAB:
+      case PIC30_BUILTIN_ADD:
+      case PIC30_BUILTIN_CLR:
+      case PIC30_BUILTIN_CLR_PREFETCH:
+      case PIC30_BUILTIN_EDAC:
+      case PIC30_BUILTIN_ED:
+      case PIC30_BUILTIN_LAC:
+      case PIC30_BUILTIN_MAC:
+      case PIC30_BUILTIN_MPYN:
+      case PIC30_BUILTIN_MPY:
+      case PIC30_BUILTIN_MSC:
+      case PIC30_BUILTIN_SFTAC:
+
+        if (INSN_P (x)) {
+          p = PATTERN(x);
+          if (GET_CODE(p) == PARALLEL) {
+            p = XVECEXP(p,0,0);
+          }
+          if ((GET_CODE(p) == SET) &&
+              !pic30_accumulator_operand(SET_DEST(p),HImode)) {
+            if (t && EXPR_HAS_LOCATION(t) && ++has_location) 
+              error_loc = EXPR_LOCATION(t); 
+            if (find_regno_note(x, REG_UNUSED, REGNO(SET_DEST(p)))) {
+              if (has_location)
+                error("%HExpected DSP accumulator result not used", &error_loc);
+              else error("Expected DSP accumulator result not used");
+            } else {
+              if (has_location)
+                error("%HExpected DSP accumulator result", &error_loc);
+              else error("Expected DSP accumulator result");
+            }
+            err_cnt++;
+          } else {
+            dest_regno = REGNO(SET_DEST(p));
+          }
+        }
+        break;
+
+      default: internal_error("Not a DSP builtin\n");
+               break;
+    }
+
+    if (INSN_P (x)) {
+      p = PATTERN(x);
+
+      // check operands
+      switch (fcode) {
+        default: internal_error("Not a DSP builtin\n");
+                 break;
+        case PIC30_BUILTIN_SUBAB:
+        case PIC30_BUILTIN_ADDAB:
+          p = SET_SRC(p);
+          for (i = 0; i < 2; i++) {
+            o = XEXP(p,i);
+            if (!pic30_accumulator_operand(o,HImode)) {
+              if (t && EXPR_HAS_LOCATION(t) && ++has_location) 
+                error_loc = EXPR_LOCATION(t); 
+              if (has_location)
+                error("%HArgument %d should be an accumulator register",
+                      &error_loc, i);
+              else
+                error("Argument %d should be an accumulator register", i);
+              err_cnt++;
+            }
+          }
+          break;
+
+        case PIC30_BUILTIN_ADD:
+          p = SET_SRC(p);
+          if (!pic30_accumulator_operand(XEXP(p,1),HImode)) {
+            if (t && EXPR_HAS_LOCATION(t) && ++has_location) 
+              error_loc = EXPR_LOCATION(t); 
+            if (has_location)
+              error("%HArgument 0 should be an accumulator register",
+                    &error_loc);
+            else
+              error("Argument 0 should be an accumulator register", i);
+            err_cnt++;
+          } else if (REGNO(XEXP(p,1)) != dest_regno) {
+            if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+              error_loc = EXPR_LOCATION(t);
+            if (has_location)
+              error("%HResult and argument 0 should be identical",
+                    &error_loc);
+            else
+              error("Result and argument 0 should be identical");
+            err_cnt++;
+          }
+          break;
+
+        case PIC30_BUILTIN_CLR:
+          // just the result
+          break;
+
+        case PIC30_BUILTIN_CLR_PREFETCH:
+          if (GET_CODE(p) == PARALLEL) {
+            v = p;
+            p = XVECEXP(p,0,5);      // 5th element, if exists, uses accumulator
+            if (p) {
+              p = SET_SRC(p);
+              p = XVECEXP(p,0,0);      // 0th element of src
+              if (!pic30_accumulator_operand(p,HImode)) {
+                if (t && EXPR_HAS_LOCATION(t) && ++has_location) 
+                  error_loc = EXPR_LOCATION(t); 
+                if (has_location)
+                  error("%HArgument 7 should be an accumulator register",
+                        &error_loc);
+                else
+                  error("Argument 7 should be an accumulator register", i);
+                err_cnt++;
+              } else if (REGNO(p) == dest_regno) {
+                if (t && EXPR_HAS_LOCATION(t) && ++has_location) 
+                  error_loc = EXPR_LOCATION(t); 
+                if (has_location)
+                  error("%HArgument 7 should be 'other' accumulator register",
+                        &error_loc);
+                else
+                  error("Argument 7 should be 'other' accumulator register", i);
+                err_cnt++;
+              }
+            }
+          }
+          break;
+
+        case PIC30_BUILTIN_MSC:
+          /* FALLSTHROUGH */
+        case PIC30_BUILTIN_MAC:
+          if ((GET_CODE(p) == PARALLEL)  && (XVECLEN(p,0) > 5)) {
+            /* There may be only 5 */
+            v = XVECEXP(p,0,5);      // 5th opnd uses mac
+            v = SET_SRC(v);
+            v = XVECEXP(v,0,0);      // 0th opnd of src uses it
+            if (!pic30_accumulator_operand(v,HImode)) {
+              if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                error("%HArgument 11 should be an accumulator register",
+                      &error_loc);
+              else
+                error("Argument 11 should be an accumulator register", i);
+              err_cnt++;
+            } else if (REGNO(v) == dest_regno) {
+                if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                  error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                  error("%HArgument 11 should be 'other' accumulator register",
+                        &error_loc);
+                else
+                  error("Argument 11 should be 'other' accumulator register",i);
+                err_cnt++;
+            }
+          }
+          /* FALLSTHROUGH */
+        case PIC30_BUILTIN_EDAC:
+          if (GET_CODE(p) == PARALLEL) {
+            v = p;
+            p = XVECEXP(p,0,0);      // 0th opnd of src of 0th element 
+                                     // uses accumulator
+            p = SET_SRC(p);
+            if (!pic30_accumulator_operand(XEXP(p,0),HImode)) {
+              if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                error("%HArgument 0 should be an accumulator register",
+                      &error_loc);
+              else
+                error("Argument 0 should be an accumulator register", i);
+              err_cnt++;
+            } else if (REGNO(XEXP(p,0)) != dest_regno) {
+              if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                error("%HResult and argument 0 should be identical",
+                      &error_loc);
+              else
+                error("Result and argument 0 should be identical");
+              err_cnt++;
+            }
+          }
+          break;
+       
+        case PIC30_BUILTIN_ED:
+          // just the result
+          break;
+        case PIC30_BUILTIN_LAC:
+          // just the result
+          break;
+          
+        case PIC30_BUILTIN_MOVSAC:
+          if (GET_CODE(p) == PARALLEL) {
+            v = p;
+            p = XVECEXP(p,0,4);      // 4th element uses accumulator
+            p = SET_SRC(p);
+            p = XVECEXP(p,0,0);      // 0th element of src
+            if (!pic30_accumulator_operand(p, HImode)) {
+              if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                error("%HArgument 7 should be an accumulator register",
+                      &error_loc);
+              else
+                error("Argument 7 should be an accumulator register", i);
+              err_cnt++;
+            } else if (REGNO(p) == dest_regno) {
+                if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                  error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                  error("%HArgument 7 should be 'other' accumulator register",
+                        &error_loc);
+                else
+                  error("Argument 7 should be 'other' accumulator register",i);
+                err_cnt++;
+            }
+          }
+          break;
+
+        case PIC30_BUILTIN_MPYN:
+          // just the result
+          break;
+        case PIC30_BUILTIN_MPY:
+          // just the result
+          break;
+
+        case PIC30_BUILTIN_SFTAC:
+          /* FALLSTHROUGH */
+        case PIC30_BUILTIN_SAC:
+          /* FALLSTHROUGH */
+        case PIC30_BUILTIN_SACR:
+          p = SET_SRC(p);
+          if ((GET_CODE(p) == UNSPEC) || (GET_CODE(p) == UNSPEC_VOLATILE)) {
+            o = XVECEXP(p,0,0);   // 0th operand of spec
+            if (!pic30_accumulator_operand(o,HImode)) {
+              if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                error("%HArgument 0 should be an accumulator register",
+                      &error_loc);
+              else
+                error("Argument 0 should be an accumulator register", i);
+              err_cnt++;
+            } else if ((fcode == PIC30_BUILTIN_SFTAC) && 
+                       (REGNO(o) != dest_regno)) {
+              if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                error("%HResult and argument 0 should be identical",
+                      &error_loc);
+              else
+                error("Result and argument 0 should be identical");
+              err_cnt++;
+            }
+          }
+          break;
+      }
+    }
+    if (err_cnt) delete_insn(x); // to prevent crash later
+  }
 }
 
 /*END********************************************************************/

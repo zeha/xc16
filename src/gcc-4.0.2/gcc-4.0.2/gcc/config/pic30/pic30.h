@@ -263,8 +263,10 @@ enum pic30_builtins
 #undef   LIB_SPEC
 #if (PIC30_DWARF2)
 #define   LIB_SPEC   "-start-group -lpic30-elf -lm-elf -lc-elf -end-group"
+#define   ALT_LIB_SPEC   "-start-group -lpic30-elf -lfastm-elf -lc-elf -end-group"
 #else
 #define   LIB_SPEC   "-start-group -lpic30-coff -lm-coff -lc-coff -end-group"
+#define   ALT_LIB_SPEC   "-start-group -lpic30-coff -lfastm-coff -lc-coff -end-group"
 #endif
 /*
 ** Another C string constant used much like LINK_SPEC. The difference between
@@ -821,6 +823,14 @@ extern int         pic30_clear_fn_list;
 #define PMDIN1       22
 #define PMDIN2       23
 #define DSWPAG       24
+#define SINK0        25    /* a register that means we don't need the result */
+#define SINK1        26    /* a register that means we don't need the result */
+#define SINK2        27    /* a register that means we don't need the result */
+#define SINK3        28    /* a register that means we don't need the result */
+#define SINK4        29    /* a register that means we don't need the result */
+#define SINK5        30    /* a register that means we don't need the result */
+#define SINK6        31    /* a register that means we don't need the result */
+#define SINK7        32    /* a register that means we don't need the result */
 
 /*
 ** Number of actual hardware registers.
@@ -829,7 +839,7 @@ extern int         pic30_clear_fn_list;
 ** All registers that the compiler knows about must be given numbers,
 ** even those that are not normally considered general registers.
 */
-#define FIRST_PSEUDO_REGISTER 25
+#define FIRST_PSEUDO_REGISTER 33
 
 /* Mappings for dsPIC registers */
 
@@ -855,7 +865,8 @@ extern int         pic30_clear_fn_list;
    /* WREG0 */  0, 0, 0, 0, 0, 0, 0, 0,   \
    /* WREG8 */  0, 0, 0, 0, 0, 0, 0, 1,   \
    /* RCOUNT */ 1, 0, 0, 1, 0, 0, 0, 0,   \
-   /* DSWPAG */ 1                         \
+   /* DSWPAG */ 1, 1, 1, 1, 1, 1, 1, 1,   \
+   /* SINK7 */  1                         \
 }
 
 /*
@@ -886,7 +897,8 @@ extern int         pic30_clear_fn_list;
  /* WREG0 */  1, 1, 1, 1, 1, 1, 1, 1,   \
  /* WREG8 */  0, 0, 0, 0, 0, 0, 0, 1,   \
  /* RCOUNT */ 1, 0, 0, 1, 0, 0, 0, 0,   \
- /* DSWPAG */ 1                         \
+ /* DSWPAG */ 1, 1, 1, 1, 1, 1, 1, 1,   \
+ /* SINK7 */  1                         \
 }
 
 /*
@@ -1049,6 +1061,7 @@ enum reg_class
    AE_REGS,         /* 'a+e': data regs (w0,w2..w14) */
    D_REGS,          /* 'd': data regs (w1..w14) */
    W_REGS,          /* 'w': working regs (w0..w15) */
+   SINK_REGS,       /* sink */
    ALL_REGS,        /* 'r': (w0..w14) */
    LIM_REG_CLASSES
 };
@@ -1091,6 +1104,7 @@ enum reg_class
   "W0+W2..W14", \
   "W1..W14",    \
   "W0..W15",    \
+  "SINK", \
   "ALL_REGS"    \
 }
 
@@ -1102,27 +1116,33 @@ enum reg_class
 ** Register W0 may be used as PIC-compatible working registers.
 */
 
+/*
+ * sink registers can be ypf/xpf/regs so that reload doesn't try to reload them
+ *
+ */
+
 #define REG_CLASS_CONTENTS   \
 { \
-        { 0x0000000 }, \
-        { 0x0000001 }, \
-        { 0x0000002 }, \
-        { 0x0000004 }, \
-/*AWB*/ { 0x0002000 }, \
-/*PSV*/ { 0x1080000 }, \
-        { 0x000000C }, \
-        { 0x0000007 }, \
-/*XPF*/ { 0x0000300 }, \
-/*YPF*/ { 0x0000C00 }, \
-/*ACC*/ { 0x0060000 }, \
-/*VRP*/ { 0x0000080 }, \
-/* RP*/ { 0x0000070 }, \
-/*PRG*/ { 0x00000F0 }, \
-        { 0x000fffc }, \
-        { 0x000fffd }, \
-        { 0x000fffe }, \
-        { 0x000ffff }, \
-        { 0x000ffff }  \
+        { 0x00000000, 0x00000000 }, \
+        { 0x00000001, 0x00000000 }, \
+        { 0x00000002, 0x00000000 }, \
+        { 0x00000004, 0x00000000 }, \
+/*AWB*/ { 0x00002000, 0x00000000 }, \
+/*PSV*/ { 0x01080000, 0x00000000 }, \
+        { 0x0000000c, 0x00000000 }, \
+        { 0x00000007, 0x00000000 }, \
+/*XPF*/ { 0x00000300, 0x00000000 }, \
+/*YPF*/ { 0x00000c00, 0x00000000 }, \
+/*ACC*/ { 0x00060000, 0x00000000 }, \
+/*VRP*/ { 0x00000080, 0x00000000 }, \
+/* RP*/ { 0x00000070, 0x00000000 }, \
+/*PRG*/ { 0x000000f0, 0x00000000 }, \
+        { 0x0000fffc, 0x00000000 }, \
+        { 0x0000fffd, 0x00000000 }, \
+        { 0x0000fffe, 0x00000000 }, \
+        { 0xfe00ffff, 0x00000001 }, \
+        { 0xfe000000, 0x00000001 }, \
+        { 0x0000ffff, 0x00000000 }  \
 }
 
 /*
@@ -1162,6 +1182,7 @@ enum reg_class
 #endif
 #define IS_ACCUM_REG(r)             (((r) == A_REGNO) || ((r) == B_REGNO))
 #define OTHER_ACCUM_REG(r)          ((r == A_REGNO) ? B_REGNO : A_REGNO)
+#define IS_SINK_REG(r)              ((r >= SINK0) && (r <= SINK6))
 
 
 #define REGNO_REG_CLASS(REGNO) (   \
@@ -1179,7 +1200,79 @@ enum reg_class
    IS_DREG_REG(REGNO) ? D_REGS :   \
    IS_WREG_REG(REGNO) ? W_REGS :   \
    IS_PSV_REG(REGNO) ? PSV_REGS :  \
+   IS_SINK_REG(REGNO) ? SINK_REGS : \
    ALL_REGS)
+
+/*
+ * USED CONSTRAINT LETTERS:
+  
+ =   - result
+ +   - read/write
+ &   - early clobber
+ *   - ignore constraint
+ ?   - disparage
+ %   - commutative
+ !   - disparage more
+ #   - ignore this alternative for reloading
+ <   - pre/post decrement
+ >   - pre/post increment
+ 0-9 - match opnd n
+ a   - [C30 - see below]
+ A   - [C30 - see below]
+ b   - [C30 - see below]
+ B   - [C30 - see below]
+ c   - [C30 - see below]
+ C   - [C30 - see below]
+ d   - [C30 - see below]
+ D   - unused
+ e   - [C30 - see below]
+ E   - const double vector
+ f   - unused
+ F   - const double vector
+ g   - 
+ G   - const double
+ h   - unused
+ H   - const double
+ i   - integer
+ I   - const int matching CONST_OK_FOR_CONSTRAINT_P
+ j   - unused
+ J   - const int matching CONST_OK_FOR_CONSTRAINT_P
+ k   - unused
+ K   - const int matching CONST_OK_FOR_CONSTRAINT_P
+ l   - unused
+ L   - const int matching CONST_OK_FOR_CONSTRAINT_P
+ m   - memory operand
+ M   - const int matching CONST_OK_FOR_CONSTRAINT_P
+ n   - const int or const double
+ N   - const int matching CONST_OK_FOR_CONSTRAINT_P
+ o   - offsetable memory operand
+ O   - const int matching CONST_OK_FOR_CONSTRAINT_P
+ p   - pointer
+ P   - const int matching CONST_OK_FOR_CONSTRAINT_P
+ q   - unused
+ Q   - [C30 - see below]
+ r   - general register
+ R   - [C30 - see below]
+ s   - cosnt int or const double
+ S   - [C30 - see below]
+ t   - [C30 - see below]
+ T   - [C30 - see below]
+ u   - [C30 - see below]
+ U   - [C30 - see below]
+ v   - [C30 - see below]
+ V   - non-offsetable memory operand
+ w   - [C30 - see below]
+ W   - const int matching CONST_OK_FOR_CONSTRAINT_P [C30]
+ x   - [C30 - see below]
+ X   - always a winner
+ y   - [C30 - see below]
+ Y   - const int matching CONST_OK_FOR_CONSTRAINT_P [C30]
+ z   - [C30 - see below]
+ Z   - const int matching CONST_OK_FOR_CONSTRAINT_P [C30]
+
+ *
+ */
+
 
 /*
 ** A C expression which defines the machine-dependent operand constraint
@@ -1192,6 +1285,7 @@ enum reg_class
 ** `a' is the class of PIC-compatible accumulator registers (W0).
 ** 'A' is the class of PIC-compatible accumulator registers 32bit (W0-W1).
 ** `b' is the class of divide support registers (W1).
+** `B' is the class of blank sink registers used in DSP instructions.
 ** `c' is the class of multiply support registers (W2).
 ** `C' is the class of multiply support registers 32bit (W2-W3).
 ** `d' is the class of general-purpose data registers (W1..W14).
@@ -1203,6 +1297,7 @@ enum reg_class
 ** `x' is the class of x prefetch registers (W8..W9).
 ** `y' is the class of y prefetch registers (W10..W11).
 ** `z' is the class of mac product registers (W4..W7).
+** `E' is sink
 */
 
 #define REG_CLASS_FROM_LETTER(Q) (      \
@@ -1219,6 +1314,7 @@ enum reg_class
      ((Q) == 'x') ? X_PREFETCH_REGS :   \
      ((Q) == 'y') ? Y_PREFETCH_REGS :   \
      ((Q) == 'z') ? PRODUCT_REGS :      \
+     ((Q) == 'B') ? SINK_REGS:          \
      NO_REGS )
 
 /*
@@ -1298,8 +1394,9 @@ enum reg_class
 { \
  "w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7",   \
  "w8", "w9","w10","w11","w12","w13","w14","w15",   \
- "_RCOUNT", "A", "B", "PSVPAG", "PMADDR", "PMMODE",\
- "PMDIN1", "PMDIN2", "DSWPAG" \
+ "_RCOUNT", "A", "B", "PSVPAG", "PMADDR", "PMMODE", "PMDIN1", "PMDIN2", \
+ "DSWPAG","SINK0", "SINK1", "SINK2", "SINK3", "SINK4", "SINK5", "SINK6", \
+ "SINK7" \
 }
 
 /*

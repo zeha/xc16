@@ -298,9 +298,11 @@ break_out_memory_refs (rtx x)
     {
       rtx op0 = break_out_memory_refs (XEXP (x, 0));
       rtx op1 = break_out_memory_refs (XEXP (x, 1));
+      enum machine_mode pointer_mode = TARGET_IS_POINTER_MODE(GET_MODE(x)) ?
+                                         GET_MODE(x) : Pmode;
 
       if (op0 != XEXP (x, 0) || op1 != XEXP (x, 1))
-	x = gen_rtx_fmt_ee (GET_CODE (x), Pmode, op0, op1);
+	x = gen_rtx_fmt_ee (GET_CODE (x), pointer_mode, op0, op1);
     }
 
   return x;

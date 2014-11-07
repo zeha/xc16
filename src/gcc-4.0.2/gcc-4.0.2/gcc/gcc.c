@@ -3101,6 +3101,8 @@ display_help (void)
   fputs (_("  -print-prog-name=<prog>  Display the full path to compiler component <prog>\n"), stdout);
   fputs (_("  -print-multi-directory   Display the root directory for versions of libgcc\n"), stdout);
   fputs (_("\
+  -fast-math               Use alternative floating point support routines\n"), stdout);
+  fputs (_("\
   -print-multi-lib         Display the mapping between command line options and\n\
                            multiple library search directories\n"), stdout);
   fputs (_("  -print-multi-os-directory Display the relative path to OS libraries\n"), stdout);
@@ -3519,6 +3521,11 @@ process_command (int argc, const char **argv)
 	  printf ("%s\n", spec_machine);
 	  exit (0);
 	}
+#if defined(MCHP_VERSION) && defined(ALT_LIB_SPEC)
+      else if (strcmp (argv[i], "-fast-math") == 0) {
+        lib_spec = ALT_LIB_SPEC;
+      }
+#endif
       else if (strcmp (argv[i], "-fversion") == 0)
 	{ int vid;
 
@@ -4084,6 +4091,8 @@ warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
 #endif
       if (! strncmp (argv[i], "-Wa,", 4))
 	;
+      else if (! strcmp (argv[i], "-fast-math"))
+        ;
       else if (! strncmp (argv[i], "-Wp,", 4))
 	;
       else if (! strcmp (argv[i], "-pass-exit-codes"))
