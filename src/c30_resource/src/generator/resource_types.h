@@ -24,7 +24,8 @@ enum resource_information_kind {
   rik_string,
   rik_char,
   rik_version,
-  rik_int
+  rik_int,
+  rik_null,                       /* short resource data list */
 };
 
 struct resource_data {

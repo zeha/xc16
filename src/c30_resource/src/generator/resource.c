@@ -10,6 +10,11 @@
 #include <unistd.h>
 #include "resource_types.h"
 
+#ifndef IN_GCC
+#define xcalloc calloc
+#define xrealloc realloc
+#endif
+
 #define res_error(X) {resource_error = X; return 0;}
 
 #ifndef IN_GCC
