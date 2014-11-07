@@ -264,12 +264,17 @@ enum pic30_builtins
 ** standard C library from the usual place.
 */
 #undef   LIB_SPEC
+#define  ALT_LIB_SPECS
 #if (PIC30_DWARF2)
 #define   LIB_SPEC   "-start-group -lpic30-elf -lm-elf -lc-elf -end-group"
-#define   ALT_LIB_SPEC   "-start-group -lpic30-elf -lfastm-elf -lc-elf -end-group"
+#define   ALT_FM_LIB_SPEC   "-start-group -lpic30-elf -lfastm-elf -lc-elf -end-group"
+#define   ALT_LC_LIB_SPEC   "-start-group -llega-pic30-elf -lm-elf -llega-c-elf -end-group"
+#define   ALT_FMLC_LIB_SPEC "-start-group -llega-pic30-elf -lfastm-elf -llega-c-elf -end-group"
 #else
 #define   LIB_SPEC   "-start-group -lpic30-coff -lm-coff -lc-coff -end-group"
-#define   ALT_LIB_SPEC   "-start-group -lpic30-coff -lfastm-coff -lc-coff -end-group"
+#define   ALT_FM_LIB_SPEC   "-start-group -lpic30-coff -lfastm-coff -lc-coff -end-group"
+#define   ALT_LC_LIB_SPEC   "-start-group -llega-pic30-coff -lm-coff -llega-c-coff -end-group"
+#define   ALT_FMLC_LIB_SPEC "-start-group -llega-pic30-coff -lfastm-coff -llega-c-coff -end-group"
 #endif
 /*
 ** Another C string constant used much like LINK_SPEC. The difference between
@@ -402,7 +407,8 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 #define TARGET_MASK_ARCH_PIC24E         0x10000000
 #define TARGET_MASK_AUX_FLASH           0x20000000
 #define TARGET_MASK_ALT_TEXT            0x40000000
-#define TARGET_MASK_ARCH_EP_GENERIC     0x02000000
+#define TARGET_MASK_ARCH_EP_GENERIC     0x80000000
+#define TARGET_MASK_LEGACY_LIBC         0x00000020
 
 /*
 ** Small data model means that data objects can be
@@ -580,6 +586,9 @@ extern void pic30_system_include_paths(const char *root, const char *system,
  { "auxflash", \
    (TARGET_MASK_AUX_FLASH), \
    "Place all code into auxiliary flash\n" }, \
+ { "legacy-libc", \
+   (TARGET_MASK_LEGACY_LIBC), \
+   "use legacy lib/include directory\n" }, \
  { "", TARGET_DEFAULT,NULL} \
 }
 

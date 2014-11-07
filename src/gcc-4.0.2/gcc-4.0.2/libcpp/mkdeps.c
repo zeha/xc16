@@ -324,9 +324,7 @@ deps_write (const struct deps *d, FILE *fp, unsigned int colmax)
 	  putc (' ', fp);
 	  column++;
 	}
-      putc('"',fp);
       fputs (d->depv[i], fp);
-      putc('"',fp);
     }
   putc ('\n', fp);
 }

@@ -261,7 +261,7 @@
              (match_operand: HI 1 "pic30_mode3_operand"       " rRS<>")
              (match_operand: HI 2 "immediate_operand"         " Z"))
            (match_operand:HI    3 "pic30_accumulator_operand" " 0")))]
-  "(INTVAL(operands[2]) > 0)"
+  "(INTVAL(operands[2]) >= 0)"
   "add %1, #%2, %0"
   [
     (set_attr "cc" "unchanged")
@@ -277,7 +277,7 @@
            (match_operand:HI    3 "pic30_accumulator_operand" " 0,0")))
    (clobber (match_scratch: HI  4                             "=X,r"))
   ]
-  "(INTVAL(operands[2]) > 0)"
+  "(INTVAL(operands[2]) >= 0)"
   "@
    add %1, #%2, %0
    mov %1,%4\;add %4,#%2,%0"
@@ -292,7 +292,7 @@
            (ashift:HI (match_operand: HI 1 "pic30_mode3_operand"       " RS<>r")
                       (match_operand: HI 2 "immediate_operand"         " i"))
            (match_operand:HI    3 "pic30_accumulator_operand"          "0")))]
-  "(INTVAL(operands[2]) > 0)"
+  "(INTVAL(operands[2]) >= 0)"
   "add %1, #%J2, %0"
   [
     (set_attr "cc" "unchanged")
@@ -308,7 +308,7 @@
            (match_operand:HI    3 "pic30_accumulator_operand" " 0,0")))
    (clobber (match_scratch:HI   4                             "=X,r"))
   ]
-  "(INTVAL(operands[2]) > 0)"
+  "(INTVAL(operands[2]) >= 0)"
   "@
    add %1, #%J2, %0
    mov %1,%4\;add %4,#%J2,%0"
@@ -380,7 +380,7 @@
            (ashiftrt:HI 
              (match_operand: HI 1 "pic30_mode3_operand"       " RS<>r")
              (match_operand: HI 2 "immediate_operand"         " Z"))))]
-  "((INTVAL(operands[2]) > 0) && !(pic30_errata_mask & psv_errata))"
+  "((INTVAL(operands[2]) >= 0) && !(pic30_errata_mask & psv_errata))"
   "add %1, #%2, %0"
   [
     (set_attr "cc" "unchanged")
@@ -396,7 +396,7 @@
              (match_operand: HI 2 "immediate_operand"         " Z,Z"))))
    (clobber (match_scratch:HI   3                             "=X,r"))
   ]
-  "((INTVAL(operands[2]) > 0) && (pic30_errata_mask & psv_errata))"
+  "((INTVAL(operands[2]) >= 0) && (pic30_errata_mask & psv_errata))"
   "@
    add %1, #%2, %0
    mov %1,%3\;add %3,#%2,%0"
@@ -412,7 +412,7 @@
              (match_operand: HI 1 "pic30_mode3_operand"       " RS<>r")
              (match_operand: HI 2 "immediate_operand"         " i"))
            (match_dup 0)))]
-  "((INTVAL(operands[2]) > 0) && !(pic30_errata_mask & psv_errata))"
+  "((INTVAL(operands[2]) >= 0) && !(pic30_errata_mask & psv_errata))"
   "add %1, #%J2, %0"
   [
     (set_attr "cc" "unchanged")
@@ -428,7 +428,7 @@
            (match_dup 0)))
    (clobber (match_scratch: HI  3                             "=X,r"))
   ]
-  "((INTVAL(operands[2]) > 0) && (pic30_errata_mask & psv_errata))"
+  "((INTVAL(operands[2]) >= 0) && (pic30_errata_mask & psv_errata))"
   "@
    add %1, #%J2, %0
    mov %1,%3\;add %3,#%J2,%0"
@@ -1130,15 +1130,14 @@
 
 ; ********* to support automagic generation
 
-(define_expand "movhi_accumulator"
+(define_insn "movhi_accumulator"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (match_operand: HI 1 "pic30_mode3_operand" "RS<>r"))]
   ""
-  "{
+  "*{
      /* lac %1, %0 */
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_lac() instead\");
-     FAIL;
    }
   "
 )  
@@ -1155,11 +1154,11 @@
   "
 )
 
-(define_expand "movhi_accumulator3"
+(define_insn "movhi_accumulator3"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (match_operand:HI 1 "immediate_operand" "i"))]
   ""
-  "
+  "*
    {
      if (INTVAL(operands[1]) == 0) {
        /* clr %0 */
@@ -1170,12 +1169,23 @@
        error(\"Automatic generation of DSP instructions not yet supported; \"
              \"use __builtin_lac() instead\");
      }
-     FAIL;
    }
   "
 )
 
-(define_expand "auto_mac"
+(define_insn "addab_error"
+  [(set (match_operand: HI          0 "pic30_accumulator_operand" "=w")
+        (plus:HI (match_operand:HI 1 "pic30_mode3_operand" "RS<>r")
+                 (match_operand:HI 2 "pic30_mode3_operand" "RS<>r")))]
+  ""
+  "*{
+     error(\"Automatic generation of DSP instructions not yet supported; \"
+           \"use __builtin_addab() instead\");
+   }
+  "
+)
+
+(define_insn "auto_mac"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (plus:HI
           (match_operand:HI 1 "pic30_accumulator_operand" "0")
@@ -1186,11 +1196,10 @@
               (sign_extend:SI
                 (match_operand: HI 3 "pic30_mac_input_operand" "z"))) 0)))]
   ""
-  "
+  "*
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_mac() instead\");
-     FAIL;
 #if 0
      if (REGNO(operands[2]) < REGNO(operands[3])) {
        return \"mac %2*%3, %0\";
@@ -1202,7 +1211,7 @@
   "
 )
 
-(define_expand "auto_mac1"
+(define_insn "auto_mac1"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (plus:HI
           (subreg:HI
@@ -1213,11 +1222,10 @@
                 (match_operand: HI 2 "pic30_mac_input_operand" "z"))) 0)
           (match_operand:HI 3 "pic30_accumulator_operand" "0")))]
   ""
-  "
+  "*
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_mac() instead\");
-     FAIL;
 #if 0
      if (REGNO(operands[1]) < REGNO(operands[2])) {
        return \"mac %1*%2, %0\";
@@ -1229,7 +1237,7 @@
   "
 )
 
-(define_expand "auto_mpy"
+(define_insn "auto_mpy"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (neg: HI
           (subreg:HI
@@ -1239,11 +1247,10 @@
               (sign_extend:SI
                 (match_operand: HI 2 "pic30_mac_input_operand" "z"))) 0)))]
   ""
-  "
+  "*
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_mpy() instead\");
-     FAIL;
 #if 0
      if (REGNO(operands[1]) < REGNO(operands[2])) {
        return \"mpy.n %1*%2, %0\";
@@ -1255,7 +1262,7 @@
   "
 )
 
-(define_expand "auto_msc"
+(define_insn "auto_msc"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (minus:HI
           (match_operand:HI 1 "pic30_accumulator_operand" "0")
@@ -1266,11 +1273,10 @@
               (sign_extend:SI
                 (match_operand: HI 3 "pic30_mac_input_operand" "z"))) 0)))]
   ""
-  "
+  "*
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_msc() instead\");
-     FAIL;
 #if 0
      if (REGNO(operands[2]) < REGNO(operands[3])) {
        return \"msc %2*%3, %0\";
@@ -1282,7 +1288,7 @@
   "
 )
 
-(define_expand "auto_msc1"
+(define_insn "auto_msc1"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (minus:HI
           (subreg:HI
@@ -1293,11 +1299,10 @@
                 (match_operand: HI 2 "pic30_mac_input_operand" "z"))) 0)
           (match_operand:HI 3 "pic30_accumulator_operand" "0")))]
   ""
-  "
+  "*
    {
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_msc() instead\");
-     FAIL;
 #if 0
      if (REGNO(operands[1]) < REGNO(operands[2])) {
        return \"msc %1*%2, %0\";
@@ -1309,34 +1314,32 @@
   "
 )
 
-(define_expand "auto_sftacr"
+(define_insn "auto_sftacr"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (ashiftrt:HI
           (match_dup 0)
           (match_operand:HI 1 "immediate_operand"       "W")))]
   "(INTVAL(operands[1]) > 0)"
-  "
+  "*
    {
      /* sftac %0, #%1 */
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_sftac() instead\");
-     FAIL;
    }
   "
 )
 
-(define_expand "auto_sftacl"
+(define_insn "auto_sftacl"
   [(set (match_operand:HI 0 "pic30_accumulator_operand" "=w")
         (ashift:HI 
           (match_dup 0)
           (match_operand:HI 1 "immediate_operand"       "W")))]
   "(INTVAL(operands[1]) > 0)"
-  "
+  "*
    { static char buffer[20];
 
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_sftac() instead\");
-     FAIL;
 #if 0
      sprintf(buffer,\"sftac %%0, #%d\", -INTVAL(operands[1]));
      return buffer;
@@ -1345,34 +1348,32 @@
   "
 )
 
-(define_expand "addacr_hi"
+(define_insn "addacr_hi"
   [(set (match_operand: HI 0 "pic30_accumulator_operand" "=w")
         (plus:HI
            (match_operand: HI 1 "pic30_mode3_operand" "RS<>r")
            (match_operand: HI 2 "pic30_accumulator_operand" "0")))]
   ""
-  "
+  "*
    {
      /* add %1, %0 */
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_add() instead\");
-     FAIL;
    }
   "
 )
 
-(define_expand "addacr1_hi"
+(define_insn "addacr1_hi"
   [(set (match_operand: HI 0 "pic30_accumulator_operand" "=w")
         (plus:HI
            (match_operand: HI 1 "pic30_accumulator_operand" "0")
            (match_operand: HI 2 "pic30_mode3_operand" "RS<>r")))]
   ""
-  "
+  "*
    {
      /* add %2, %0 */
      error(\"Automatic generation of DSP instructions not yet supported; \"
            \"use __builtin_add() instead\");
-     FAIL;
    }
   "
 )
@@ -4966,7 +4967,7 @@
         (match_operand:HI 0 "pic30_register_operand" "r"))]
   ""
   "
-   if (target_flags & TARGET_TRACK_PSVPAG) {
+   if ((target_flags & TARGET_TRACK_PSVPAG) || 1) {
      emit_insn(
        gen_set_nvpsv(operand0)
      );
@@ -14845,7 +14846,7 @@
   [(set_attr "cc" "math,math,math,math,math,math,math,math,math,math")]
 )
 
-(define_expand "addp32ext"
+(define_expand "addp32ext3"
   [(set (match_operand:P32EXT 0 "pic30_rR_or_near_operand" "")
         (plus:P32EXT
           (match_operand:P32EXT 1 "pic30_rR_or_near_APSV_operand" "")
@@ -22186,7 +22187,7 @@
           (match_operand    0 "pic30_mode2_or_near_operand" "+RrU")
           (match_operand:HI 1 "immediate_operand"           "i")
           (match_operand:HI 2 "immediate_operand"           "i"))
-        (match_operand:HI 3 "immediate_operand"             "ii"))]
+        (match_operand:HI 3 "immediate_operand"             "i"))]
   ""
   "
 { int n;
@@ -22250,9 +22251,37 @@
        }
      }
      DONE;
-  } else  {
-    FAIL;
+  }
+#if 0
+    else  {
+    /* generate: mask = (current value ^ new value ) & field bits
+                 val = val ^ mask */
+    rtx current_value = gen_reg_rtx(mode);
+    int new_value = INTVAL(operands[3]);
+    int mask = (1 << INTVAL(opearnds[1]));  // mask for width
+   
+    new_value <<= (INTVAL(operands[2]);     // shift to start bit position
+    mask <<= (INTVAL(operands[2]);          // shift to start bit position
+    emit_move(operands[0], current_value);
+    switch (mode) {
+      case QImode:
+        emit(
+          gen_xorqi3(current_value, current_value, GEN_INT(mask))
+        ); 
+        emit(
+          gen_andqi3(current_value, current_value, GEN_INT(
+        );
+        break;
+      case HImode:
+        emit(
+          gen_xorhi3(current_value, current_value, GEN_INT(mask))
+        ); 
+        break;
+    }
+ 
   }  
+#endif
+  else FAIL;
 
 }
 ")

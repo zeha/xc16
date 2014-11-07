@@ -45,6 +45,7 @@ Boston, MA 02111-1307, USA.  */
 #include "expr.h"
 #include "recog.h"
 #include "toplev.h"
+
 #if !defined(HAVE_cc0)
 #define HAVE_cc0
 #endif
@@ -118,10 +119,11 @@ int pic30_managed_psv = 0;               /* this is set iff a managed psv
 #define SECTION_NAME_BOOT_PROG    ".boot_prog"
 #define SECTION_NAME_SECURE_PROG  ".secure_prog"
 
-                                /* 0x100000 */
-#define JOIN(X,Y) (X ## Y)
-#define PIC30_LL(X) JOIN(X,LL)
+#define JOIN2(X,Y) (X ## Y)
+#define JOIN(X,Y) JOIN2(X,Y)
+#define PIC30_LL(X) JOIN2(X,LL)
 
+                                /* 0x100000 */
 #define SECTION_READ_ONLY       (PIC30_LL(SECTION_MACH_DEP))
 #define SECTION_XMEMORY         (PIC30_LL(SECTION_MACH_DEP) << 1)
 #define SECTION_YMEMORY         (PIC30_LL(SECTION_MACH_DEP) << 2)
@@ -520,8 +522,37 @@ typedef enum pic30_conversion_status_ {
   conv_state_unknown,
   conv_possible,
   conv_indeterminate,
-  conv_not_possible
+  conv_not_possible,
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+  conv_c =  0x000080,
+  conv_d =  0x000100,
+  conv_i =  0x000100,
+  conv_e =  0x000200,
+  conv_E =  0x000400,
+  conv_f =  0x000800,
+  conv_g =  0x001000,
+  conv_G =  0x002000,
+  conv_n =  0x004000,
+  conv_o =  0x008000,
+  conv_p =  0x010000,
+  conv_s =  0x020000,
+  conv_u =  0x040000,
+  conv_x =  0x080000,
+  conv_X =  0x100000,
+  conv_a =  0x200000,
+  conv_A =  0x400000,
+  conv_F =  0x800000,
+#endif
 } pic30_conversion_status;
+
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+#define CCS_FLAG_MASK (~(conv_c-1))
+#define CCS_STATE_MASK (conv_c-1)
+#define CCS_FLAG(X) ((X) & CCS_FLAG_MASK)
+#define CCS_STATE(X) ((X) & CCS_STATE_MASK)
+#else
+#define CCS_STATE(X) (X)
+#endif
 
 typedef struct pic30_intersting_fn_ {
   const char *name;
@@ -529,9 +560,38 @@ typedef struct pic30_intersting_fn_ {
   pic30_interesting_fn_info conversion_style;
   unsigned int interesting_arg;
   unsigned int function_convertable;
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+  pic30_conversion_status conv_flags;
+  char *encoded_name;
+#endif
 } pic30_interesting_fn;
 
 static pic30_interesting_fn pic30_fn_list[] = {
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+/*  name         map_to        style        arg        c, conv_flags */
+  { "fprintf",   "_fprintf",   info_O,      -1,        0, 0 },
+  { "fprintf",   "_dfprintf",  info_dbl,    -1,        0, 0 },
+  { "fscanf",    "_fscanf",    info_I,      -1,        0, 0 },
+  { "fscanf",    "_dfscanf",   info_dbl,    -1,        0, 0 },
+  { "printf",    "_printf",    info_O,      -1,        0, 0 },
+  { "printf",    "_dprintf",   info_dbl,    -1,        0, 0 },
+  { "scanf",     "_scanf",     info_I,      -1,        0, 0 },
+  { "scanf",     "_dscanf",    info_dbl,    -1,        0, 0 },
+  { "snprintf",  "_snprintf",  info_O,      -1,        0, 0 },
+  { "snprintf",  "_dsnprintf", info_dbl,    -1,        0, 0 },
+  { "sprintf",   "_sprintf",   info_O,      -1,        0, 0 },
+  { "sprintf",   "_dsprintf",  info_dbl,    -1,        0, 0 },
+  { "sscanf",    "_sscanf",    info_I,      -1,        0, 0 },
+  { "sscanf",    "_dsscanf",   info_dbl,    -1,        0, 0 },
+  { "vfprintf",  "_vfprintf",  info_O_v,    WR1_REGNO, 0, 0 },
+  { "vfprintf",  "_dvfprintf", info_dbl,    WR1_REGNO, 0, 0 },
+  { "vprintf",   "_vprintf",   info_O_v,    WR0_REGNO, 0, 0 },
+  { "vprintf",   "_dvprintf",  info_dbl,    WR0_REGNO, 0, 0 },
+  { "vsnprintf", "_vsnprintf", info_O_v,    WR2_REGNO, 0, 0 },
+  { "vsnprintf", "_dvsnprintf",info_dbl,    WR2_REGNO, 0, 0 },
+  { "vsprintf",  "_vsprintf",  info_O_v,    WR1_REGNO, 0, 0 },
+  { "vsprintf",  "_dvsprintf", info_dbl,    WR1_REGNO, 0, 0 },
+#else
 /*  name         map_to         style        arg        c */
   { "fprintf",   "_ifprintf",   info_O,      -1,        0 },
   { "fprintf",   "_dfprintf",   info_dbl,    -1,        0 },
@@ -555,6 +615,7 @@ static pic30_interesting_fn pic30_fn_list[] = {
   { "vsnprintf", "_dvsnprintf", info_dbl,    WR2_REGNO, 0 },
   { "vsprintf",  "_ivsprintf",  info_O_v,    WR1_REGNO, 0 },
   { "vsprintf",  "_dvsprintf",  info_dbl,    WR1_REGNO, 0 },
+#endif
   { 0,           0,             0,           -1,        0 }
 };
 
@@ -678,6 +739,7 @@ static int pic30_address_cost(rtx op);
 static int pic30_function_arg_partial_nregs(CUMULATIVE_ARGS *cum,
                                             enum machine_mode mode,
                                             tree type, bool named);
+static void pic30_unique_section(tree decl, int reloc, int shlib);
 static bool pic30_valid_pointer_mode(enum machine_mode mode);
 static bool pic30_rtx_costs(rtx RTX, int CODE, int OUTER_CODE, int *total);
 static inline int pic30_obj_elf_p(void);
@@ -797,6 +859,9 @@ static tree pic30_push_pop_constant_section(tree decl, enum css push,
 #undef TARGET_VALID_POINTER_MODE
 #define TARGET_VALID_POINTER_MODE pic30_valid_pointer_mode
 
+#undef TARGET_ASM_UNIQUE_SECTION
+#define TARGET_ASM_UNIQUE_SECTION pic30_unique_section
+
 /* Initialize new attribute table structure */
 /* -1 for max args implies no upper limit */
 
@@ -804,7 +869,7 @@ const struct attribute_spec pic30_attribute_table[] = {
   /* name|      min| max| decl| type| fn| handler */
   /*           args|args|                         */
   { "user_init",  0,   0,    0,    0,  0, pic30_valid_machine_attribute },
-  { "interrupt",  0,   3,    0,    0,  0, pic30_valid_machine_attribute },
+  { "interrupt",  0,   4,    0,    0,  0, pic30_valid_machine_attribute },
   { "altirq" ,    1,   1,    1,    0,  0, pic30_valid_machine_attribute },
   { "irq" ,       1,   1,    1,    0,  0, pic30_valid_machine_attribute },
   { "save" ,      1,  -1,    1,    0,  0, pic30_valid_machine_attribute },
@@ -1454,6 +1519,31 @@ tree pic30_write_externals(enum pic30_special_trees kind) {
   return pic30_write_fns[kind];
 } 
 
+int type_refers_to_size_t(tree type) {
+  if (TYPE_NAME(type)) {
+    if ((TREE_CODE(TYPE_NAME(type))) == IDENTIFIER_NODE) {
+      if (strcmp(IDENTIFIER_POINTER(TYPE_NAME(type)), "size_t") == 0) {
+        return 1;
+      }
+    } else if (TREE_CODE(TYPE_NAME(type)) == TYPE_DECL) {
+      if (strcmp(IDENTIFIER_POINTER(DECL_NAME(TYPE_NAME(type))), 
+                 "size_t") == 0) {
+        return 1;
+      }
+    }
+  } 
+  if (TREE_CODE(type) == RECORD_TYPE) {
+    tree fields;
+   
+    for (fields = TYPE_FIELDS(type); fields; fields = TREE_CHAIN(fields)) {
+      if (type_refers_to_size_t(TREE_TYPE(fields))) return 1;
+    }
+  } else if (TREE_CODE(type) == ARRAY_TYPE) {
+    return type_refers_to_size_t(TREE_TYPE(type)); 
+  }
+  return 0;
+}
+
 /* determine complete prefix for declaration */
 static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
   char *f = prefix;
@@ -1479,54 +1569,21 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
   if (TREE_CODE(decl) == FUNCTION_DECL) {
     if (TREE_PUBLIC(decl)) {
       paramtype = TREE_TYPE(decl);
-      if (TYPE_NAME(paramtype)) {
-        if ((TREE_CODE(TYPE_NAME(paramtype))) == IDENTIFIER_NODE) {
-          if (strcmp(IDENTIFIER_POINTER(TYPE_NAME(paramtype)),
-                     "size_t") == 0) {
-            size_t_used_externally = 1;
-          }
-        } else if (TREE_CODE(TYPE_NAME(paramtype)) == TYPE_DECL) {
-          if (strcmp(IDENTIFIER_POINTER(DECL_NAME(TYPE_NAME(paramtype))),
-                     "size_t") == 0) {
-            size_t_used_externally = 1;
-          }
-        }
-      }
+      if (type_refers_to_size_t(paramtype)) size_t_used_externally = 1;
       if (!size_t_used_externally) {
         tree arglist = TYPE_ARG_TYPES(TREE_TYPE(decl));
   
         for (; arglist; arglist = TREE_CHAIN(arglist)) {
           paramtype = TREE_VALUE(arglist);
-          if (TYPE_NAME(paramtype)) {
-            if ((TREE_CODE(TYPE_NAME(paramtype))) == IDENTIFIER_NODE) {
-              if (strcmp(IDENTIFIER_POINTER(TYPE_NAME(paramtype)),
-                         "size_t") == 0) {
-                size_t_used_externally = 1;
-                break;
-              }
-            } else if (TREE_CODE(TYPE_NAME(paramtype)) == TYPE_DECL) {
-              if (strcmp(IDENTIFIER_POINTER(DECL_NAME(TYPE_NAME(paramtype))),
-                         "size_t") == 0) {
-                size_t_used_externally = 1;
-                break;
-              }
-            }
+          if (type_refers_to_size_t(paramtype)) {
+            size_t_used_externally = 1;
+            break;
           }
         }
       }
     }
   } else if ((TREE_CODE(decl) == VAR_DECL) && TREE_PUBLIC(decl)) {
-   
-    if (TYPE_NAME(TREE_TYPE(decl))) {
-      if (TREE_CODE(TYPE_NAME(TREE_TYPE(decl))) == IDENTIFIER_NODE) {
-        if (strcmp(IDENTIFIER_POINTER(TYPE_NAME(TREE_TYPE(decl))),"size_t") == 0)
-          size_t_used_externally = 1;
-      } else if (TREE_CODE(TYPE_NAME(TREE_TYPE(decl))) == TYPE_DECL) {
-        if (strcmp(IDENTIFIER_POINTER(DECL_NAME(TYPE_NAME(TREE_TYPE(decl)))),
-                   "size_t") == 0)
-          size_t_used_externally = 1;
-      }
-    }
+    if (type_refers_to_size_t(TREE_TYPE(decl))) size_t_used_externally = 1;
   }
   if (fnear == -1) {
     section_type_set = 1;
@@ -2157,10 +2214,19 @@ static const char *default_section_name(tree decl, SECTION_FLAGS_INT flags) {
     }
     while (reserved_section_names[i].section_name) {
       if ((flags ^ reserved_section_names[i].mask) == 0) {
-        if ((pic30_text_scn) && 
-            (strcmp(reserved_section_names[i].section_name, ".text") == 0))
-            return pic30_text_scn;
-        else return reserved_section_names[i].section_name;
+        if (strcmp(reserved_section_names[i].section_name, ".text") == 0) {
+          char *txt = pic30_text_scn;
+
+          if (!txt) txt = reserved_section_names[i].section_name;
+          if (!flag_function_sections || !decl)  return txt;
+          else {
+            char *retval;
+            retval = xmalloc(strlen(txt)+3+
+                             strlen(IDENTIFIER_POINTER(DECL_NAME(decl))));
+            f +=sprintf(retval,"%s.%s",txt,IDENTIFIER_POINTER(DECL_NAME(decl)));
+            return retval;
+          }
+        } else return reserved_section_names[i].section_name;
       }
       i++;
     }
@@ -2627,7 +2693,156 @@ const char *pic30_strip_name_encoding(const char *symbol_name) {
     match = pic30_match_conversion_fn(var);
     while (match) {
       if (match->function_convertable) {
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+
+#define CCS_ADD_FLAG(FLAG) \
+        if (match->conv_flags & JOIN(conv_,FLAG)) { \
+          *f++=#FLAG[0]; \
+          added |=  JOIN(conv_,FLAG); }
+
+#define CCS_ADD_FLAG_ALT(FLAG,ALT) \
+        if ((match->conv_flags & JOIN(conv_,FLAG)) && \
+            ((added & JOIN(conv_,ALT)) == 0)) {\
+          *f++=#ALT[0]; \
+          added |=  JOIN(conv_,ALT); } 
+ 
+        if (match->encoded_name == 0) {
+          char extra_flags[sizeof("_aAcdeEfFgGnopsuxX0")] = "_";
+          char *f = &extra_flags[1];
+          pic30_conversion_status added;
+
+          // order is important here
+          //   add new flags alphabetically with lower case preceding uppercase
+          //     ie _aAcdEfgG not
+          //        _acdfgAEG
+
+          added = 0;
+          // we don't implement all 131K unique combinations, only
+          // a subset...
+
+          /* a | A -> aA */
+          CCS_ADD_FLAG(a);
+          CCS_ADD_FLAG_ALT(A,a);
+          CCS_ADD_FLAG(A);
+          CCS_ADD_FLAG_ALT(a,A);
+
+          /* c | d | n | o | p | u | x | X -> cdnopuxX */
+          CCS_ADD_FLAG(c);
+          CCS_ADD_FLAG_ALT(d,c);
+          CCS_ADD_FLAG_ALT(n,c);
+          CCS_ADD_FLAG_ALT(o,c);
+          CCS_ADD_FLAG_ALT(p,c);
+          CCS_ADD_FLAG_ALT(u,c);
+          CCS_ADD_FLAG_ALT(x,c);
+          CCS_ADD_FLAG_ALT(X,c);
+
+          /* c | d | n | o | p | u | x | X -> cdnopuxX */
+          CCS_ADD_FLAG(d);
+          CCS_ADD_FLAG_ALT(c,d);
+          CCS_ADD_FLAG_ALT(n,d);
+          CCS_ADD_FLAG_ALT(o,d);
+          CCS_ADD_FLAG_ALT(p,d);
+          CCS_ADD_FLAG_ALT(u,d);
+          CCS_ADD_FLAG_ALT(x,d);
+          CCS_ADD_FLAG_ALT(X,d);
+ 
+          /* e | E -> eE */
+          CCS_ADD_FLAG(e);
+          CCS_ADD_FLAG_ALT(E,e);
+          CCS_ADD_FLAG(E);
+          CCS_ADD_FLAG_ALT(e,E);
+
+          /* f | F -> fF */
+          CCS_ADD_FLAG(f);
+          CCS_ADD_FLAG_ALT(F,f);
+          CCS_ADD_FLAG(F);
+          CCS_ADD_FLAG_ALT(f,F);
+
+          /* g | G -> gG */
+          CCS_ADD_FLAG(g);
+          CCS_ADD_FLAG_ALT(G,g);
+          CCS_ADD_FLAG(G);
+          CCS_ADD_FLAG_ALT(g,G);
+
+          /* c | d | n | o | p | u | x | X -> cdnopuxX */
+          CCS_ADD_FLAG(n);
+          CCS_ADD_FLAG_ALT(c,n);
+          CCS_ADD_FLAG_ALT(d,n);
+          CCS_ADD_FLAG_ALT(n,n);
+          CCS_ADD_FLAG_ALT(o,n);
+          CCS_ADD_FLAG_ALT(p,n);
+          CCS_ADD_FLAG_ALT(u,n);
+          CCS_ADD_FLAG_ALT(x,n);
+          CCS_ADD_FLAG_ALT(X,n);
+
+          /* c | d | n | o | p | u | x | X -> cdnopuxX */
+          CCS_ADD_FLAG(o);
+          CCS_ADD_FLAG_ALT(c,o);
+          CCS_ADD_FLAG_ALT(d,o);
+          CCS_ADD_FLAG_ALT(n,o);
+          CCS_ADD_FLAG_ALT(o,o);
+          CCS_ADD_FLAG_ALT(p,o);
+          CCS_ADD_FLAG_ALT(u,o);
+          CCS_ADD_FLAG_ALT(x,o);
+          CCS_ADD_FLAG_ALT(X,o);
+
+          CCS_ADD_FLAG(p);
+          CCS_ADD_FLAG_ALT(c,p);
+          CCS_ADD_FLAG_ALT(d,p);
+          CCS_ADD_FLAG_ALT(n,p);
+          CCS_ADD_FLAG_ALT(o,p);
+          CCS_ADD_FLAG_ALT(p,p);
+          CCS_ADD_FLAG_ALT(u,p);
+          CCS_ADD_FLAG_ALT(x,p);
+          CCS_ADD_FLAG_ALT(X,p);
+
+          CCS_ADD_FLAG(s);
+
+          CCS_ADD_FLAG(u);
+          CCS_ADD_FLAG_ALT(c,u);
+          CCS_ADD_FLAG_ALT(d,u);
+          CCS_ADD_FLAG_ALT(n,u);
+          CCS_ADD_FLAG_ALT(o,u);
+          CCS_ADD_FLAG_ALT(p,u);
+          CCS_ADD_FLAG_ALT(u,u);
+          CCS_ADD_FLAG_ALT(x,u);
+          CCS_ADD_FLAG_ALT(X,u);
+
+          CCS_ADD_FLAG(x);
+          CCS_ADD_FLAG_ALT(c,x);
+          CCS_ADD_FLAG_ALT(d,x);
+          CCS_ADD_FLAG_ALT(n,x);
+          CCS_ADD_FLAG_ALT(o,x);
+          CCS_ADD_FLAG_ALT(p,x);
+          CCS_ADD_FLAG_ALT(u,x);
+          CCS_ADD_FLAG_ALT(x,x);
+          CCS_ADD_FLAG_ALT(X,x);
+
+          CCS_ADD_FLAG(X);
+          CCS_ADD_FLAG_ALT(c,X);
+          CCS_ADD_FLAG_ALT(d,X);
+          CCS_ADD_FLAG_ALT(n,X);
+          CCS_ADD_FLAG_ALT(o,X);
+          CCS_ADD_FLAG_ALT(p,X);
+          CCS_ADD_FLAG_ALT(u,X);
+          CCS_ADD_FLAG_ALT(x,X);
+          CCS_ADD_FLAG_ALT(X,X);
+          *f++=0;
+
+          if (strlen(extra_flags) > 1) {
+            match->encoded_name = xmalloc(strlen(match->map_to) +
+                                          strlen(extra_flags) + 1);
+            sprintf(match->encoded_name,"%s%s", match->map_to, extra_flags);
+          } else {
+            /* we have no flags */
+            match->encoded_name = xmalloc(strlen(match->map_to) + 3);
+            sprintf(match->encoded_name,"%s_0", match->map_to, extra_flags);
+          }
+        }
+        if (match->encoded_name) return match->encoded_name;
+#else
         return match->map_to;
+#endif
       }
       if (match[1].name && 
           (strcmp(match[1].name,var) == 0)) match++; else match = 0;
@@ -4039,15 +4254,13 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
         emit_insn(
           (INTVAL(r1) < 0) ? gen_addacr_shiftlt_hi_errata(target, r0, 
                                               GEN_INT(-1*INTVAL(r1)),accum_r) :
-          (INTVAL(r1) > 0) ? gen_addacr_shiftrt_hi_errata(target, r0, r1, accum_r) :
-                             gen_addacr_noshift_hi_errata(target, r0, accum_r)
+                             gen_addacr_shiftrt_hi_errata(target, r0, r1, accum_r) 
         );
       } else {
         emit_insn(
           (INTVAL(r1) < 0) ? gen_addacr_shiftlt_hi(target, r0, 
                                               GEN_INT(-1*INTVAL(r1)),accum_r) :
-          (INTVAL(r1) > 0) ? gen_addacr_shiftrt_hi(target, r0, r1, accum_r) :
-                             gen_addacr_noshift_hi(target, r0, accum_r)
+                             gen_addacr_shiftrt_hi(target, r0, r1, accum_r) 
         );
       }
       push_cheap_rtx(&dsp_builtin_list,get_last_insn(),exp,fcode);
@@ -8225,6 +8438,7 @@ int pic30_ecore_target(void) {
 }
 
 int pic30_eds_space_operand_p(rtx op) {
+#if 0
   if (pic30_has_space_operand_p(op, PIC30_AUXPSV_FLAG)) return TRUE;
   if (pic30_has_space_operand_p(op, PIC30_AUXFLASH_FLAG)) return TRUE;
   if (pic30_has_space_operand_p(op, PIC30_PROG_FLAG)) return TRUE;
@@ -8242,6 +8456,12 @@ int pic30_eds_space_operand_p(rtx op) {
   if (pic30_has_space_operand_p(op, PIC30_SFR_FLAG)) return TRUE;
   if (pic30_has_space_operand_p(op, PIC30_DMA_FLAG)) return TRUE;
   return FALSE;
+#else
+  if (pic30_has_space_operand_p(op, PIC30_EXT_FLAG)) return FALSE;
+  if (pic30_has_space_operand_p(op, PIC30_PMP_FLAG) &&
+      !(pic30_device_mask & HAS_PMPV2)) return FALSE;
+  return TRUE;
+#endif
 }
 
 /*
@@ -13737,7 +13957,7 @@ static tree pic30_push_pop_constant_section(tree decl, enum css push,
     /*
      * perhaps force a named section based upon boot or secure attributes
      */
-    flags = SECTION_READ_ONLY;
+    flags = SECTION_READ_ONLY | SECTION_PAGE;
     if (((current_function_decl) &&
          (lookup_attribute(IDENTIFIER_POINTER(pic30_identBoot[0]),
                            DECL_ATTRIBUTES(current_function_decl)))) ||
@@ -15042,15 +15262,168 @@ static void conversion_info(pic30_conversion_status state,
   /* dependant upon the conversion status and the setting of the smart-io
      option, set up the pic30_fn_list table. */
  
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+  fn_id->conv_flags = CCS_FLAG(fn_id->conv_flags) | state;
+#endif
   if (TARGET_SMART_IO == 0) {
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+    if (fn_id->encoded_name) free(fn_id->encoded_name);
+    fn_id->encoded_name = 0;
+#endif
     fn_id->function_convertable = 0;
-  } else if ((TARGET_SMART_IO == 1) && (state != conv_possible)) {
+  } else if ((TARGET_SMART_IO == 1) && (CCS_STATE(state) != conv_possible)) {
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+    if (fn_id->encoded_name) free(fn_id->encoded_name);
+    fn_id->encoded_name = 0;
+#endif
     fn_id->function_convertable = 0;
-  } else if ((TARGET_SMART_IO == 2) && (state == conv_not_possible)) {
+  } else if ((TARGET_SMART_IO == 2) && 
+             (CCS_STATE(state) == conv_not_possible)) {
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+    if (fn_id->encoded_name) free(fn_id->encoded_name);
+    fn_id->encoded_name = 0;
+#endif
     fn_id->function_convertable = 0;
   }
 }
 
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+static pic30_conversion_status 
+pic30_convertable_output_format_string(const char *string) {
+  const char *c = string;
+  enum pic30_conversion_status_ status = 0;
+
+  for ( ; *c; c++)
+  {
+    /* quickly deal with the un-interesting cases */
+    if (*c != '%') continue;
+    if (*(++c) == '%')
+    {
+      continue;
+    }
+    /* zero or more flags */
+    while (1)
+    {
+      switch (*c)
+      {
+        case '-':
+        case '+':
+        case ' ':
+        case '#':
+        case '0': c++; continue;
+        default: break;
+      }
+      break;
+    }
+    /* optional field width or * */ 
+    if (*c == '*') c++; else
+    while (ISDIGIT(*c)) c++; 
+    /* optional precision or * */
+    if (*c == '.') {
+      c++;
+      /* an illegal conversion sequence %.g, for example - give up and
+         start looking from the g onwards */
+      if (*c == '*') c++; 
+      else {
+        if (!ISDIGIT(*c)) {
+          c--;
+        }
+        while(ISDIGIT(*c)) c++;
+      }
+    }
+    /* optional conversion modifier */
+    switch (*c) {
+      case 'h':
+      case 'l':
+      case 'L': c++; break;
+      default: break;
+    }
+    /* c should point to the conversion character */
+    switch (*c) {
+      case 'a': status |= conv_a; break;
+      case 'A': status |= conv_A; break;
+      case 'c': status |= conv_c; break;
+      case 'd': status |= conv_d; break;
+      case 'i': status |= conv_d; break;
+      case 'e': status |= conv_e; break;
+      case 'E': status |= conv_E; break;
+      case 'f': status |= conv_f; break;
+      case 'F': status |= conv_F; break;
+      case 'g': status |= conv_g; break;
+      case 'G': status |= conv_G; break;
+      case 'n': status |= conv_n; break;
+      case 'o': status |= conv_o; break;
+      case 'p': status |= conv_p; break;
+      case 's': status |= conv_s; break;
+      case 'u': status |= conv_u; break;
+      case 'x': status |= conv_x; break;
+      case 'X': status |= conv_X; break;
+      default:   /* we aren't checking for legal format strings */
+                 break;
+    }
+  }
+  return conv_possible | status;
+}
+
+static pic30_conversion_status 
+pic30_convertable_input_format_string(const char *string) {
+  const char *c = string;
+  enum pic30_conversion_status_ status = 0;
+
+  for ( ; *c; c++)
+  {
+    /* quickly deal with the un-interesting cases */
+    if (*c != '%') continue;
+    if (*(++c) == '%')
+    {
+      continue;
+    }
+    /* optional assignment suppression */
+    if (*c == '*') c++;
+    /* optional field width */ 
+    while (ISDIGIT(*c)) c++; 
+    /* optional conversion modifier */
+    switch (*c) {
+      case 'h':
+      case 'l':
+      case 'L': c++; break;
+      default: break;
+    }
+    /* c should point to the conversion character */
+    switch (*c) {
+      case 'a': status |= conv_a; break;
+      case 'A': status |= conv_A; break;
+      case 'c': status |= conv_c; break;
+      case 'd': status |= conv_d; break;
+      case 'i': status |= conv_d; break;
+      case 'e': status |= conv_e; break;
+      case 'E': status |= conv_E; break;
+      case 'f': status |= conv_f; break;
+      case 'F': status |= conv_F; break;
+      case 'g': status |= conv_g; break;
+      case 'G': status |= conv_G; break;
+      case 'n': status |= conv_n; break;
+      case 'o': status |= conv_o; break;
+      case 'p': status |= conv_p; break;
+      case 'u': status |= conv_u; break;
+      case 'x': status |= conv_x; break;
+      case 'X': status |= conv_X; break;
+      /* string selection expr */
+      case '[': {
+        /* [^]...] or []...] or [...] ; get to the end of the conversion */
+        c++;
+        if (*c == '^') c++;
+        if (*c == ']') c++;
+        while (*c++ != ']');
+      }
+      default:   /* we aren't checking for legal format strings */
+                 break;
+    }
+  }
+  return conv_possible | status;
+}
+
+#else
 static pic30_conversion_status 
 pic30_convertable_output_format_string(const char *string) {
   const char *c = string;
@@ -15164,6 +15537,7 @@ pic30_convertable_input_format_string(const char *string) {
   }
   return conv_possible;
 }
+#endif
 
 /*
  *   Check or set the conversion status for a particular rtl -
@@ -15181,6 +15555,19 @@ cache_conversion_state(rtx val, int variant, pic30_conversion_status s) {
     parent = save;
     if ((int)val & sizeof(void *)) save = save->l; else save = save->r;
   }
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+  if (save) {
+    pic30_conversion_status new;
+    
+    /* we can only increase the current status */
+    if (CCS_STATE(s) > CCS_STATE(save->valid[variant])) {
+      save->valid[variant] &= CCS_FLAG_MASK;
+      save->valid[variant] |= (s & CCS_STATE_MASK);
+    }
+    save->valid[variant] = save->valid[variant] | CCS_FLAG(s);
+    return save->valid[variant];
+  }
+#else
   if (save) {
     /* we can only increase the current status */
     if (s > save->valid[variant]) {
@@ -15188,6 +15575,7 @@ cache_conversion_state(rtx val, int variant, pic30_conversion_status s) {
     }
     return save->valid[variant];
   }
+#endif
   save = (pic30_conversion_cache *) xcalloc(sizeof(pic30_conversion_cache),1);
   save->rtl = val;
   save->valid[variant] = s;
@@ -15350,6 +15738,10 @@ int pic30_check_for_conversion(rtx call_insn) {
   if (pic30_clear_fn_list) {
     int i;
     for (i = 0; pic30_fn_list[i].name; i++) {
+#if (defined(C30_SMARTIO_RULES) && (C30_SMARTIO_RULES > 1))
+      if (pic30_fn_list[i].encoded_name) free(pic30_fn_list[i].encoded_name);
+      pic30_fn_list[i].encoded_name = 0;
+#endif
       pic30_fn_list[i].function_convertable=1;
     }
     pic30_clear_fn_list = 0; 
@@ -15395,19 +15787,21 @@ rtx pic30_legitimize_address(rtx x, rtx oldx ATTRIBUTE_UNUSED,
 
   switch (GET_CODE(x)) {
     default: break;
-    case MEM: if ((GET_MODE(x) == P24PROGmode) && (GET_MODE(x) == mode)) {
-                return x;
-              } else if ((GET_MODE(x) == P24PSVmode) && (GET_MODE(x) == mode)) {
-                return x;
-              } else if ((GET_MODE(x) == P16PMPmode) && (GET_MODE(x) == mode)) {
-                return x;
-              } else if ((GET_MODE(x) == P32PEDSmode) && (GET_MODE(x) == mode)){
-                return x;
-              } else if ((GET_MODE(x) == P32EDSmode) && (GET_MODE(x) == mode)) {
-                return x;
-              } else if ((GET_MODE(x) == P32EXTmode) && (GET_MODE(x) == mode)) {
-                return x;
-              }
+    case MEM: {
+      if ((GET_MODE(x) == P24PROGmode) && (GET_MODE(x) == mode)) {
+        return x;
+      } else if ((GET_MODE(x) == P24PSVmode) && (GET_MODE(x) == mode)) {
+        return x;
+      } else if ((GET_MODE(x) == P16PMPmode) && (GET_MODE(x) == mode)) {
+        return x;
+      } else if ((GET_MODE(x) == P32PEDSmode) && (GET_MODE(x) == mode)){
+        return x;
+      } else if ((GET_MODE(x) == P32EDSmode) && (GET_MODE(x) == mode)) {
+        return x;
+      } else if ((GET_MODE(x) == P32EXTmode) && (GET_MODE(x) == mode)) {
+        return x;
+      }
+    }
   }
   return 0;
 }
@@ -15780,6 +16174,12 @@ void pic30_layout_type(tree type) {
   }
 }
 
+void
+pic30_unique_section (tree decl, int reloc, int shlib)
+{
+  return 0;
+}
+
 bool pic30_valid_pointer_mode(enum machine_mode mode) {
   switch (mode) {
     case HImode:
@@ -16094,51 +16494,55 @@ char *pic30_boot_secure_access(rtx call, int *slot, int *set_psv) {
 }
 
 char *pic30_default_include_path(void) {
+  char *common;
+  int extra;
+
   pic30_override_options();
+  if (target_flags & TARGET_MASK_LEGACY_LIBC) {
+    extra = sizeof(MPLABC30_LEGACY_COMMON_INCLUDE_PATH);
+    common = MPLABC30_LEGACY_COMMON_INCLUDE_PATH;
+  } else {
+    extra = sizeof(MPLABC30_COMMON_INCLUDE_PATH);
+    common = MPLABC30_COMMON_INCLUDE_PATH;
+  }
 
   { char *my_space = 0;
 
     if ((target_flags & TARGET_MASK_ARCH_PIC24F) ||
         (target_flags & TARGET_MASK_ARCH_PIC24FK)) {
-      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH 
-                                PATH_SEPARATOR_STR
-                                MPLABC30_PIC24F_INCLUDE_PATH),1);
-      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+      my_space = xcalloc(sizeof(PATH_SEPARATOR_STR
+                                MPLABC30_PIC24F_INCLUDE_PATH)+extra,1);
+      sprintf(my_space,"%s%s%s", common,
                                  PATH_SEPARATOR_STR,
                                  MPLABC30_PIC24F_INCLUDE_PATH);
     } else if (target_flags & TARGET_MASK_ARCH_PIC24H) {
-      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH 
-                                 PATH_SEPARATOR_STR
-                                 MPLABC30_PIC24H_INCLUDE_PATH),1);
-      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+      my_space = xcalloc(sizeof(PATH_SEPARATOR_STR
+                                 MPLABC30_PIC24H_INCLUDE_PATH)+extra,1);
+      sprintf(my_space,"%s%s%s", common,
                                  PATH_SEPARATOR_STR,
                                  MPLABC30_PIC24H_INCLUDE_PATH);
     } else if (target_flags & TARGET_MASK_ARCH_PIC24E) {
-      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH 
-                                 PATH_SEPARATOR_STR
+      my_space = xcalloc(extra+sizeof(PATH_SEPARATOR_STR
                                  MPLABC30_PIC24E_INCLUDE_PATH),1);
-      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+      sprintf(my_space,"%s%s%s", common,
                                  PATH_SEPARATOR_STR,
                                  MPLABC30_PIC24E_INCLUDE_PATH);
     } else if (target_flags & TARGET_MASK_ARCH_PIC30) {
-      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH
-                                 PATH_SEPARATOR_STR
+      my_space = xcalloc(extra+sizeof(PATH_SEPARATOR_STR
                                  MPLABC30_PIC30F_INCLUDE_PATH),1);
-      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+      sprintf(my_space,"%s%s%s", common,
                                  PATH_SEPARATOR_STR,
                                  MPLABC30_PIC30F_INCLUDE_PATH);
     } else if (target_flags & TARGET_MASK_ARCH_PIC33) {
-      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH
-                                 PATH_SEPARATOR_STR
+      my_space = xcalloc(extra+sizeof(PATH_SEPARATOR_STR
                                  MPLABC30_PIC33F_INCLUDE_PATH),1);
-      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+      sprintf(my_space,"%s%s%s", common,
                                  PATH_SEPARATOR_STR,
                                  MPLABC30_PIC33F_INCLUDE_PATH);
     } else if (target_flags & TARGET_MASK_ARCH_PIC33E) {
-      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH
-                                 PATH_SEPARATOR_STR
+      my_space = xcalloc(extra+sizeof(PATH_SEPARATOR_STR
                                  MPLABC30_PIC33E_INCLUDE_PATH),1);
-      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+      sprintf(my_space,"%s%s%s", common,
                                  PATH_SEPARATOR_STR,
                                  MPLABC30_PIC33E_INCLUDE_PATH);
     } else {
@@ -16769,6 +17173,8 @@ void pic30_cpu_cpp_builtins(void *pfile) {
       cpp_define(pfile,"__HAS_PMP__"); 
     if (pic30_device_mask & HAS_PMPV2) cpp_define(pfile,"__HAS_PMPV2__");
     if (pic30_device_mask & HAS_EDS) cpp_define(pfile,"__HAS_EDS__"); 
+    if ((pic30_device_mask & HAS_5VOLTS) || TARGET_ARCH(PIC30))
+      cpp_define(pfile,"__HAS_5VOLTS__");
   } 
 }
 
@@ -16948,28 +17354,46 @@ void pic30_validate_dsp_instructions(void) {
           }
           break;
 
-        case PIC30_BUILTIN_ADD:
+        case PIC30_BUILTIN_ADD: {
+          int found = 0;
+
           p = SET_SRC(p);
-          if (!pic30_accumulator_operand(XEXP(p,1),HImode)) {
+          for (i = 0; i < 2; i++) {
+            if (pic30_accumulator_operand(XEXP(p,i), HImode)) {
+              if (REGNO(XEXP(p,i)) != dest_regno) {
+                if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                  error_loc = EXPR_LOCATION(t);
+                if (has_location)
+                  error("%HResult and argument 0 should be identical",
+                        &error_loc);
+                else
+                  error("Result and argument 0 should be identical");
+                err_cnt++;
+              }
+              found++;
+            }
+          }
+          if (found > 1) {
             if (t && EXPR_HAS_LOCATION(t) && ++has_location) 
               error_loc = EXPR_LOCATION(t); 
             if (has_location)
-              error("%HArgument 0 should be an accumulator register",
+              error("%HOnly one accumulator argument expected", 
                     &error_loc);
             else
-              error("Argument 0 should be an accumulator register", i);
+              error("Only one accumulator eargument expexcted");
             err_cnt++;
-          } else if (REGNO(XEXP(p,1)) != dest_regno) {
-            if (t && EXPR_HAS_LOCATION(t) && ++has_location)
-              error_loc = EXPR_LOCATION(t);
+          } else if (!found) {
+            if (t && EXPR_HAS_LOCATION(t) && ++has_location) 
+              error_loc = EXPR_LOCATION(t); 
             if (has_location)
-              error("%HResult and argument 0 should be identical",
-                    &error_loc);
+              error("%HAccumulator register operand expected",
+                  &error_loc);
             else
-              error("Result and argument 0 should be identical");
+              error("Accumulator register operand expected");
             err_cnt++;
           }
           break;
+        }
 
         case PIC30_BUILTIN_CLR:
           // just the result
@@ -16989,7 +17413,7 @@ void pic30_validate_dsp_instructions(void) {
                   error("%HArgument 7 should be an accumulator register",
                         &error_loc);
                 else
-                  error("Argument 7 should be an accumulator register", i);
+                  error("Argument 7 should be an accumulator register");
                 err_cnt++;
               } else if (REGNO(p) == dest_regno) {
                 if (t && EXPR_HAS_LOCATION(t) && ++has_location) 
@@ -16998,7 +17422,7 @@ void pic30_validate_dsp_instructions(void) {
                   error("%HArgument 7 should be 'other' accumulator register",
                         &error_loc);
                 else
-                  error("Argument 7 should be 'other' accumulator register", i);
+                  error("Argument 7 should be 'other' accumulator register");
                 err_cnt++;
               }
             }
@@ -17020,7 +17444,7 @@ void pic30_validate_dsp_instructions(void) {
                 error("%HArgument 11 should be an accumulator register",
                       &error_loc);
               else
-                error("Argument 11 should be an accumulator register", i);
+                error("Argument 11 should be an accumulator register");
               err_cnt++;
             } else if (REGNO(v) == dest_regno) {
                 if (t && EXPR_HAS_LOCATION(t) && ++has_location)
@@ -17029,7 +17453,7 @@ void pic30_validate_dsp_instructions(void) {
                   error("%HArgument 11 should be 'other' accumulator register",
                         &error_loc);
                 else
-                  error("Argument 11 should be 'other' accumulator register",i);
+                  error("Argument 11 should be 'other' accumulator register");
                 err_cnt++;
             }
           }
@@ -17047,7 +17471,16 @@ void pic30_validate_dsp_instructions(void) {
                 error("%HArgument 0 should be an accumulator register",
                       &error_loc);
               else
-                error("Argument 0 should be an accumulator register", i);
+                error("Argument 0 should be an accumulator register");
+              err_cnt++;
+            } else if (REGNO(XEXP(p,0)) != dest_regno) {
+              if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                error("%HResult and argument 0 should be identical",
+                      &error_loc);
+              else
+                error("Result and argument 0 should be identical");
               err_cnt++;
             } else if (REGNO(XEXP(p,0)) != dest_regno) {
               if (t && EXPR_HAS_LOCATION(t) && ++has_location)
@@ -17082,7 +17515,7 @@ void pic30_validate_dsp_instructions(void) {
                 error("%HArgument 7 should be an accumulator register",
                       &error_loc);
               else
-                error("Argument 7 should be an accumulator register", i);
+                error("Argument 7 should be an accumulator register");
               err_cnt++;
             } else if (REGNO(p) == dest_regno) {
                 if (t && EXPR_HAS_LOCATION(t) && ++has_location)
@@ -17091,7 +17524,7 @@ void pic30_validate_dsp_instructions(void) {
                   error("%HArgument 7 should be 'other' accumulator register",
                         &error_loc);
                 else
-                  error("Argument 7 should be 'other' accumulator register",i);
+                  error("Argument 7 should be 'other' accumulator register");
                 err_cnt++;
             }
           }
@@ -17119,7 +17552,17 @@ void pic30_validate_dsp_instructions(void) {
                 error("%HArgument 0 should be an accumulator register",
                       &error_loc);
               else
-                error("Argument 0 should be an accumulator register", i);
+                error("Argument 0 should be an accumulator register");
+              err_cnt++;
+            } else if ((fcode == PIC30_BUILTIN_SFTAC) && 
+                       (REGNO(o) != dest_regno)) {
+              if (t && EXPR_HAS_LOCATION(t) && ++has_location)
+                error_loc = EXPR_LOCATION(t);
+              if (has_location)
+                error("%HResult and argument 0 should be identical",
+                      &error_loc);
+              else
+                error("Result and argument 0 should be identical");
               err_cnt++;
             } else if ((fcode == PIC30_BUILTIN_SFTAC) && 
                        (REGNO(o) != dest_regno)) {

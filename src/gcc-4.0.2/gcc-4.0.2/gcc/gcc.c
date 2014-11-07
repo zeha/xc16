@@ -1351,6 +1351,13 @@ translate_options (int *argcp, const char *const **argvp)
 	  i++;
 	}
 
+#ifdef _PIC30_H_
+      else if (strcmp(argv[i],"-legacy-libc") == 0) {
+        newv[newindex++] = "-mlegacy-libc";
+        i++;
+      }
+
+#endif
       /* Handle old-fashioned options--just copy them through,
 	 with their arguments.  */
       else if (argv[i][0] == '-')
@@ -3100,8 +3107,12 @@ display_help (void)
   fputs (_("  -print-file-name=<lib>   Display the full path to library <lib>\n"), stdout);
   fputs (_("  -print-prog-name=<prog>  Display the full path to compiler component <prog>\n"), stdout);
   fputs (_("  -print-multi-directory   Display the root directory for versions of libgcc\n"), stdout);
+#ifdef _PIC30_H_
   fputs (_("\
   -fast-math               Use alternative floating point support routines\n"), stdout);
+  fputs (_("\
+  -legacy-libc             Use legacy (pre v3.25) lib C routines\n"), stdout);
+#endif
   fputs (_("\
   -print-multi-lib         Display the mapping between command line options and\n\
                            multiple library search directories\n"), stdout);
@@ -3203,6 +3214,21 @@ process_command (int argc, const char **argv)
   int is_modify_target_name;
   int j;
 #endif
+#ifdef _PIC30_H_
+  enum pic30_lib_specs {
+    pls_default,
+    pls_fast_math = 1,
+    pls_legacy_libc = 2
+  } pic30_which_spec = pls_default;
+
+  char *libspecs[] = {
+    LIB_SPEC,         // default
+    ALT_FM_LIB_SPEC,  // pls_fast_math
+    ALT_LC_LIB_SPEC,  // pls_legacy_libc
+    ALT_FMLC_LIB_SPEC // pls_fast_math | pls_legacy_libc
+  };
+#endif
+    
 
   GET_ENVIRONMENT (gcc_exec_prefix, GCC_EXEC_PREFIX_ENV);
 
@@ -3521,9 +3547,14 @@ process_command (int argc, const char **argv)
 	  printf ("%s\n", spec_machine);
 	  exit (0);
 	}
-#if defined(MCHP_VERSION) && defined(ALT_LIB_SPEC)
+#if defined(MCHP_VERSION) && defined(ALT_LIB_SPECS)
       else if (strcmp (argv[i], "-fast-math") == 0) {
-        lib_spec = ALT_LIB_SPEC;
+        pic30_which_spec |= pls_fast_math;
+        lib_spec = libspecs[pic30_which_spec];
+      } else if (strcmp (argv[i], "-mlegacy-libc") == 0) {
+        n_switches++;
+        pic30_which_spec |= pls_legacy_libc;
+        lib_spec = libspecs[pic30_which_spec];
       }
 #endif
       else if (strcmp (argv[i], "-fversion") == 0)
@@ -4091,8 +4122,14 @@ warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
 #endif
       if (! strncmp (argv[i], "-Wa,", 4))
 	;
+#ifdef _PIC30_H_
+#if 0
+      else if (! strcmp (argv[i], "-mlegacy-libc"))
+        ;
+#endif
       else if (! strcmp (argv[i], "-fast-math"))
         ;
+#endif
       else if (! strncmp (argv[i], "-Wp,", 4))
 	;
       else if (! strcmp (argv[i], "-pass-exit-codes"))

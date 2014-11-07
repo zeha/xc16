@@ -21,6 +21,7 @@
 #define P24FK    1<<5
 #define P33E     1<<6
 #define P24E     1<<7
+#define P24FV    P24FK | HAS_5VOLTS
 
 #define FAMILY_MASK (0xFF)
 #define CODEGUARD_MASK (0x00FFFF00)
@@ -47,6 +48,7 @@
 #define HAS_ECORE  1<<15
 #define HAS_DMAV2  1<<16
 #define HAS_AUXFLASH 1<<17
+#define HAS_5VOLTS 1 << 18
 
 /* IS_CODEGUARD_ID flags */
 #define FLASH         1<<8
@@ -82,6 +84,10 @@
                                  "support" DIR_SEPARATOR_STR \
                                  "dsPIC30F" DIR_SEPARATOR_STR \
                                  "inc"
+#define MPLABC30_PIC33E_INC_PATH ".." DIR_SEPARATOR_STR \
+                                 "support" DIR_SEPARATOR_STR \
+                                 "dsPIC33E" DIR_SEPARATOR_STR \
+                                 "inc"
 #define MPLABC30_PIC33F_INC_PATH ".." DIR_SEPARATOR_STR \
                                  "support" DIR_SEPARATOR_STR \
                                  "dsPIC33F" DIR_SEPARATOR_STR \
@@ -93,6 +99,10 @@
 #define MPLABC30_PIC24H_INC_PATH ".." DIR_SEPARATOR_STR \
                                  "support" DIR_SEPARATOR_STR \
                                  "PIC24H" DIR_SEPARATOR_STR \
+                                 "inc"
+#define MPLABC30_PIC24E_INC_PATH ".." DIR_SEPARATOR_STR \
+                                 "support" DIR_SEPARATOR_STR \
+                                 "PIC24E" DIR_SEPARATOR_STR \
                                  "inc"
 #define MPLABC30_PIC24F_INC_PATH ".." DIR_SEPARATOR_STR \
                                  "support" DIR_SEPARATOR_STR \
@@ -109,6 +119,13 @@
  */
 #define MPLABC30_COMMON_INCLUDE_PATH ".." DIR_SEPARATOR_STR \
                                      "include" PATH_SEPARATOR_STR \
+                                     ".." DIR_SEPARATOR_STR \
+                                     "support" DIR_SEPARATOR_STR \
+                                     "generic" DIR_SEPARATOR_STR \
+                                     "h"
+#define MPLABC30_LEGACY_COMMON_INCLUDE_PATH ".." DIR_SEPARATOR_STR \
+                                     "include" DIR_SEPARATOR_STR "lega-c" \
+                                     PATH_SEPARATOR_STR \
                                      ".." DIR_SEPARATOR_STR \
                                      "support" DIR_SEPARATOR_STR \
                                      "generic" DIR_SEPARATOR_STR \
