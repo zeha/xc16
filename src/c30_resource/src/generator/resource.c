@@ -13,6 +13,7 @@
 #ifndef IN_GCC
 #define xcalloc calloc
 #define xrealloc realloc
+#define TOUPPER toupper
 #endif
 
 #define res_error(X) {resource_error = X; return 0;}
@@ -79,8 +80,8 @@ struct resource_introduction_block *read_device_rib(const char *name,
       char * temp, * place;
       place = (char *)xcalloc(80,1);
       temp = place;
-      for (*temp = toupper(*device++);*temp++;) 
-        *temp = toupper(*device++);
+      for (*temp = TOUPPER(*device++);*temp++;) 
+        *temp = TOUPPER(*device++);
       strcat(match, place);
       free(place);
     }

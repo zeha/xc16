@@ -1294,8 +1294,10 @@ emit_block_move_via_movmem (rtx x, rtx y, rtx size, unsigned int align)
 	    op2 = copy_to_mode_reg (mode, op2);
 
           /* what happens if op2 is invalid as a reg? */
-	  if (pred != 0 && ! (*pred) (op2, mode))
+	  if (pred != 0 && ! (*pred) (op2, mode)) {
+            volatile_ok = save_volatile_ok;
             return false;
+          }
 
 	  /* ??? When called via emit_block_move_for_call, it'd be
 	     nice if there were some way to inform the backend, so

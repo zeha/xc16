@@ -2051,7 +2051,7 @@ static const char *default_section_name(tree decl, SECTION_FLAGS_INT flags) {
     s = lookup_attribute(IDENTIFIER_POINTER(pic30_identSecure[0]),
                          DECL_ATTRIBUTES(decl));
     if (pic30_interrupt_function_p(decl)) {
-      sprintf(prepend,".isr");
+      sprintf(prepend,".isr.");
     }
     if (b && s) {
       error("%Jboot and secure specified for '%s'", decl,
@@ -2110,7 +2110,7 @@ static const char *default_section_name(tree decl, SECTION_FLAGS_INT flags) {
               TREE_INT_CST_LOW(TREE_VALUE(TREE_VALUE(r))));
     } else if (pszSectionName) {
       if (flag_function_sections) {
-        f +=  sprintf(result, "%s.%s.%s", prepend, pszSectionName, 
+        f +=  sprintf(result, "%s%s.%s", prepend, pszSectionName, 
                       IDENTIFIER_POINTER(DECL_NAME(decl)));
       } else {
         f +=  sprintf(result, "%s%s", prepend, pszSectionName);
@@ -7715,6 +7715,7 @@ int pic30_mode3_operand(rtx op, enum machine_mode mode) {
           /*
           ** Base with index.
           */
+          if (pic30_ecore_target()) return FALSE;
           rtxPlusOp0 = XEXP(rtxInner, 0);
           switch (GET_CODE(rtxPlusOp0)) {
             case SUBREG:
@@ -7845,6 +7846,7 @@ int pic30_mode3_APSV_operand(rtx op, enum machine_mode mode) {
           /*
           ** Base with index.
           */
+          if (pic30_ecore_target()) return FALSE;
           rtxPlusOp0 = XEXP(rtxInner, 0);
           switch (GET_CODE(rtxPlusOp0)) {
             case SUBREG:
@@ -9575,6 +9577,7 @@ int pic30_S_constraint(rtx op) {
     rtx rtxPlusOp0;
     rtx rtxPlusOp1;
 
+    if (pic30_ecore_target()) return FALSE;
     switch (GET_CODE(op))
     {
     case MEM:
@@ -11967,6 +11970,7 @@ int pic30_check_legit_addr(enum machine_mode mode, rtx addr, int fStrict) {
     */
     if (fLegit && (indx != NULL_RTX))
     {
+        if (pic30_ecore_target()) return FALSE;
         if (GET_CODE(indx) != REG)
         {
             fLegit = FALSE;
@@ -16106,7 +16110,8 @@ int pic30_extended_pointer_operand(rtx x, enum machine_mode mode) {
         case SUBREG:
                    if (GET_CODE(XEXP(rhs,0)) != REG) return 0;
                    /* FALLSTHROUGH */
-        case REG:  if (GET_MODE(rhs) != mode) return 0;
+        case REG:  if (pic30_ecore_target()) return 0;
+                   if (GET_MODE(rhs) != mode) return 0;
                    break;
         default: return 0;
       }
