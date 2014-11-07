@@ -158,10 +158,13 @@ print_rtx (rtx in_rtx)
 
   is_insn = INSN_P (in_rtx);
 
-#ifdef MCHP_TRACE
+#ifndef GENERATOR_FILE
+#if defined(MCHP_TRACE )
   /* its really handy to know what the address of the rtx being
      dumped is!  This saves me having to work it out by following the chain */
-   if (indent == 0) fprintf(outfile, "(0x%8.8x) ",in_rtx);
+   if (indent == 0 || pic30_trace_all_addresses()) 
+     fprintf(outfile, "(0x%8.8x) ",in_rtx);
+#endif
 #endif
  
   /* When printing in VCG format we write INSNs, NOTE, LABEL, and BARRIER

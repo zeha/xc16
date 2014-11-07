@@ -2463,13 +2463,13 @@
 )
 
 (define_insn "zero_extendqihi2_APSV"
-  [(set (match_operand:HI 0 "pic30_register_operand"                   "=r,r")
-        (zero_extend:HI (match_operand:QI 1 "pic30_mode2_APSV_operand" "r,R<>")) )]
+  [(set (match_operand:HI 0 "pic30_register_operand"                   "=r")
+        (zero_extend:HI (match_operand:QI 1 "pic30_mode2_APSV_operand" "r")) )]
   ""
   "ze %1,%0"
   [
    (set_attr "cc" "math")
-   (set_attr "type" "def,defuse")
+   (set_attr "type" "def")
   ]
 )
 
@@ -2481,8 +2481,15 @@
 {
   if (pic30_mode2_operand(operands[1],GET_MODE(operands[1]))) 
     emit(gen_zero_extendqihi2_DATA(operands[0],operands[1]));
-  else
-    emit(gen_zero_extendqihi2_DATA(operands[0],operands[1]));
+  else {
+    rtx from = operands[1];
+
+    if (!pic30_register_operand(from, QImode)) {
+      from = gen_reg_rtx(QImode);
+      emit_move_insn(from, operands[1]);
+    }
+    emit(gen_zero_extendqihi2_APSV(operands[0],from));
+  }
   DONE;
 }")
 
@@ -2977,14 +2984,17 @@
   ""
   "*
 {  rtx w0 = gen_rtx_REG(HImode, WR0_REGNO);
+   rtx other_reg_with_save = 0;
    rtx other_reg = 0;
    int save=1;
    int reg;
-   int not_reg_1 = -1;
-   int not_reg_0 = -1;
+   int not_reg = 0;
    rtx op;
    static char buffer[256];
 
+   pic30_identify_used_regs(operands[1], &not_reg);
+   pic30_identify_used_regs(operands[0], &not_reg);
+#if 0
    op = operands[1];
    do {
      if (GET_CODE(op) == REG) {
@@ -3009,12 +3019,19 @@
        op = XEXP(op,0);
      } else break;
    } while(1);
+#endif
    if (pic30_dead_or_set_p(insn,w0)) save = 0;
    for (reg = WR1_REGNO; reg < WR15_REGNO; reg++) {
      extern FILE *asm_out_file;
+#if 0
      if (reg == not_reg_0) continue;
      if (reg == not_reg_1) continue;
+#else
+     if (not_reg & (1<<reg)) continue;
+#endif
      other_reg = gen_rtx_REG(HImode,reg);
+     if (other_reg_with_save == 0) 
+       other_reg_with_save = gen_rtx_REG(HImode,reg);
      if (pic30_dead_or_set_p(insn,other_reg)) break;
      other_reg = 0;
    }
@@ -3031,7 +3048,7 @@
      case 9:  return \"mov.b %1,%0\";
      case 10: return \"mov.b %1,WREG\";
      case 11: return \"mov.b WREG,%0\";
-     case 12: return \"mov #%1,%0\;mov.b [%0],%0\";
+      case 12: return \"mov #%1,%0\;mov.b [%0],%0\";
      case 13: if (pic30_dead_or_set_p(insn, w0))
                 return \"mov %1,w0\;mov.b WREG,%0\";
               else if (pic30_errata_mask & exch_errata)
@@ -3107,12 +3124,25 @@
                 sprintf(buffer,\"mov #(%%1),w%d\;mov.b [w%d],%%0\",
                         REGNO(other_reg), REGNO(other_reg));
                 return buffer;
-              } else if (not_reg_0 == 0) {
-               if (which_alternative == 21) {
-                 return \"push w1\;mov #(%1),w1\;mov.b [w1],w1\;mov.b w1,%0\;pop w1\";
-               } else return \"push w1\;mov #(%1),w1\;mov.b [w1],%0\;pop w1\";
+              } else if (not_reg) {
+                int regno;
+
+                gcc_assert(other_reg_with_save);
+                regno = REGNO(other_reg_with_save);
+                if (which_alternative == 21) {
+                  sprintf(buffer,
+                          \"push w%d\;mov #(%1),w%d\;mov.b [w%d],w%d\"
+                          \"\;mov.b w%d,%0\;pop w%d\", 
+                          regno, regno, regno, regno, regno, regno);
+                  return buffer;
+                } else {
+                  sprintf(buffer,
+                          \"push w%d\;mov #(%1),w%d\;mov.b [w%d],%0\;pop w%d\",
+                          regno, regno, regno, regno);
+                  return buffer;
+                }
               } else {
-               return \"push w0\;mov.b %1,WREG\;mov.b w0,%0\;pop w0\";
+                return \"push w0\;mov.b %1,WREG\;mov.b w0,%0\;pop w0\";
               }
      case 22:
      case 23: /* T, <>R */
@@ -3122,8 +3152,15 @@
                 sprintf(buffer, \"mov #(%%0),w%d\;mov.b %%1,[w%d]\",
                                 REGNO(other_reg), REGNO(other_reg));
                 return buffer;
-              } else if (not_reg_1 == 0) {
-                return \"push w1\;mov #(%0),w1\;mov.b %1,[w1]\;pop w1\";
+              } else if (not_reg) {
+                int regno;
+
+                gcc_assert(other_reg_with_save);
+                regno = REGNO(other_reg_with_save);
+                sprintf(buffer,
+                        \"push w%d\;mov #(%0),w%d\;mov.b %1,[w%d]\;pop w%d\",
+                        regno, regno, regno, regno);
+                return buffer;
               } else {
                 return \"push w0\;mov #(%0),w0\;mov.b %1,[w0]\;pop w0\";
               }
@@ -3136,8 +3173,15 @@
                 sprintf(buffer, \"mov #(%%0),w%d\;mov.b %%1,[w%d]\",
                                 REGNO(other_reg), REGNO(other_reg));
                 return buffer;
-              } else if (not_reg_1 == 0) {
-                return \"push w1\;mov #(%0),w1\;mov.b %1,[w1]\;pop w1\";
+              } else if (not_reg) {
+                int regno;
+
+                gcc_assert(other_reg_with_save);
+                regno = REGNO(other_reg_with_save);
+                sprintf(buffer,
+                        \"push w%d\;mov #(%0),w%d\;mov.b %1,[w%d]\;pop w%d\",
+                        regno, regno, regno, regno);
+                return buffer;
               } else {
                 return \"push w0\;mov #(%0),w0\;mov.b %1,[w0]\;pop w0\";
               }
@@ -3155,22 +3199,25 @@
 
 (define_insn "movqi_gen_APSV"
   [(set (match_operand:QI 0 "pic30_mode3_APSV_operand"
-		"=r<>,RS,r<>, R,   r<>,R,r<>, R,   Q,r,a,U,?d,?U,?U,?U,  ?U,  ?U,  RS,<>RS,R<>,Q")
+		"=r<>,RS,r<>, R,  r<>,RS,r<>, R,   Q,r,a,U,?d,?U,?U,?U, ?U, ? U,RS,<>RS,RS<>,Q,?T, ?T,   RS<>,<>RS,T, r")
         (match_operand:QI 1 "pic30_move_APSV_operand"
-		 "r,  r, <>RS,<>RS,r,  r,RS<>,RS<>,r,Q,U,a, U, d, R,<>SR,RS<>,Q,   ?U,?U, ?U,  ?U"))
+		 "r,  r,<>RS,<>RS,r,  r, RS<>,RS<>,r,Q,U,a, U, d,RS,<>RS,RS<>,Q,?U,?U,? U,?  U,RS<>,<>RS,?T,  ?T, ?r,?T"))
     (use (reg:HI PSVPAG))
   ]
   ""
   "*
 {  rtx w0 = gen_rtx_REG(HImode, WR0_REGNO);
+   rtx other_reg_with_save = 0;
    rtx other_reg = 0;
    int save=1;
    int reg;
-   int not_reg_1 = -1;
-   int not_reg_0 = -1;
+   int not_reg = 0;
    rtx op;
    static char buffer[256];
 
+   pic30_identify_used_regs(operands[1], &not_reg);
+   pic30_identify_used_regs(operands[0], &not_reg);
+#if 0
    op = operands[1];
    do {
      if (GET_CODE(op) == REG) {
@@ -3195,18 +3242,23 @@
        op = XEXP(op,0);
      } else break;
    } while(1);
+#endif
    if (pic30_dead_or_set_p(insn,w0)) save = 0;
    for (reg = WR1_REGNO; reg < WR15_REGNO; reg++) {
      extern FILE *asm_out_file;
+#if 0
      if (reg == not_reg_0) continue;
      if (reg == not_reg_1) continue;
+#else
+     if (not_reg & (1<<reg)) continue;
+#endif
      other_reg = gen_rtx_REG(HImode,reg);
+     if (other_reg_with_save == 0) 
+       other_reg_with_save = gen_rtx_REG(HImode,reg);
      if (pic30_dead_or_set_p(insn,other_reg)) break;
      other_reg = 0;
    }
    switch (which_alternative) {
-     default: error(\"Bad movqi_gen\n\");
-              break;
      case 0:  return \"mov.b %1,%0\";
      case 1:  return \"mov.b %1,%0\";
      case 2:  return \"mov.b %1,%0\";
@@ -3219,7 +3271,7 @@
      case 9:  return \"mov.b %1,%0\";
      case 10: return \"mov.b %1,WREG\";
      case 11: return \"mov.b WREG,%0\";
-     case 12: return \"mov #%1,%0\;mov.b [%0],%0\";
+      case 12: return \"mov #%1,%0\;mov.b [%0],%0\";
      case 13: if (pic30_dead_or_set_p(insn, w0))
                 return \"mov %1,w0\;mov.b WREG,%0\";
               else if (pic30_errata_mask & exch_errata)
@@ -3233,8 +3285,8 @@
                 return \"push w0\;mov.b %1,w0\;mov.b WREG,%0\;pop w0\";
               }
               break;
-     case 15:
-     case 16: /* U, R<> */ {
+     case 15: /* U, <>RS */ 
+     case 16: /* U, RS<> */ {
               char *inc=\"inc\";
               int pre=0;
               int post=0;
@@ -3268,7 +3320,7 @@
                   return buffer;
                 } else if (pre) {
                   sprintf(buffer,\"%s %%s1,%ss1\;push w0\;mov.b %%s1,w0\"
-                                 \"\;mov.b WREG,%%0\;pop w0\;%s %%r1,%%r1\",
+                                 \"\;mov.b WREG,%%0\;pop w0\;%s %%r1,%%r1\", 
                                  inc);
                   return buffer;
                 } else {
@@ -3295,20 +3347,76 @@
                 sprintf(buffer,\"mov #(%%1),w%d\;mov.b [w%d],%%0\",
                         REGNO(other_reg), REGNO(other_reg));
                 return buffer;
-              } else if (not_reg_0 == 0) {
-               if (which_alternative == 21) {
-                 return \"push w1\;mov #(%1),w1\;mov.b [w1],w1\;mov.b w1,%0\;pop w1\";
-               } else return \"push w1\;mov #(%1),w1\;mov.b [w1],%0\;pop w1\";
+              } else if (not_reg) {
+                int regno;
+
+                gcc_assert(other_reg_with_save);
+                regno = REGNO(other_reg_with_save);
+                if (which_alternative == 21) {
+                  sprintf(buffer,
+                          \"push w%d\;mov #(%1),w%d\;mov.b [w%d],w%d\"
+                          \"\;mov.b w%d,%0\;pop w%d\", 
+                          regno, regno, regno, regno, regno, regno);
+                  return buffer;
+                } else {
+                  sprintf(buffer,
+                          \"push w%d\;mov #(%1),w%d\;mov.b [w%d],%0\;pop w%d\",
+                          regno, regno, regno, regno);
+                  return buffer;
+                }
               } else {
-               return \"push w0\;mov.b %1,WREG\;mov.b w0,%0\;pop w0\";
+                return \"push w0\;mov.b %1,WREG\;mov.b w0,%0\;pop w0\";
               }
+     case 22:
+     case 23: /* T, <>R */
+              if (!save) {
+                return \"mov #(%0),w0\;mov.b %1,[w0]\";
+              } else if (other_reg) {
+                sprintf(buffer, \"mov #(%%0),w%d\;mov.b %%1,[w%d]\",
+                                REGNO(other_reg), REGNO(other_reg));
+                return buffer;
+              } else if (not_reg) {
+                int regno;
+
+                gcc_assert(other_reg_with_save);
+                regno = REGNO(other_reg_with_save);
+                sprintf(buffer,
+                        \"push w%d\;mov #(%0),w%d\;mov.b %1,[w%d]\;pop w%d\",
+                        regno, regno, regno, regno);
+                return buffer;
+              } else {
+                return \"push w0\;mov #(%0),w0\;mov.b %1,[w0]\;pop w0\";
+              }
+     case 24:
+     case 25: 
+     case 26: /* T,r */
+              if (!save) {
+                return \"mov #(%0),w0\;mov.b %1,[w0]\";
+              } else if (other_reg) {
+                sprintf(buffer, \"mov #(%%0),w%d\;mov.b %%1,[w%d]\",
+                                REGNO(other_reg), REGNO(other_reg));
+                return buffer;
+              } else if (not_reg) {
+                int regno;
+
+                gcc_assert(other_reg_with_save);
+                regno = REGNO(other_reg_with_save);
+                sprintf(buffer,
+                        \"push w%d\;mov #(%0),w%d\;mov.b %1,[w%d]\;pop w%d\",
+                        regno, regno, regno, regno);
+                return buffer;
+              } else {
+                return \"push w0\;mov #(%0),w0\;mov.b %1,[w0]\;pop w0\";
+              }
+     case 27: /* r, T */
+              return \"mov #(%1),%0\;mov.b [%0],%0\";
   }
 }
 "
   [(set_attr "cc"
-	"change0,change0,change0,change0,change0,change0,change0,change0,change0,change0,move,unchanged,change0,unchanged,change0,change0,change0,change0,change0,change0,change0,change0")
+	"change0,change0,change0,change0,change0,change0,change0,change0,change0,change0,move,unchanged,change0,unchanged,change0,change0,change0,change0,change0,change0,change0,change0,change0,change0,change0,change0,change0,change0")
    (set_attr "type"
-	"def,etc,defuse,use,def,etc,defuse,use,etc,defuse,def,etc,def,etc,etc,etc,etc,etc,etc,etc,etc,etc")
+	"def,etc,defuse,use,def,etc,defuse,use,etc,defuse,def,etc,def,etc,etc,etc,etc,etc,etc,etc,etc,etc,etc,etc,etc,etc,etc,etc")
   ]
 )
 
@@ -7677,6 +7785,8 @@
       gen_set_nvpsv(psv_page)                        // hopefully optimized away
     );
   }
+#if 1
+  if (!no_new_pseudos) {
   if (GET_CODE(operands[1]) == MEM) {
     rtx inner = XEXP(operands[1],0);
     switch (GET_CODE(inner)) {
@@ -7704,6 +7814,8 @@
       default: break;
     }
   }
+  }
+#endif
   emit_insn(
     gen_movqi_gen_APSV(to,from)
   );
@@ -18846,6 +18958,28 @@
   ""
   "com %0\;com %0+2"
   [(set_attr "cc" "clobber")])
+
+;; DImode
+
+(define_insn "one_cmpldi2"
+  [(set (match_operand:DI 0 "pic30_register_operand"        "=r")
+        (not:DI (match_operand:DI 1 "pic30_register_operand" "r")))]
+  ""
+  "com %1,%0\;com %d1,%d0\;com %t1,%t0\;com %q1,%q0"
+  [
+   (set_attr "cc" "clobber")
+   (set_attr "type" "def")
+  ]
+)
+
+; leave this match_dup, operand 0 will not require a reload (CAW)
+(define_insn "*one_cmpldi2_sfr"
+  [(set (match_operand:DI 0 "pic30_near_operand"        "=U")
+        (not:DI (match_dup 0)))]
+  ""
+  "com %0\;com %0+2\;com %0+4\;com %0+6"
+  [(set_attr "cc" "clobber")])
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Find first one

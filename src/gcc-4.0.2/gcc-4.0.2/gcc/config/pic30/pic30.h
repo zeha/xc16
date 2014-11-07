@@ -391,6 +391,7 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 #define TARGET_MASK_NCHAR               0x00800000
 #define TARGET_MASK_BIG                 0x01000000
 #define TARGET_MASK_ARCH_DA_GENERIC     0x02000000
+#define TARGET_MASK_TRACE_ALL_ADDR      0x04000000
 
 /*
 ** Small data model means that data objects can be
@@ -560,6 +561,9 @@ extern void pic30_system_include_paths(const char *root, const char *system,
  { "track", \
    (TARGET_TRACK_PSVPAG), \
    "Track auto psv page\n"}, \
+ { "debug", \
+   (TARGET_MASK_TRACE_ALL_ADDR), \
+   "enable extra debugging\n"}, \
  { "", TARGET_DEFAULT,NULL} \
 }
 
@@ -942,7 +946,7 @@ extern int         pic30_clear_fn_list;
 ** this macro to return nonzero in as many cases as possible since doing so
 ** will allow GCC to perform better register allocation.
 */
-#define MODES_TIEABLE_P(MODE1, MODE2)   1
+#define MODES_TIEABLE_P(MODE1, MODE2) 1
 
 /*
 ** Specify the registers used for certain standard purposes.

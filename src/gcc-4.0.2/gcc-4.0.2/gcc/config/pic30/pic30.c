@@ -5417,72 +5417,78 @@ rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 */
 /************************************************************************/
 void pic30_notice_update_cc(rtx exp, rtx insn) {
-    switch (get_attr_cc(insn))
-    {
-    case CC_SET:
-        /*
-        ** The insn sets the cc.
-        */
-        CC_STATUS_INIT;
-        if (GET_CODE(exp) == PARALLEL)
-        {
-            /*
-            ** insns with scratch registers
-            */
-            exp = XVECEXP(exp, 0, 0);
-            if (GET_CODE(exp) != SET)
-            {
-                break;
-            }
-        }
-        cc_status.value1 = SET_DEST(exp);
-        cc_status.value2 = SET_SRC(exp);
-        break;
-    case CC_MATH:
-        /*
-        ** The insn leaves the C and OV flags incorrect.
-        */
-        CC_STATUS_INIT;
-        cc_status.flags |= CC_NO_OVERFLOW;    /* Really C flag */
-        cc_status.mdep = TRUE;            /* Indicates OV bad */
-        cc_status.value1 = SET_DEST(exp);
-        break;
-    case CC_MOVE:
-        /*
-        ** The insn leaves the C and OV flags incorrect.
-        */
-        CC_STATUS_INIT;
-        cc_status.flags |= CC_NO_OVERFLOW;    /* Really C flag */
-        cc_status.mdep = TRUE;            /* Indicates OV bad */
-        cc_status.value1 = SET_DEST(exp);
-        cc_status.value2 = SET_SRC(exp);
-        break;
-    case CC_CHANGE0:
-        /*
-        ** Insn does not change CC,
-        ** but the 0'th operand has been changed.
-        */
-        if (cc_status.value1 && modified_in_p(cc_status.value1, insn))
-        {
-            cc_status.value1 = NULL_RTX;
-        }
-        if (cc_status.value2 && modified_in_p(cc_status.value2, insn))
-        {
-            cc_status.value2 = NULL_RTX; 
-        }
-        break;
-    case CC_CLOBBER:
-        /*
-        ** Insn doesn't leave CC in a usable state.
-        */
-        CC_STATUS_INIT;
-        break;
-    case CC_UNCHANGED:
-        /*
-        ** Insn does not affect CC at all.
-        */
-        break;
+  rtx orig_exp = exp;
+
+  if (GET_CODE(exp) == PARALLEL) {
+    int i;
+    rtx x;
+
+    for (i = 0; i < XVECLEN (exp, 0); i++) {
+      x = XVECEXP (exp, 0, i);
+      if (GET_CODE(x) == SET) break;
+      x = 0;
     }
+    if (x) exp = x;
+  }
+  switch (get_attr_cc(insn)) {
+    case CC_SET:
+      /*
+      ** The insn sets the cc.
+      */
+      CC_STATUS_INIT;
+      if (GET_CODE(exp) == PARALLEL) {
+        /*
+        ** insns with scratch registers
+        */
+        exp = XVECEXP(exp, 0, 0);
+        if (GET_CODE(exp) != SET) break;
+      }
+      cc_status.value1 = SET_DEST(exp);
+      cc_status.value2 = SET_SRC(exp);
+      break;
+    case CC_MATH:
+      /*
+      ** The insn leaves the C and OV flags incorrect.
+      */
+      CC_STATUS_INIT;
+      cc_status.flags |= CC_NO_OVERFLOW;    /* Really C flag */
+      cc_status.mdep = TRUE;            /* Indicates OV bad */
+      cc_status.value1 = SET_DEST(exp);
+      break;
+    case CC_MOVE:
+      /*
+      ** The insn leaves the C and OV flags incorrect.
+      */
+      CC_STATUS_INIT;
+      cc_status.flags |= CC_NO_OVERFLOW;    /* Really C flag */
+      cc_status.mdep = TRUE;            /* Indicates OV bad */
+      cc_status.value1 = SET_DEST(exp);
+      cc_status.value2 = SET_SRC(exp);
+      break;
+    case CC_CHANGE0:
+      /*
+      ** Insn does not change CC,
+      ** but the 0'th operand has been changed.
+      */
+      if (cc_status.value1 && modified_in_p(cc_status.value1, insn)) {
+        cc_status.value1 = NULL_RTX;
+      }
+      if (cc_status.value2 && modified_in_p(cc_status.value2, insn)) {
+        cc_status.value2 = NULL_RTX; 
+      }
+      break;
+    case CC_CLOBBER:
+      /*
+      ** Insn doesn't leave CC in a usable state.
+      */
+      CC_STATUS_INIT;
+      break;
+    case CC_UNCHANGED:
+      /*
+      ** Insn does not affect CC at all.
+      */
+      break;
+  }
 }
 
 /*************************************************************************
@@ -7146,6 +7152,8 @@ int pic30_mode3_operand(rtx op, enum machine_mode mode) {
       break;
     case MEM:
       rtxInner = XEXP(op, 0);
+      /* remove const */
+      while (GET_CODE(rtxInner) == CONST) rtxInner = XEXP(rtxInner,0);
       if (GET_MODE(rtxInner) != machine_Pmode) return 0;
       switch (GET_CODE(rtxInner)) {
         case SUBREG:
@@ -7272,6 +7280,7 @@ int pic30_mode3_APSV_operand(rtx op, enum machine_mode mode) {
       break;
     case MEM:
       rtxInner = XEXP(op, 0);
+      while (GET_CODE(rtxInner) == CONST) rtxInner = XEXP(rtxInner,0);
       if ((GET_MODE(rtxInner) != P16APSVmode) &&
           (GET_MODE(rtxInner) != machine_Pmode)) 
         return 0;
@@ -7467,7 +7476,7 @@ int pic30_data_operand(rtx op, enum machine_mode mode) {
     switch (mode)
     {
     case QImode:
-        // if (!reload_in_progress && !reload_completed) 
+        if (!reload_in_progress && !reload_completed) 
         {
           fData = FALSE;
           break;
@@ -7668,6 +7677,15 @@ int pic30_moveb_operand(rtx op, enum machine_mode mode) {
   return(fMoveOperand);
 }
 
+int pic30_moveb_APSV_operand(rtx op, enum machine_mode mode) {
+  int fMoveOperand;
+
+  fMoveOperand = pic30_mode3_APSV_operand(op, mode) ||
+                 pic30_data_operand(op, mode);
+
+  return(fMoveOperand);
+}
+
 int pic30_move_APSV_operand(rtx op, enum machine_mode mode) {
   int fMoveOperand;
 
@@ -7682,14 +7700,12 @@ int pic30_move_APSV_operand(rtx op, enum machine_mode mode) {
 /* alternative move operand that does not have a near in it */
 int pic30_move2_operand(rtx op, enum machine_mode mode) {
   return pic30_mode3_operand(op,mode) ||
-         pic30_modek_operand(op,mode) ||
-         pic30_data_operand(op,mode);
+         pic30_modek_operand(op,mode);
 }
 
 int pic30_move2_APSV_operand(rtx op, enum machine_mode mode) {
   return pic30_mode3_APSV_operand(op,mode) ||
-         pic30_modek_APSV_operand(op,mode) ||
-         pic30_data_operand(op,mode);
+         pic30_modek_APSV_operand(op,mode);
 }
 
 /* 
@@ -15102,12 +15118,16 @@ int pic30_extended_pointer_operand(rtx x, enum machine_mode mode) {
           }
           break;
         case SUBREG:
+                   if (GET_CODE(XEXP(lhs,0)) != REG) return 0;
+                   /* FALLSTHROUGH */
         case REG:  if (GET_MODE(lhs) != mode) return 0;
                    break;
       }
       switch (GET_CODE(rhs)) {
         case CONST_INT: break;
         case SUBREG:
+                   if (GET_CODE(XEXP(rhs,0)) != REG) return 0;
+                   /* FALLSTHROUGH */
         case REG:  if (GET_MODE(rhs) != mode) return 0;
                    break;
         default: return 0;
@@ -16700,6 +16720,30 @@ enum machine_mode pic30_pmode_for(rtx x) {
     default: break;
   }
   return mode;
+}
+
+void pic30_identify_used_regs(rtx op, int *mask) {
+  switch (GET_CODE(op)) {
+    case SUBREG: 
+    case MEM:
+    case CONST:
+      pic30_identify_used_regs(XEXP(op,0),mask);
+      break;
+    case REG: 
+      *mask |= (1 << REGNO(op));
+      break;
+    case PLUS:
+      pic30_identify_used_regs(XEXP(op,0), mask);
+      pic30_identify_used_regs(XEXP(op,1), mask);
+      break;
+    default:
+      break;
+  }
+  return;
+}
+                 
+int pic30_trace_all_addresses(void) {
+  return target_flags & TARGET_MASK_TRACE_ALL_ADDR;
 }
 
 /*END********************************************************************/

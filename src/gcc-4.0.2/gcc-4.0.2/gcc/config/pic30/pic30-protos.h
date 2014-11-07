@@ -129,6 +129,8 @@ extern void pic30_function_profiler(FILE *,int);
 
 extern void pic30_set_function_return(int bState);
 extern int pic30_get_function_return(void);
+extern void pic30_identify_used_regs(rtx, int*);
+extern int pic30_trace_all_addresses(void);
 
 
 #ifdef TREE_CODE
@@ -238,6 +240,7 @@ extern int  pic30_modek_operand(rtx, enum machine_mode);
 extern int  pic30_math_operand(rtx, enum machine_mode);
 extern int  pic30_math_APSV_operand(rtx, enum machine_mode);
 extern int  pic30_moveb_operand(rtx, enum machine_mode);
+extern int  pic30_moveb_APSV_operand(rtx, enum machine_mode);
 extern int  pic30_move_operand(rtx, enum machine_mode);
 extern int  pic30_move_APSV_operand(rtx, enum machine_mode);
 extern int  pic30_move2_operand(rtx, enum machine_mode);

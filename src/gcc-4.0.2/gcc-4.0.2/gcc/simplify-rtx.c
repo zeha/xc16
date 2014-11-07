@@ -2610,6 +2610,18 @@ simplify_plus_minus (enum rtx_code code, enum machine_mode mode, rtx op0,
 
 	  switch (this_code)
 	    {
+#ifdef _PIC30_H_
+            case SUBREG:
+              if ((GET_MODE(this_op) == mode) && 
+                  (mode == P16APSVmode) &&
+                  (GET_CODE(XEXP(this_op,0)) == REG) &&
+                  (REGNO(XEXP(this_op,0)) < FIRST_PSEUDO_REGISTER) && 
+                  (GET_MODE(XEXP(this_op,0)) == HImode)) {
+                ops[i].op = gen_rtx_REG(mode, REGNO(XEXP(this_op,0)));
+                changed = 1;
+              }
+              break;
+#endif
 	    case PLUS:
 	    case MINUS:
 	      if (n_ops == 7)
