@@ -7776,13 +7776,8 @@
      op2_low = gen_rtx_SUBREG(HImode, temp, 0);
      op2_high = gen_rtx_SUBREG(HImode, temp, 2);
    } else if (pic30_JN_operand(operands[2], VOIDmode)) {
-     int value = INTVAL(operands[2]);
-     int sign = (value < 0 ? -1 : 1);
-
-     value *= sign;
-
-     op2_low = gen_rtx_CONST_INT(HImode, (value & 0xFFFF)*sign);
-     op2_high = gen_rtx_CONST_INT(HImode, (value >> 16)*sign);
+     op2_low = gen_rtx_CONST_INT(HImode, INTVAL(operands[2]) & 0xFFFF);
+     op2_high = gen_rtx_CONST_INT(HImode, INTVAL(operands[2]) >> 16);
    } else {
      op2_low = gen_rtx_SUBREG(HImode, operands[2],0);
      op2_high = gen_rtx_SUBREG(HImode, operands[2],2);
@@ -11730,7 +11725,7 @@
          gen_movP32EDS_address(op2, XEXP(op1,0))        /* create pointer */
        );
      }
-   } 
+   }
    if (unpack) {
      rtx op2a = gen_reg_rtx(P32EDSmode);
      emit_insn(
@@ -23162,8 +23157,8 @@
   ]
   ""
   "@
-   mov %3,%4\;mov %2,%4\;mov %1,%0
-   mov #%0,%5\;mov %3,%4\;mov %2,%4\;mov %1,[%5]"
+   mov %2,%4\;mov %3,%4\;mov %1,%0
+   mov #%0,%5\;mov %2,%4\;mov %3,%4\;mov %1,[%5]"
  )
 
 (define_insn "write_nvm"
@@ -23392,7 +23387,7 @@
                  (match_operand:HI 2 "pic30_register_operand" "")))
    (set (match_operand:HI 3 "pic30_register_operand" "")
         (mem:HI (match_dup 0)))]
-  "((!pic30_ecore_target()) && (peep2_reg_dead_p(2, operands[0]) || (REGNO(operands[0]) == REGNO(operands[3]))))"
+  "(peep2_reg_dead_p(2, operands[0]) || (REGNO(operands[0]) == REGNO(operands[3])))"
   [(set (match_dup 3)
         (mem:HI (plus:HI (match_dup 1) (match_dup 2))))]
 )

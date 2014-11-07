@@ -785,13 +785,7 @@ reload_combine (void)
 	 (set (REGZ) (CONST_INT))
 	 ...
 	 ... (MEM (PLUS (REGZ) (REGY)))... .
-#ifdef _PIC30_H_
-         This was converted from the non-cannonical to start with (by reload)
-         which means that it is out of order, now.  re-order it because
-         this architecture cares about the order of base + offset
 
-	 ... (MEM (PLUS (REGY) (REGZ)))... .
-#endif
 	 First, check that we have (set (REGX) (PLUS (REGX) (REGY)))
 	 and that we know all uses of REGX before it dies.  
 	 Also, explicitly check that REGX != REGY; our life information
@@ -830,11 +824,7 @@ reload_combine (void)
 				    REGNO (base)))
 	    {
 	      const_reg = reg;
-#if defined(_PIC30_H_)
-              reg_sum = gen_rtx_PLUS(GET_MODE(reg), XEXP(plus,1), XEXP(plus,0));
-#else
 	      reg_sum = plus;
-#endif
 	    }
 	  else
 	    {
@@ -853,7 +843,7 @@ reload_combine (void)
 		      rtx index_reg = gen_rtx_REG (GET_MODE (reg), i);
 
 		      const_reg = index_reg;
-		      reg_sum = gen_rtx_PLUS (GET_MODE (reg), base, index_reg);
+		      reg_sum = gen_rtx_PLUS (GET_MODE (reg), index_reg, base);
 		      break;
 		    }
 		}
