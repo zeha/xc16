@@ -903,22 +903,31 @@ emit_debug_global_declarations (tree *vec, int len)
 /* Warn about a use of an identifier which was marked deprecated.  */
 void
 warn_deprecated_use (tree node)
-{ int bad = 0;
+{ int unsafe = 0;
+  tree unsupported = NULL_TREE;
 
   if (node == 0) 
     return;
 
 #ifdef _PIC30_H_
-  bad =(lookup_attribute(IDENTIFIER_POINTER(pic30_identUnsafe[0]),
+  unsafe =(lookup_attribute(IDENTIFIER_POINTER(pic30_identUnsafe[0]),
                                   DECL_ATTRIBUTES(node)) != 0);
+  unsupported =lookup_attribute(IDENTIFIER_POINTER(pic30_identUnsupported[0]),
+                                  DECL_ATTRIBUTES(node));
 #endif
 
   if (DECL_P (node))
     {
       expanded_location xloc = expand_location (DECL_SOURCE_LOCATION (node));
-      if (bad) {
+      if (unsafe) {
         warning ("%qs access is not safe to use within C",
 	       IDENTIFIER_POINTER (DECL_NAME (node)));
+        return;
+      } else if (unsupported) {
+        warning ("%qs is unsupported: %s",
+         IDENTIFIER_POINTER (DECL_NAME (node)),
+         TREE_STRING_POINTER (TREE_VALUE(TREE_VALUE(unsupported))));
+        return;
       }
       if (!warn_deprecated_decl) return;
       warning ("%qs is deprecated (declared at %s:%d)",

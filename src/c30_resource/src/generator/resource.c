@@ -1,10 +1,10 @@
 /*
  *  Resource support file, Copyright 2006 Micorchip Technology Inc
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -59,18 +59,65 @@ char *resource_pack_string(char *s) {
   return s;
 }
 
-struct resource_introduction_block *read_rib(const char *name) {
-  unsigned int buffer_size;
+struct resource_introduction_block *read_device_rib(const char *name, 
+                                                    char * device) {
+  unsigned int buffer_size = 80;
   unsigned char *buffer;
   unsigned int i;
-
-  buffer_size = 80;
-  if (stat(name,&fileinfo) == -1) {
-    /* name cannot be statted */
-    /* this could be because of the reoganization of the install directory 
-     * some of the binaries are in the same directory as the resource file,
-     * some are one directory below it... try moving one up and looking again
-     */
+  int status = -1;
+  
+  char *match;
+  char *device_buf = 0;
+  if (device != NULL) { 
+    device_buf = (char *)xcalloc(strlen(name)+strlen("device_files/")+
+                                 strlen(device)+strlen(".info"),1);
+    match = (char *)xcalloc(80,1);
+    strcpy(device_buf, name);
+    match = strstr(device_buf,"c30_device.info");
+    strcpy(match, "device_files/");
+    { 
+      char * temp, * place;
+      place = (char *)xcalloc(80,1);
+      temp = place;
+      for (*temp = toupper(*device++);*temp++;) 
+        *temp = toupper(*device++);
+      strcat(match, place);
+      free(place);
+    }
+    strcat(match, ".info");
+    status = stat(device_buf, &fileinfo);
+  
+    if (status == -1) {
+      /* device_buf cannot be statted */
+      /* this could be because of the reoganization of the install directory 
+       * some of the binaries are in the same directory as the resource file,
+       * some are one directory below it... try moving one up and looking again
+       */
+      char *c;
+      char *ultimate = (char *)name,
+           *penultimate = (char *)name;
+      char *temp;
+  
+      for (c = (char *)name; *c; c++) {
+        if ((*c == '/') || (*c == '\\')) {
+          penultimate = ultimate;
+          ultimate = c;
+          while (c[1] == *c) c++;  /* ignore duplicate slashes */
+        }
+      }
+      temp = (char *)xcalloc(strlen(ultimate)+1,1);
+      strcpy(temp, ultimate);
+      strcpy(penultimate,ultimate);
+      //status = stat(name,&fileinfo);
+    } else {
+      name = device_buf;
+    }
+  }
+  status = stat(name,&fileinfo);
+  if ((status == -1) && 
+      ((device_buf == 0) || (stat(device_buf,&fileinfo) == -1))) {
+    /* device_buf cannot be statted */
+    /* try the default device file */
     char *c;
     char *ultimate = (char *)name,
          *penultimate = (char *)name;
@@ -87,7 +134,8 @@ struct resource_introduction_block *read_rib(const char *name) {
     strcpy(temp, ultimate);
     strcpy(penultimate,ultimate);
     stat(name,&fileinfo);
-  }
+  } 
+
   /* under WINDOZE, the "b" is required because text files are subject to
      translation and ftell and fseek might not agree */
   input_file = fopen(name,"rb");
@@ -108,7 +156,11 @@ struct resource_introduction_block *read_rib(const char *name) {
                                                             buffer_size+80);
       buffer_size += 80;
       if (buffer != new_buffer) {
-        free(buffer);
+#if 0
+        free(buffer);    // silly rabbits, realloc frees the buffer if it moves it
+                         // and they are always after me lucky charms
+                         // and trix are for kids
+#endif
         buffer= new_buffer;
       }
     }
@@ -136,6 +188,10 @@ struct resource_introduction_block *read_rib(const char *name) {
   }
   return rib;
 }  
+
+struct resource_introduction_block *read_rib(const char *name) {
+  return read_device_rib(name,0);
+}
 
 void close_rib(void) {
   if (rib) {

@@ -26,6 +26,7 @@
 
 struct cpp_reader;
 
+extern tree pic30_identUnsupported[2];
 extern tree pic30_identUnsafe[2];
 extern tree pic30_identSecure[2];
 extern tree pic30_identBoot[2];
@@ -180,6 +181,7 @@ extern void  pic30_asm_output_short(FILE *, rtx);
 extern int  pic30_I_operand(rtx, enum machine_mode);
 extern int  pic30_O_operand(rtx, enum machine_mode);
 extern int  pic30_P_operand(rtx, enum machine_mode);
+extern int  pic30_q_constraint(rtx);
 extern int  pic30_Q_constraint(rtx);
 extern int  pic30_Q_operand(rtx, enum machine_mode);
 extern int  pic30_R_constraint(rtx);
@@ -264,8 +266,9 @@ extern int  pic30_sfr_operand(rtx, enum machine_mode);
 extern int  pic30_near_operand(rtx, enum machine_mode);
 extern int  pic30_near_math_operand(rtx, enum machine_mode);
 extern int  pic30_near_mode2_operand(rtx, enum machine_mode);
-extern int  pic30_near_mode2_APSV_operand(rtx, enum machine_mode);
 extern int  pic30_neardata_space_operand_p(rtx);
+extern int  pic30_near_mode2_APSV_operand(rtx, enum machine_mode);
+extern int  pic30_reg_or_symbolic_address(rtx, enum machine_mode);
 extern int  pic30_IndexEqual(rtx, rtx);
 extern int  pic30_Q_base(rtx);
 extern int  pic30_Q_displacement(rtx);

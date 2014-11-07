@@ -18,4 +18,4 @@ char *version_string = "4.0.3 (dsPIC30, Microchip " version(MCHP_VERSION)
    forward us bugs reported to you, if you determine that they are
    not bugs in your modifications.)  */
 
-const char bug_report_url[] = "<URL:http://support.microchip.com>";
+const char bug_report_url[] = "<URL:http://www.microchip.com/support>";

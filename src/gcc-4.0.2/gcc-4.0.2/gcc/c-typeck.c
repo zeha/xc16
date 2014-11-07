@@ -1790,11 +1790,18 @@ build_array_ref (tree array, tree index)
       if (TREE_CODE (type) != ARRAY_TYPE)
 	type = TYPE_MAIN_VARIANT (type);
       if (TYPE_TARGET_QUALIFIER(TREE_TYPE(TREE_TYPE(array)))) {
+        // the element type is a target qualifier
         type = 
           build_qualified_type(
             type, 
             TYPE_TARGET_QUALIFIER(TREE_TYPE(TREE_TYPE(array))) << 
               TYPE_QUAL_TARGET_SHIFT);
+      } else if (TYPE_TARGET_QUALIFIER(TREE_TYPE(array))) {
+        // the array itself is a target qualifier
+        type = 
+          build_qualified_type(
+            type, 
+            TYPE_TARGET_QUALIFIER(TREE_TYPE(array)) << TYPE_QUAL_TARGET_SHIFT);
       }
       rval = build4 (ARRAY_REF, type, array, index, NULL_TREE, NULL_TREE);
       /* Array ref is const/volatile if the array elements are
@@ -4942,6 +4949,11 @@ push_init_level (int implicit)
   else if (TREE_CODE (constructor_type) == ARRAY_TYPE)
     {
       constructor_type = TREE_TYPE (constructor_type);
+      /* provide a better error message than an ICE */
+      if (TREE_OVERFLOW(constructor_index)) {
+        error_init("Array too large");
+        return;
+      }  
       push_array_bounds (tree_low_cst (constructor_index, 0));
       constructor_depth++;
     }

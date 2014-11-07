@@ -182,6 +182,7 @@ enum pic30_builtins
    PIC30_BUILTIN_WRITE_EXT8,
    PIC30_BUILTIN_EDSPAGE,
    PIC30_BUILTIN_EDSOFFSET,
+   PIC30_BUILTIN_WRITEPWMSFR,
 };
 
 #define       TARGET_USE_PA   1
@@ -362,11 +363,12 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 
 #define DEFAULT_LIB_PATH  \
          MPLABC30_COMMON_LIB_PATH PATH_SEPARATOR_STR \
+         MPLABC30_PIC24E_LIB_PATH PATH_SEPARATOR_STR \
          MPLABC30_PIC24F_LIB_PATH PATH_SEPARATOR_STR \
          MPLABC30_PIC24H_LIB_PATH PATH_SEPARATOR_STR \
          MPLABC30_PIC30F_LIB_PATH PATH_SEPARATOR_STR \
-         MPLABC30_PIC33F_LIB_PATH PATH_SEPARATOR_STR \
-         MPLABC30_PIC33E_LIB_PATH
+         MPLABC30_PIC33E_LIB_PATH PATH_SEPARATOR_STR \
+         MPLABC30_PIC33F_LIB_PATH
         
 
 /*----------------------------------------------------------------------*/
@@ -609,10 +611,12 @@ extern const char *pic30_target_family;
 extern const char *pic30_target_cpu;
 extern const char *pic30_text_scn;
 extern const char *pic30_io_size;
+extern const char *pic30_io_fmt;
 extern const char *pic30_errata;
 extern const char *pic30_it_option;
 extern const char *pic30_fillupper;
 extern char *pic30_resource_file;
+extern const char *pic30_sfr_warning;
 enum errata_mask {
   retfie_errata = 1,
   retfie_errata_disi = 2,
@@ -632,7 +636,9 @@ extern const char *pic30_pa_level;
  {"pa=", &pic30_pa_level, "Procedural abstraction nesting limit" },   \
  {"resource=", &pic30_resource_file, "Identify MPLABC30 resource file"}, \
  {"smart-io=", &pic30_io_size, "Set smart IO library call forwarding level"}, \
+ {"smart-io-format=", &pic30_io_fmt, "Smart IO format string "}, \
  {"text=", &pic30_text_scn, "Name the text section (default .text)" }, \
+ {"sfr-warn=", & pic30_sfr_warning, "Enable [on] or disable (off) sfr warnings" }, \
 }
 
 /*
@@ -1214,7 +1220,7 @@ enum reg_class
 #endif
 #define IS_ACCUM_REG(r)             (((r) == A_REGNO) || ((r) == B_REGNO))
 #define OTHER_ACCUM_REG(r)          ((r == A_REGNO) ? B_REGNO : A_REGNO)
-#define IS_SINK_REG(r)              ((r >= SINK0) && (r <= SINK6))
+#define IS_SINK_REG(r)              ((r >= SINK0) && (r <= SINK7))
 
 
 #define REGNO_REG_CLASS(REGNO) (   \
@@ -1281,7 +1287,7 @@ enum reg_class
  O   - const int matching CONST_OK_FOR_CONSTRAINT_P
  p   - pointer
  P   - const int matching CONST_OK_FOR_CONSTRAINT_P
- q   - unused
+ q   - [C30 - see below]
  Q   - [C30 - see below]
  r   - general register
  R   - [C30 - see below]
@@ -1494,6 +1500,7 @@ enum reg_class
 
 #define EXTRA_CONSTRAINT(OP, C) \
      (((C) == 'Q') ? (pic30_Q_constraint(OP)) \
+    : ((C) == 'q') ? (pic30_q_constraint(OP)) \
     : ((C) == 'R') ? (pic30_R_constraint(OP)) \
     : ((C) == 'S') ? (pic30_S_constraint(OP)) \
     : ((C) == 'T') ? (pic30_T_constraint(OP)) \
@@ -1507,6 +1514,10 @@ enum reg_class
  */
 #define EXTRA_MEMORY_CONSTRAINT(C, STR) \
   (reload_in_progress ?  0 : (((C) == 'S') || ((C) == 'T') || ((C) == 'U')))
+
+#define EXTRA_ADDRESS_CONSTRAINT(C, STR) \
+  (reload_in_progress ?  0 : (((C) == 'q')))
+
 
 
 /************************************************************************/
@@ -3332,6 +3343,7 @@ extern int pic30_license_valid;
                                       (MODE == P24PROGmode) || \
                                       (MODE == P16PMPmode) || \
                                       (MODE == P32EXTmode) || \
+                                      (MODE == P32PEDSmode) || \
                                       (MODE == P32EDSmode) || \
                                       (MODE == P16APSVmode) || \
                                       (MODE == P24PSVmode))

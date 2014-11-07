@@ -2381,8 +2381,11 @@ produce_memory_decl_rtl (tree obj, int *regno)
     abort ();
   if (TREE_STATIC (obj) || DECL_EXTERNAL (obj))
     {
-      const char *name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (obj));
-      x = gen_rtx_SYMBOL_REF (Pmode, name);
+      if (DECL_RTL(obj)) return DECL_RTL(obj);
+      else {
+        const char *name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (obj));
+        x = gen_rtx_SYMBOL_REF (Pmode, name);
+      }
     }
   else
     x = gen_raw_REG (Pmode, (*regno)++);
