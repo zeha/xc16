@@ -3969,7 +3969,9 @@ gimplify_expr (tree *expr_p, tree *pre_p, tree *post_p,
 	case ALIGN_INDIRECT_REF:
 	case MISALIGNED_INDIRECT_REF:
 	  ret = gimplify_expr (&TREE_OPERAND (*expr_p, 0), pre_p, post_p,
-			       is_gimple_reg, fb_rvalue);
+			       is_gimple_hard_reg_r(*expr_p) ? 
+				   is_gimple_hard_reg : is_gimple_reg, 
+			       fb_rvalue);
 	  recalculate_side_effects (*expr_p);
 	  break;
 

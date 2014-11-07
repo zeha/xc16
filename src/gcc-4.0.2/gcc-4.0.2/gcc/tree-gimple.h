@@ -48,6 +48,8 @@ extern bool is_gimple_reg_type (tree);
 /* Returns true iff T is a scalar register variable.  */
 extern bool is_gimple_reg (tree);
 extern bool is_gimple_hard_reg (tree);
+/* recursively checks tree looking for a hard reg */
+extern bool is_gimple_hard_reg_r (tree);
 /* Returns true if T is a GIMPLE temporary variable, false otherwise.  */
 extern bool is_gimple_formal_tmp_var (tree);
 /* Returns true if T is a GIMPLE temporary register variable.  */

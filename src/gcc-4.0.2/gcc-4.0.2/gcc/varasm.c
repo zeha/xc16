@@ -1725,6 +1725,9 @@ assemble_variable (tree decl, int top_level ATTRIBUTE_UNUSED,
   /* Switch to the appropriate section.  */
   resolve_unique_section (decl, reloc, flag_data_sections);
   variable_section (decl, reloc);
+#ifdef _PIC30_H_
+  pic30_emit_fillupper(decl,1);
+#endif
 
   /* dbxout.c needs to know this.  */
   if (in_text_section () || in_unlikely_text_section ())
@@ -1756,6 +1759,9 @@ assemble_variable (tree decl, int top_level ATTRIBUTE_UNUSED,
 	/* Leave space for it.  */
 	assemble_zeros (tree_low_cst (DECL_SIZE_UNIT (decl), 1));
     }
+#ifdef _PIC30_H_
+  pic30_emit_fillupper(decl,0);
+#endif
 }
 
 /* Return 1 if type TYPE contains any pointers.  */
@@ -2772,6 +2778,10 @@ output_constant_def_contents (rtx symbol)
   else
     targetm.asm_out.select_section (exp, reloc, align);
 
+#ifdef _PIC30_H_
+  pic30_emit_fillupper(exp,1);
+#endif
+
   if (align > BITS_PER_UNIT)
     {
       ASM_OUTPUT_ALIGN (asm_out_file, floor_log2 (align / BITS_PER_UNIT));
@@ -2793,6 +2803,9 @@ output_constant_def_contents (rtx symbol)
   output_constant (exp, size, align);
   if (flag_mudflap)
     mudflap_enqueue_constant (exp);
+#ifdef _PIC30_H_
+  pic30_emit_fillupper(exp,0);
+#endif
 }
 
 /* Look up EXP in the table of constant descriptors.  Return the rtl

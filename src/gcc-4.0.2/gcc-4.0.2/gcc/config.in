@@ -71,7 +71,6 @@
 /* Define to the name of a file containing a list of extra machine modes for
    this architecture. */
 #undef EXTRA_MODES_FILE
-#define pic30/pic30-modes.h
 
 /* Define to enable detailed memory allocation stats gathering. */
 #undef GATHER_STATISTICS

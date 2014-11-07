@@ -5296,6 +5296,11 @@ init_emit_once (int line_numbers)
 	   mode != VOIDmode;
 	   mode = GET_MODE_WIDER_MODE (mode))
 	const_tiny_rtx[i][(int) mode] = GEN_INT (i);
+
+#ifdef _PIC30_H_
+      const_tiny_rtx[i][P24PSVmode] = GEN_INT(i);
+      const_tiny_rtx[i][P24PROGmode] = GEN_INT(i);
+#endif
     }
 
   for (mode = GET_CLASS_NARROWEST_MODE (MODE_VECTOR_INT);
@@ -5351,6 +5356,7 @@ init_emit_once (int line_numbers)
 
   if ((unsigned) PIC_OFFSET_TABLE_REGNUM != INVALID_REGNUM)
     pic_offset_table_rtx = gen_raw_REG (Pmode, PIC_OFFSET_TABLE_REGNUM);
+
 }
 
 /* Produce exact duplicate of insn INSN after AFTER.

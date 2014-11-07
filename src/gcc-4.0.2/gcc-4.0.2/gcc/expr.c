@@ -729,13 +729,6 @@ convert_modes (enum machine_mode mode, enum machine_mode oldmode, rtx x, int uns
   if (mode == oldmode)
     return x;
 
-#if 0
-#ifdef TARGET_CONVERT_MODE
-  if ((temp = TARGET_CONVERT_MODE(mode,oldmode,x,unsignedp)) != 0)
-    return temp;
-#endif
-#endif
-
   /* There is one case that we must handle specially: If we are converting
      a CONST_INT into a mode whose size is twice HOST_BITS_PER_WIDE_INT and
      we are to interpret the constant as unsigned, gen_lowpart will do

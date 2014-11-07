@@ -31,8 +31,11 @@ extern tree pic30_identSecure[2];
 extern tree pic30_identBoot[2];
 
 
+extern int pic30_validate_symbolic_address_operand(enum machine_mode, rtx);
+extern int pic30_data_space_operand_p(enum machine_mode mode, rtx op);
+extern void pic30_emit_fillupper(tree decl, int set);
 extern int pic30_managed_psv;
-int pic30_can_gimplify_expr (tree *expr_p);
+extern int pic30_can_gimplify_expr (tree *expr_p);
 extern tree
 pic30_gimplify_va_arg_expr (tree valist, tree type, tree *pre_p, tree *post_p);
 extern int pic30_noreturn_function(tree decl);
@@ -52,10 +55,12 @@ extern rtx pic30_force_reg(enum machine_mode mode, rtx x);
 extern int pic30_prog_operand(rtx op, enum machine_mode mode);
 extern int pic30_psvpage_operand(rtx op, enum machine_mode mode);
 extern int pic30_psv_reg_operand(rtx op, enum machine_mode mode);
+extern int pic30_mpsv_operand(rtx op, enum machine_mode mode);
 extern int pic30_psv_operand(rtx op, enum machine_mode mode);
 extern int pic30_valid_operator(rtx op, enum machine_mode mode);
 extern int pic30_volatile_operand(rtx opnd, enum machine_mode mode);
 extern int pic30_stack_dereference(rtx op, enum machine_mode mode);
+extern int pic30_strict_register_operand(rtx op, enum machine_mode mode);
 extern int pic30_register_operand(rtx op, enum machine_mode mode);
 extern int pic30_awb_operand(rtx op, enum machine_mode mode);
 extern int pic30_mac_input_operand(rtx op, enum machine_mode mode);
@@ -171,7 +176,7 @@ extern int		pic30_S_constraint(rtx);
 extern int		pic30_S_operand(rtx, enum machine_mode);
 extern int		pic30_T_constraint(rtx);
 extern int		pic30_T_operand(rtx, enum machine_mode);
-extern int		pic30_U_constraint(rtx);
+extern int		pic30_U_constraint(rtx, enum machine_mode);
 extern int		pic30_U_operand(rtx, enum machine_mode);
 extern int		pic30_J_operand(rtx, enum machine_mode);
 extern int		pic30_JM_operand(rtx, enum machine_mode);
@@ -231,7 +236,7 @@ extern int		pic30_registerpairs_p(rtx, rtx, rtx, rtx);
 extern int		pic30_near_function_p(rtx);
 extern int		pic30_shadow_operand_p(rtx);
 extern int		pic30_has_space_operand_p(rtx, char *);
-extern int		pic30_program_space_operand_p(rtx);
+extern rtx		pic30_program_space_operand_p(rtx);
 extern enum reg_class	pic30_preferred_reload_class(rtx, enum reg_class);
 extern enum reg_class	pic30_secondary_reload_class(enum reg_class,
 							enum machine_mode, rtx);

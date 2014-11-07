@@ -124,6 +124,7 @@ enum pic30_builtins
 {
    PIC30_BUILTIN_READSFR,     /*  __builtin_readsfr(...) */
    PIC30_BUILTIN_WRITESFR,    /*  __builtin_writesfr(...) */
+   PIC30_BUILTIN_TBLADDRESS,  /*  __builtin_tbladdress(...) */
    PIC30_BUILTIN_TBLPAGE,     /*  __builtin_tblpage(...) */
    PIC30_BUILTIN_TBLOFFSET,   /*  __builtin_tbloffset(...) */
    PIC30_BUILTIN_PSVPAGE,     /*  __builtin_psvpage(...) */
@@ -163,6 +164,7 @@ enum pic30_builtins
    PIC30_BUILTIN_UNIQUEID,
    PIC30_BUILTIN_WRITEOSCCONL,
    PIC30_BUILTIN_WRITEOSCCONH,
+   PIC30_BUILTIN_WRITERTCWEN,
    PIC30_BUILTIN_WRITENVM,
    PIC30_BUILTIN_TBLRDL,
    PIC30_BUILTIN_TBLRDH,
@@ -354,6 +356,9 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 #define TARGET_MASK_ARCH_PIC30F202X     0x2000
 #define TARGET_MASK_ARCH_PIC24H         0x4000
 #define TARGET_MASK_ARCH_GENERIC        0x8000
+#define TARGET_MASK_CONST_IN_PSV        0x10000
+#define TARGET_MASK_CONST_IN_PROG       0x20000
+#define TARGET_MASK_ABI_CHECK           0x40000
 
 /*
 ** Small data model means that data objects can be
@@ -392,14 +397,13 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 #define TARGET_LARGE_CODE   ((target_flags & TARGET_MASK_LARGE_CODE) != 0)
 
 /*
-** Constants in code means that the .const section is in code space.
-*/
-#define TARGET_CONST_IN_CODE ((target_flags & TARGET_MASK_CONST_IN_DATA) == 0)
-
-/*
-** Constants in data means that the .const section is in data space.
+** Constants in data means that the .const section is in a chosen space.
 */
 #define TARGET_CONST_IN_DATA ((target_flags & TARGET_MASK_CONST_IN_DATA) != 0)
+#define TARGET_CONST_IN_PSV  ((target_flags & TARGET_MASK_CONST_IN_PSV) != 0)
+#define TARGET_CONST_IN_PROG ((target_flags & TARGET_MASK_CONST_IN_PROG) != 0)
+#define TARGET_CONST_IN_CODE ((!TARGET_CONST_IN_DATA) && \
+                              (!TARGET_CONST_IN_PSV) && (!TARGET_CONST_IN_PROG))
 
 #if TARGET_USE_PA
 /*
@@ -432,6 +436,8 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 
 #define TARGET_ISR_WARN (!(target_flags&TARGET_MASK_NO_ISRW))
 
+#define TARGET_ABI_CHECK (target_flags & TARGET_MASK_ABI_CHECK)
+
 /*
 ** Default target_flags if no switches specified.
 */
@@ -451,26 +457,112 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 ** number in this grouping is the default value for target_flags. Any target
 ** options act starting with that value.
 */
-#define TARGET_SWITCHES                                               \
-{                                                                     \
- {"small-data",-(TARGET_MASK_LARGE_AGG|TARGET_MASK_LARGE_SCALAR),    \
-               "Use small data model"},      \
- {"large-data", (TARGET_MASK_LARGE_AGG|TARGET_MASK_LARGE_SCALAR),    \
-               "Use large data model"},      \
- {"small-scalar",-TARGET_MASK_LARGE_SCALAR, "Use small scalar data model"}, \
- {"large-scalar", TARGET_MASK_LARGE_SCALAR, "Use large scalar data model"}, \
- {"small-aggregate",-TARGET_MASK_LARGE_AGG, "Use small aggregate data model"}, \
- {"large-aggregate", TARGET_MASK_LARGE_AGG, "Use large aggregate data model"}, \
- {"small-code",-TARGET_MASK_LARGE_CODE, "Use small code model"},      \
- {"large-code", TARGET_MASK_LARGE_CODE, "Use large code model"},      \
- {"const-in-data", TARGET_MASK_CONST_IN_DATA, "Put constants in data space"}, \
- {"const-in-code",-TARGET_MASK_CONST_IN_DATA, "Put constants in code space"}, \
- {"pa",                  TARGET_MASK_PA, "Run procedural abstraction stage"}, \
- {"no-pa",      -TARGET_MASK_PA, "Do not run procedural abstraction stage"}, \
- {"smart-io",   TARGET_MASK_SMART_IO, "Enable smart IO library call forwarding"}, \
- {"no-isr-warn", TARGET_MASK_NO_ISRW, "Disable warning for inappropriate use of ISR function names"}, \
- { "",          TARGET_DEFAULT,   NULL}                               \
+#ifdef __C30_BETA__
+#define TARGET_SWITCHES \
+{ \
+ {"abi-check", \
+    TARGET_MASK_ABI_CHECK, \
+    "Instrument functions calls to validate register save requiremetns"}, \
+ {"small-data", \
+    -(TARGET_MASK_LARGE_AGG | TARGET_MASK_LARGE_SCALAR), \
+    "Use small data model"}, \
+ {"large-data", \
+    (TARGET_MASK_LARGE_AGG | TARGET_MASK_LARGE_SCALAR), \
+    "Use large data model"}, \
+ {"small-scalar", \
+    -TARGET_MASK_LARGE_SCALAR, \
+    "Use small scalar data model"}, \
+ {"large-scalar", \
+    TARGET_MASK_LARGE_SCALAR, \
+    "Use large scalar data model"}, \
+ {"small-aggregate", \
+    -TARGET_MASK_LARGE_AGG, \
+    "Use small aggregate data model"}, \
+ {"large-aggregate", \
+    TARGET_MASK_LARGE_AGG, \
+    "Use large aggregate data model"}, \
+ {"small-code", \
+    -TARGET_MASK_LARGE_CODE, \
+    "Use small code model"}, \
+ {"large-code", \
+    TARGET_MASK_LARGE_CODE, \
+    "Use large code model"}, \
+ {"const-in-data", \
+    TARGET_MASK_CONST_IN_DATA, \
+    "Put constants in data space"}, \
+ {"const-in-code", \
+    -(TARGET_MASK_CONST_IN_DATA | TARGET_MASK_CONST_IN_PSV | \
+      TARGET_MASK_CONST_IN_PROG), \
+    "Put constants in code space"}, \
+ {"const-in-psv", \
+    TARGET_MASK_CONST_IN_PSV, \
+    "Beta" }, \
+ {"const-in-prog", \
+    TARGET_MASK_CONST_IN_PROG, \
+    "Beta" }, \
+ {"pa", \
+    TARGET_MASK_PA, \
+    "Run procedural abstraction stage"}, \
+ {"no-pa", \
+    ~TARGET_MASK_PA, \
+    "Do not run procedural abstraction stage"}, \
+ {"smart-io", \
+    TARGET_MASK_SMART_IO, \
+    "Enable smart IO library call forwarding"}, \
+ {"no-isr-warn", \
+    TARGET_MASK_NO_ISRW, \
+    "Disable warning for inappropriate use of ISR function names"}, \
+ { "", TARGET_DEFAULT,NULL} \
 }
+#else
+#define TARGET_SWITCHES                                               \
+{ \
+ {"small-data", \
+    -(TARGET_MASK_LARGE_AGG | TARGET_MASK_LARGE_SCALAR), \
+    "Use small data model"}, \
+ {"large-data", \
+    (TARGET_MASK_LARGE_AGG | TARGET_MASK_LARGE_SCALAR), \
+    "Use large data model"}, \
+ {"small-scalar", \
+    -TARGET_MASK_LARGE_SCALAR, \
+    "Use small scalar data model"}, \
+ {"large-scalar", \
+    TARGET_MASK_LARGE_SCALAR, \
+    "Use large scalar data model"}, \
+ {"small-aggregate", \
+    -TARGET_MASK_LARGE_AGG, \
+    "Use small aggregate data model"}, \
+ {"large-aggregate", \
+    TARGET_MASK_LARGE_AGG, \ 
+    "Use large aggregate data model"}, \
+ {"small-code", \
+    -TARGET_MASK_LARGE_CODE, \
+    "Use small code model"}, \
+ {"large-code", \
+    TARGET_MASK_LARGE_CODE, \
+    "Use large code model"}, \
+ {"const-in-data", \
+    TARGET_MASK_CONST_IN_DATA, \
+    "Put constants in data space"}, \
+ {"const-in-code", \
+    -(TARGET_MASK_CONST_IN_DATA | TARGET_MASK_CONST_IN_PSV | \
+      TARGET_MASK_CONST_IN_PROG), \
+    "Put constants in code space"}, \
+ {"pa", \
+    TARGET_MASK_PA, \
+    "Run procedural abstraction stage"}, \
+ {"no-pa", \
+    ~TARGET_MASK_PA, \
+    "Do not run procedural abstraction stage"}, \
+ {"smart-io", \
+    TARGET_MASK_SMART_IO, \
+    "Enable smart IO library call forwarding"}, \
+ {"no-isr-warn", \
+    TARGET_MASK_NO_ISRW, \
+    "Disable warning for inappropriate use of ISR function names"}, \
+ { "", TARGET_DEFAULT,NULL} \
+}
+#endif
 
 extern int target_flags;
 
@@ -491,6 +583,7 @@ extern const char *pic30_text_scn;
 extern const char *pic30_io_size;
 extern const char *pic30_errata;
 extern const char *pic30_it_option;
+extern const char *pic30_fillupper;
 extern char *pic30_resource_file;
 enum errata_mask {
   retfie_errata = 1,
@@ -503,13 +596,14 @@ extern int pic30_errata_mask;
 extern const char *pic30_pa_level;
 #define TARGET_OPTIONS \
 {                                                                     \
- {"it=", &pic30_it_option, "Enable instrumented trace" }, \
- {"text=", &pic30_text_scn, "Name the text section (default .text)" }, \
- {"pa=", &pic30_pa_level, "Procedural abstraction nesting limit" },   \
  {"cpu=", &pic30_target_cpu, "Select target CPU" }, \
- {"smart-io=", &pic30_io_size, "Set smart IO library call forwarding level"}, \
  {"errata=", &pic30_errata, "Enable compiler generated work-arounds for specific errata"}, \
+ {"fillupper=", &pic30_fillupper, "Select global fillupper value for data stored in FLASH"}, \
+ {"it=", &pic30_it_option, "Enable instrumented trace" }, \
+ {"pa=", &pic30_pa_level, "Procedural abstraction nesting limit" },   \
  {"resource=", &pic30_resource_file, "Identify MPLABC30 resource file"}, \
+ {"smart-io=", &pic30_io_size, "Set smart IO library call forwarding level"}, \
+ {"text=", &pic30_text_scn, "Name the text section (default .text)" }, \
 }
 
 /*
@@ -1262,7 +1356,7 @@ enum reg_class
     : ((C) == 'R') ? (pic30_R_constraint(OP)) \
     : ((C) == 'S') ? (pic30_S_constraint(OP)) \
     : ((C) == 'T') ? (pic30_T_constraint(OP)) \
-    : ((C) == 'U') ? (pic30_U_constraint(OP)) \
+    : ((C) == 'U') ? (pic30_U_constraint(OP,VOIDmode)) \
     : 0 )
 
 /*

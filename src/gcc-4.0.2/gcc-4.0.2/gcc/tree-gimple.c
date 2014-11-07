@@ -304,6 +304,22 @@ is_gimple_reg (tree t)
 }
 
 bool
+is_gimple_hard_reg_r (tree t) {
+  int i,len;
+
+  if (t != 0) {
+    len = TREE_CODE_LENGTH (TREE_CODE (t));
+
+    if (len == 0) return is_gimple_hard_reg(t);
+    for (i = 0; i < len; i++)
+    {
+      if (is_gimple_hard_reg_r(TREE_OPERAND (t, i))) return true;
+    }
+  }
+  return false;
+}
+
+bool
 is_gimple_hard_reg (tree t) {
   if ((TREE_CODE (t) == VAR_DECL) && DECL_HARD_REGISTER (t))
     return true;
