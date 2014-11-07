@@ -19,8 +19,6 @@
 #define P24F     1<<3
 #define P24H     1<<4
 #define P24FK    1<<5
-#define P33E     1<<6
-#define P24E     1<<7
 
 #define FAMILY_MASK (0xFF)
 #define CODEGUARD_MASK (0x00FFFF00)
@@ -44,9 +42,6 @@
 #define HAS_PMP    1<<12
 #define HAS_EDS    1<<13
 #define HAS_PMPV2  1<<14
-#define HAS_ECORE  1<<15
-#define HAS_DMAV2  1<<16
-#define HAS_AUXFLASH 1<<17
 
 /* IS_CODEGUARD_ID flags */
 #define FLASH         1<<8
