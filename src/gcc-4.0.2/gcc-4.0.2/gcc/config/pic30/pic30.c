@@ -69,6 +69,7 @@ Boston, MA 02111-1307, USA.  */
 #include "c-incpath.h"
 #include "tm_p.h"
 #include "tree-gimple.h"
+#include "cgraph.h"
 
 /* fputs_unlocked warning getting on my nerves */
 #undef fputs
@@ -131,6 +132,8 @@ int pic30_managed_psv = 0;               /* this is set iff a managed psv
 #define SECTION_ADDRESS         (PIC30_LL(SECTION_MACH_DEP) << 10)
 #define SECTION_ALIGN           (PIC30_LL(SECTION_MACH_DEP) << 11)
 #define SECTION_DMA             (PIC30_LL(SECTION_MACH_DEP) << 12)
+#define SECTION_PMP             (PIC30_LL(SECTION_MACH_DEP) << 13)
+#define SECTION_EXTERNAL        (PIC30_LL(SECTION_MACH_DEP) << 14)
 
 /* the attribute names from the assemblers point of view */
 #define SECTION_ATTR_ADDRESS "address"
@@ -307,6 +310,8 @@ static unsigned int l_RAWregdefmask = 0;
 static int pic30_device_id;
 static int pic30_device_mask;
 
+#define IDENT_USERINIT(t) \
+    ((t)==pic30_identUserinit[0]||(t)==pic30_identUserinit[1])
 #define IDENT_INTERRUPT(t) \
     ((t)==pic30_identInterrupt[0]||(t)==pic30_identInterrupt[1])
 #define IDENT_SHADOW(t) \
@@ -335,6 +340,16 @@ static int pic30_device_mask;
    ((t) == pic30_identXmemory[0] || (t) == pic30_identXmemory[1])
 #define IDENT_YMEMORY(t) \
    ((t) == pic30_identYmemory[0] || (t) == pic30_identYmemory[1])
+#define IDENT_EXTERNAL(t) \
+   ((t) == pic30_identExternal[0] || (t) == pic30_identExternal[1])
+#define IDENT_CS(t) \
+   ((t) == pic30_identCs[0] || (t) == pic30_identCs[1])
+#define IDENT_ORIGIN(t) \
+   ((t) == pic30_identOrigin[0] || (t) == pic30_identOrigin[1])
+#define IDENT_SIZE(t) \
+   ((t) == pic30_identSize[0] || (t) == pic30_identSize[1])
+#define IDENT_PMP(t) \
+   ((t) == pic30_identPmp[0] || (t) == pic30_identPmp[1])
 #define IDENT_PSV(t) \
    ((t) == pic30_identPsv[0] || (t) == pic30_identPsv[1])
 #define IDENT_EEDATA(t) \
@@ -370,7 +385,39 @@ static int pic30_device_mask;
    ((t) == pic30_identScratchReg[0] || (t) == pic30_identScratchReg[1])
 #define IDENT_FILLUPPER(t) \
    ((t) == pic30_identFillUpper[0] || (t) == pic30_identFillUpper[1])
+#if 0
+/*
+ * experimental - probably toss
+ */
+#define IDENT_READ(t) \
+   ((t) == pic30_identRead[0] || (t) == pic30_identRead[1])
+#define IDENT_READ8(t) \
+   ((t) == pic30_identRead8[0] || (t) == pic30_identRead8[1])
+#define IDENT_READ16(t) \
+   ((t) == pic30_identRead16[0] || (t) == pic30_identRead16[1])
+#define IDENT_READ32(t) \
+   ((t) == pic30_identRead32[0] || (t) == pic30_identRead32[1])
+#define IDENT_READ64(t) \
+   ((t) == pic30_identRead64[0] || (t) == pic30_identRead64[1])
+#define IDENT_WRITE(t) \
+   ((t) == pic30_identRead[0] || (t) == pic30_identRead[1])
+#define IDENT_WRITE8(t) \
+   ((t) == pic30_identRead8[0] || (t) == pic30_identRead8[1])
+#define IDENT_WRITE16(t) \
+   ((t) == pic30_identRead16[0] || (t) == pic30_identRead16[1])
+#define IDENT_WRITE32(t) \
+   ((t) == pic30_identRead32[0] || (t) == pic30_identRead32[1])
+#define IDENT_WRITE64(t) \
+   ((t) == pic30_identRead64[0] || (t) == pic30_identRead64[1])
 
+#define IDENT_A_READ(t) (IDENT_READ(t) || IDENT_READ8(t) || IDENT_READ16(t) \
+                      || IDENT_READ32(t) || IDENT_READ64(t))
+#define IDENT_A_WRITE(t) (IDENT_WRITE(t) || IDENT_WRITE8(t) || \
+                          IDENT_WRITE16(t) || IDENT_WRITE32(t) || \
+                          IDENT_WRITE64(t))
+#endif
+
+static tree pic30_identUserinit[2];
 static tree pic30_identInterrupt[2];
 static tree pic30_identIRQ[2];
 static tree pic30_identAltIRQ[2];
@@ -383,7 +430,7 @@ static tree pic30_identNear[2];
 static tree pic30_identFar[2];
 static tree pic30_identSFR[2];
 
-static tree pic30_identSpace[2];
+       tree pic30_identSpace[2];
 static tree pic30_identProg[2];
 static tree pic30_identData[2];
 static tree pic30_identXmemory[2];
@@ -391,10 +438,31 @@ static tree pic30_identYmemory[2];
 static tree pic30_identNoAutoPSV[2];
 static tree pic30_identConst[2];
 static tree pic30_identPsv[2];
+       tree pic30_identExternal[2];
+static tree pic30_identSize[2];
+static tree pic30_identCs[2];
+static tree pic30_identOrigin[2];
+static tree pic30_identPmp[2];
 static tree pic30_identEedata[2];
 static tree pic30_identDma[2];
        tree pic30_identSecure[2];
        tree pic30_identBoot[2];
+#if 0
+/*
+ * experimental - probably toss
+ */
+static tree pic30_identRead[2];
+static tree pic30_identRead8[2];
+static tree pic30_identRead16[2];
+static tree pic30_identRead32[2];
+static tree pic30_identRead64[2];
+static tree pic30_identWrite[2];
+static tree pic30_identWrite8[2];
+static tree pic30_identWrite16[2];
+static tree pic30_identWrite32[2];
+static tree pic30_identWrite64[2];
+#endif
+
 static char *pic30_identDefault[2];
 
 static tree pic30_identFillUpper[2];
@@ -505,9 +573,14 @@ pic30_errata_map errata_map[] = {
     0
   },
   { "exch",        exch_errata,
-                        "\tUse of the the exch instruction on certain devices\n"
+                        "\tUse of the exch instruction on certain devices\n"
                         "\t\tsupporting the DMA peripheral can cause\n"
                         "\t\tcorruption in the exchanged data.\n",
+    0
+  },
+  { "psv_trap",    psv_address_errata,
+                        "\tUse of certain access modes can cause an\n"
+                        "\t\t_AddressError.\n",
     0
   },
   { 0, 0, 0, 0 }
@@ -515,6 +588,48 @@ pic30_errata_map errata_map[] = {
 
 static char *pic30_target_cpu_id;
 
+enum psv_model_kind {
+  psv_unspecified,
+  psv_auto_psv,
+  psv_no_auto_psv
+};
+
+enum pem_flags {
+  pem_none = 0,
+  pem_err_reported = 1
+};
+
+typedef struct pic30_external_memory {
+  tree decl;
+  char *name;
+  int size;
+  int origin;
+  int chip_select;
+  enum pem_flags flags;
+  tree read[pst_length];
+  tree write[pst_length];
+  /* must be last */
+  struct pic30_external_memory *next;
+} pic30_external_memory;
+
+static pic30_external_memory *pic30_pmp_space_cs0;
+static pic30_external_memory *pic30_pmp_space_cs1;
+static pic30_external_memory *pic30_pmp_space_cs2;
+static pic30_external_memory *pic30_external_memory_head, 
+                             *pic30_external_memory_tail;
+
+enum target_qualifier_kind {
+  tq_psv = 1,
+  tq_prog = 2,
+  tq_pmp = 4,
+  tq_external = 8
+};
+
+tree pic30_read_externals(enum pic30_special_trees);
+tree pic30_write_externals(enum pic30_special_trees);
+
+static char this_default_name[sizeof("*_012345670123456701234567")];
+static time_t current_time = 0;
 
 /*----------------------------------------------------------------------*/
 
@@ -528,13 +643,13 @@ static int pic30_function_arg_partial_nregs(CUMULATIVE_ARGS *cum,
 static bool pic30_valid_pointer_mode(enum machine_mode mode);
 static bool pic30_rtx_costs(rtx RTX, int CODE, int OUTER_CODE, int *total);
 static inline int pic30_obj_elf_p(void);
-static void    pic30_SortLibcallNames(void);
-static void    pic30_init_idents(void);
-static void    pic30_push_section_name(const char *, SECTION_FLAGS_INT);
-static void    pic30_pop_section_name(void);
-static tree    pic30_pop_save_variable(void);
-static tree    pic30_get_save_variable_list(void);
-static int    pic30_interrupt_vector_id(tree);
+static void pic30_SortLibcallNames(void);
+static void pic30_init_idents(void);
+static void pic30_push_section_name(const char *, SECTION_FLAGS_INT);
+static void pic30_pop_section_name(void);
+static tree pic30_pop_save_variable(void);
+static tree pic30_get_save_variable_list(void);
+static int  pic30_interrupt_vector_id(tree);
 static tree    pic30_lookup_vardecl(const char *pszName);
 static int    pic30_valid_machine_decl_save(tree);
 static int      pic30_valid_machine_decl_preprologue(tree);
@@ -567,7 +682,17 @@ static int  pic30_sched_use_dfa_interface(void);
 static int set_section_stack(const char *pszSectionName, 
                              SECTION_FLAGS_INT pszSectionFlag);
 void pic30_no_section(void);
-static tree pic30_push_pop_constant_section(tree decl, int push);
+static int pic30_valid_readwrite_attribute(tree args, tree identifier, 
+                                           const char *attached_to, tree decl);
+enum css {
+  css_pop = 0,
+  css_push = 1,
+  css_activate = 2,
+  css_tos = 3
+};
+static tree pic30_push_pop_constant_section(tree decl, enum css push, 
+                                            const char **);
+ 
 /*----------------------------------------------------------------------*/
 
 /* Initialize the GCC target structure.  */
@@ -640,13 +765,13 @@ static tree pic30_push_pop_constant_section(tree decl, int push);
 const struct attribute_spec pic30_attribute_table[] = {
   /* name|      min| max| decl| type| fn| handler */
   /*           args|args|                         */
+  { "user_init",  0,   0,    0,    0,  0, pic30_valid_machine_attribute },
   { "interrupt",  0,   3,    0,    0,  0, pic30_valid_machine_attribute },
   { "altirq" ,    1,   1,    1,    0,  0, pic30_valid_machine_attribute },
   { "irq" ,       1,   1,    1,    0,  0, pic30_valid_machine_attribute },
   { "save" ,      1,  -1,    1,    0,  0, pic30_valid_machine_attribute },
   { "no_auto_psv",0,   0,    0,    0,  0, pic30_valid_machine_attribute },
   { "auto_psv",   0,   0,    0,    0,  0, pic30_valid_machine_attribute },
-  { "shadow",     0,   0,    0,    0,  0, pic30_valid_machine_attribute },
   { "shadow",     0,   0,    0,    0,  0, pic30_valid_machine_attribute },
   { "sfr",        0,   1,    1,    0,  0, pic30_valid_machine_attribute },
   { "near",       0,   0,    0,    0,  0, pic30_valid_machine_attribute },
@@ -662,6 +787,21 @@ const struct attribute_spec pic30_attribute_table[] = {
   { "secure",     0,   1,    0,    0,  0, pic30_valid_machine_attribute },
   { "scratch_reg",1,   1,    1,    0,  0, pic30_valid_machine_attribute },
   { "fillupper",  1,   1,    1,    0,  0, pic30_valid_machine_attribute },
+#if 0
+  /*
+   * experimental - probably toss
+   */
+  { "read",       1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+  { "read8",      1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+  { "read16",     1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+  { "read32",     1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+  { "read64",     1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+  { "write",      1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+  { "write8",     1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+  { "write16",    1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+  { "write32",    1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+  { "write64",    1,   1,    0,    0,  0, pic30_valid_machine_attribute },
+#endif
   { 0,            0,   0,    0,    0,  0, NULL },
 };
 #undef TARGET_ATTRIBUTE_TABLE
@@ -728,7 +868,7 @@ unsigned int validate_target_id(char *id, char **matched_id) {
   if (Microchip) {
     int i;
 
-    for (; (*Microchip) && ((*Microchip <= '0') || (*Microchip >= '9'));
+    for (; (*Microchip) && ((*Microchip < '0') || (*Microchip > '9'));
          Microchip++);
     if (*Microchip) {
       i = strtol(Microchip, &Microchip, 0);
@@ -772,6 +912,7 @@ unsigned int validate_target_id(char *id, char **matched_id) {
           if (d.v.i & P30FSMPS) mask = TARGET_MASK_ARCH_PIC30F202X;
           if (d.v.i & P24F) mask = TARGET_MASK_ARCH_PIC24F;
           if (d.v.i & P24H) mask = TARGET_MASK_ARCH_PIC24H;
+          if (d.v.i & P24FK) mask = TARGET_MASK_ARCH_PIC24FK;
           read_value(rik_int, &d);
           pic30_device_id = d.v.i;
           break;
@@ -786,7 +927,7 @@ unsigned int validate_target_id(char *id, char **matched_id) {
         char *match;
         int flags;
         int device;
-
+ 
         match = d.v.s;
         read_value(rik_int, &d);
         if (d.v.i & IS_VECTOR_ID) {
@@ -833,9 +974,7 @@ static void validate_ordered_tables(void) {
   }
 }
 
-static int
-pic30_bsearch_isr_compare(const void *va, const void *vb)
-{
+static int pic30_bsearch_isr_compare(const void *va, const void *vb) {
   const char *a = (const char *)va;
   const struct isr_info *b = vb;
   int result = strcmp(a,b->id);
@@ -845,8 +984,7 @@ pic30_bsearch_isr_compare(const void *va, const void *vb)
   else return result;
 }
 
-static int
-pic30_bsearch_rsn_compare(const void *va, const void *vb) {
+static int pic30_bsearch_rsn_compare(const void *va, const void *vb) {
   const char *a = (const char *)va;
   const struct reserved_section_names_ *n = vb;
 
@@ -854,8 +992,7 @@ pic30_bsearch_rsn_compare(const void *va, const void *vb) {
   else return 0;
 }
 
-static int
-pic30_bsearch_vsf_compare(const void *va, const void *vb) {
+static int pic30_bsearch_vsf_compare(const void *va, const void *vb) {
   const char *a = (const char *)va;
   const struct valid_section_flags_ *f = vb;
 
@@ -865,7 +1002,7 @@ pic30_bsearch_vsf_compare(const void *va, const void *vb) {
 
 /* validates a section declaration based on its name and any flags */
 static SECTION_FLAGS_INT validate_section_flags(const char *name, 
-                                                 SECTION_FLAGS_INT attr_flags){
+                                                SECTION_FLAGS_INT attr_flags) {
   SECTION_FLAGS_INT set_flags = attr_flags;
   struct reserved_section_names_ *r_section = 0;
   struct valid_section_flags_ *v_flags = 0;
@@ -909,7 +1046,7 @@ static SECTION_FLAGS_INT validate_section_flags(const char *name,
             for (v_flags = valid_section_flags; v_flags->flag_name; v_flags++) {
               if (*s == v_flags->single_letter_equiv) {
                 if (v_flags->single_letter_equiv == 'b') {
-                  /* this may be .pbss,b for peristent */
+                  /* this may be .pbss,b for persistent */
                   if ((strncmp(name, ".pbss", 5) == 0) && 
                       ((v_flags->flag_mask & SECTION_PERSIST) == 0)) continue;
                 } else if (v_flags->single_letter_equiv == 'r') {
@@ -1031,6 +1168,12 @@ static SECTION_FLAGS_INT validate_identifier_flags(const char *id) {
         } while (*f != ')');
       }
       if (*f == PIC30_EXTENDED_FLAG[0]) f++;
+    } else if (strncmp(f, PIC30_PMP_FLAG, sizeof(PIC30_PMP_FLAG)-1) == 0) {
+      f += sizeof(PIC30_PMP_FLAG)-1;
+      flags += SECTION_PMP;
+    } else if (strncmp(f, PIC30_EXT_FLAG, sizeof(PIC30_EXT_FLAG)-1) == 0) {
+      f += sizeof(PIC30_EXT_FLAG)-1;
+      flags += SECTION_EXTERNAL;
     } else {
       error("Could not determine flags for: '%s'", id);
       return flags;
@@ -1046,10 +1189,211 @@ static SECTION_FLAGS_INT validate_identifier_flags(const char *id) {
   return flags;
 }
 
+static tree pic30_read_fns[pst_length];
+static tree pic30_write_fns[pst_length];
+
+void pic30_target_bind(tree name, tree decl) {
+  int read = 1;
+  const char *id;
+  enum pic30_special_trees cache = pst_none;
+
+  if ((!name) || (!decl)) return;
+  id = IDENTIFIER_POINTER(name);
+  if (strcmp(id,"__read_external8") == 0) 
+    cache = pst_8;
+  else if (strcmp(id,"__read_external16") == 0) 
+    cache = pst_16;
+  else if (strcmp(id,"__read_external32") == 0) 
+    cache = pst_32;
+  else if (strcmp(id,"__read_external64") == 0) 
+    cache = pst_64;
+  else if (strcmp(id,"__read_external") == 0) 
+    cache = pst_any;
+  else if (strcmp(id,"__write_external8") == 0) {
+    cache = pst_8;
+    read = 0;
+  } else if (strcmp(id,"__write_external16") == 0) {
+    cache = pst_16;
+    read = 0;
+  } else if (strcmp(id,"__write_external32") == 0) {
+    cache = pst_32;
+    read = 0;
+  } else if (strcmp(id,"__write_external64") == 0) {
+    cache = pst_64;
+    read = 0;
+  } else if (strcmp(id,"__write_external") == 0) {
+    cache = pst_any;
+    read = 0;
+  }
+  if (cache) {
+    if (read == 1) pic30_read_fns[cache] = decl;
+    else pic30_write_fns[cache] = decl;
+  }
+}
+
+#if 0
+/*
+ * experimental - probably toss
+ */
+static int pic30_valid_readwrite_attribute(tree args, tree identifier, 
+                                           const char *attached_to, tree decl) {
+
+  if (TREE_CODE(TREE_VALUE(args)) == IDENTIFIER_NODE) {
+    pic30_external_memory *memory;
+    tree memory_id = TREE_VALUE(args);
+
+    if (memory_id == 0) {
+      error("oopsy");
+      return 1;
+    }
+    memory_id = lookup_name(memory_id);
+    if (memory_id == 0) {
+      error("oopsy");
+      return 1;
+    }
+    for (memory = pic30_external_memory_head; memory; memory = memory->next)
+      if (memory->decl == memory_id) break;
+    if (memory == 0) {
+      error("oopsy\n");
+      return 1;
+    }
+    if (IDENT_A_READ(identifier)) {
+      char *id = IDENTIFIER_POINTER(identifier) + 4;
+      int size = atoi(id);
+
+      switch (size) {
+        default: error("oopsy");
+                 return 1;
+        case 0: size = pst_any;
+                break;
+        case 8: size = pst_8;
+                break;
+        case 16: size = pst_16;
+                 break;
+        case 32: size = pst_32;
+                 break;
+        case 64: size = pst_64;
+                 break;
+      }
+      if (memory->read[size]) {
+        if (size == pst_any)
+          error("%Jduplicate read function for external memory space '%s'",decl,
+                memory->name);
+        else 
+          error("%Jduplicate read%d function for external memory space '%s'",
+                decl, atoi(id), memory->name);
+        return 1;
+      }
+      memory->read[size] = decl;
+      return 0;
+    } else if (IDENT_A_WRITE(identifier)) {
+      char *id = IDENTIFIER_POINTER(identifier) + 5;
+      int size = atoi(id);
+
+      switch (size) {
+        default: error("oopsy");
+                 return 1;
+        case 0: size = pst_any;
+                break;
+        case 8: size = pst_8;
+                break;
+        case 16: size = pst_16;
+                 break;
+        case 32: size = pst_32;
+                 break;
+        case 64: size = pst_64;
+                 break;
+      }
+      if (memory->write[size]) { 
+        if (size == pst_any)
+          error("%Jduplicate write function for external memory space '%s'",
+                decl, memory->name);
+        else 
+          error("%Jduplicate write%d function for external memory space '%s'",
+                decl, atoi(id), memory->name);
+        return 1;
+      }
+      memory->write[size] = decl;
+      return 0;
+    }
+  }
+  error("%JInvalid attribute: %s\n", decl, IDENTIFIER_POINTER(identifier));
+  return 1;
+}
+#endif
+  
+tree pic30_read_externals(enum pic30_special_trees kind) {
+  struct cgraph_node *n;
+  const char *identifier = 0;
+  tree sym;
+
+  switch (kind) {
+    case pst_8:  identifier = "__read_external8";
+                 break;
+    case pst_16: identifier = "__read_external16";
+                 break;
+    case pst_32: identifier = "__read_external32";
+                 break;
+    case pst_64: identifier = "__read_external64";
+                 break;
+    case pst_any: identifier = "__read_external";
+                 break;
+    default: error("oopsy"); return NULL;
+  }
+  sym = maybe_get_identifier(identifier);
+  /* okay we've seen it */
+  if (sym) sym = lookup_name(sym);
+  if (sym) return sym;
+  /* we've seen it, but it might have been moved to the end of the list so
+     we haven't yet processed the code */
+  for (n = cgraph_nodes; n; n = n->next) {
+    if ((n->decl) && (TREE_CODE(n->decl) == FUNCTION_DECL)) {
+      if (DECL_NAME(n->decl) && 
+          (strcmp(IDENTIFIER_POINTER(DECL_NAME(n->decl)),identifier) == 0))
+        return n->decl;
+    }
+  }
+  return pic30_read_fns[kind];
+}
+
+tree pic30_write_externals(enum pic30_special_trees kind) {
+  struct cgraph_node *n;
+  char *identifier = 0;
+  tree sym;
+
+  switch (kind) {
+    case pst_8:  identifier = "__write_external8";
+                 break;
+    case pst_16: identifier = "__write_external16";
+                 break;
+    case pst_32: identifier = "__write_external32";
+                 break;
+    case pst_64: identifier = "__write_external64";
+                 break;
+    case pst_any: identifier = "__write_external";
+                 break;
+    default: error("oopsy"); return NULL;
+  }
+  sym = maybe_get_identifier(identifier);
+  /* okay we've seen it */
+  if (sym) sym = lookup_name(sym);
+  if (sym) return sym;
+  /* we've seen it, but it might have been moved to the end of the list so
+     we haven't yet processed the code */
+  for (n = cgraph_nodes; n; n = n->next) {
+    if ((n->decl) && (TREE_CODE(n->decl) == FUNCTION_DECL)) {
+      if (DECL_NAME(n->decl) && 
+          (strcmp(IDENTIFIER_POINTER(DECL_NAME(n->decl)),identifier) == 0))
+        return n->decl;
+    }
+  }
+  return pic30_write_fns[kind];
+} 
+
 /* determine complete prefix for declaration */
 static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
   char *f = prefix;
-  tree attr;
+  tree attr = 0;
   tree address_attr = 0;
   tree reverse_attr = 0;
   tree space_attr = 0;
@@ -1061,6 +1405,8 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
   int section_type_set = 0;
   int auto_psv = 0;
   int eedata = 0;
+  int pmp=0;
+  pic30_external_memory *memory=0;
 
   if (fnear == -1) {
     section_type_set = 1;
@@ -1076,11 +1422,37 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
                                DECL_ATTRIBUTES(decl));
   sfr_attr = lookup_attribute(IDENTIFIER_POINTER(pic30_identSFR[0]),
                               DECL_ATTRIBUTES(decl));
+  if (space_attr) {
+    pmp = IDENT_PMP(TREE_VALUE(TREE_VALUE(space_attr)));
+    if (TREE_CODE(TREE_VALUE(TREE_VALUE(space_attr))) == CALL_EXPR) {
+      tree id, id_args;
+
+      id = TREE_OPERAND(TREE_OPERAND(TREE_VALUE(TREE_VALUE(space_attr)),0),0);
+      id_args = TREE_OPERAND(TREE_VALUE(TREE_VALUE(space_attr)),1);
+      pmp = IDENT_PMP(DECL_NAME(id));
+      if (IDENT_EXTERNAL(DECL_NAME(id))) {
+        if (TREE_CODE(TREE_VALUE(id_args)) != CALL_EXPR) {
+          attr = TREE_VALUE(id_args);
+        }
+      } else if (pmp) {
+        if (TREE_CODE(TREE_VALUE(id_args)) != CALL_EXPR) {
+          attr = TREE_VALUE(id_args);
+        }
+      }
+    }
+    if (attr || pmp) {
+      memory = pic30_pmp_space_cs0;
+      if (attr) {
+        for (memory = pic30_external_memory_head; memory; memory = memory->next)
+          if (memory->decl == attr) break;
+      }
+      if (memory == 0) error("ooopsy\n");
+    }
+  }
   auto_psv = (space_attr && IDENT_CONST(TREE_VALUE(TREE_VALUE(space_attr))));
   ident = IDENTIFIER_POINTER(DECL_NAME(decl));
   if (DECL_SECTION_NAME(decl)) {
     const char *name = TREE_STRING_POINTER(DECL_SECTION_NAME(decl));
-
     flags = pic30_section_type_flags(0, name, 1);
     if ((flags & SECTION_WRITE) && (!DECL_INITIAL(decl))) {
       flags &= ~SECTION_WRITE;
@@ -1097,8 +1469,7 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
       if (TREE_CODE(decl) == VAR_DECL) {
         
         if (!space_attr && TREE_READONLY(decl) && 
-            ((DECL_INITIAL(decl) && TREE_CONSTANT(DECL_INITIAL(decl))) ||
-             (DECL_EXTERNAL(decl))))
+            (DECL_INITIAL(decl) || (DECL_EXTERNAL(decl))))
           flags |= SECTION_READ_ONLY;
       }
     }
@@ -1129,7 +1500,7 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
   attr = lookup_attribute(IDENTIFIER_POINTER(pic30_identNoload[0]),
                           DECL_ATTRIBUTES(decl));
   if (attr) {
-    if (auto_psv) {
+    if ((auto_psv) || (memory)) {
       warning("%JIgnoring noload attribute for '%s'", decl, ident);
     } else {
       f += sprintf(f, PIC30_NOLOAD_FLAG);
@@ -1170,6 +1541,18 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
     }
   } 
   fnear |= (flags & SECTION_NEAR);
+  if (memory) {
+    /* space(pmp) or space(external) cannot be near */
+    /* apparently it cannot be bss or data either */
+    fnear = 0;
+    flags &= ~SECTION_BSS;
+    flags &= ~SECTION_WRITE;
+    f += sprintf(f, (memory == pic30_pmp_space_cs0 ||
+                     memory == pic30_pmp_space_cs1 ||
+                     memory == pic30_pmp_space_cs2) ? 
+                      PIC30_PMP_FLAG : PIC30_EXT_FLAG);
+    section_type_set = 1;
+  }
   if ((flags & SECTION_CODE) || 
       (space_attr && (IDENT_PROG(TREE_VALUE(TREE_VALUE(space_attr)))))) {
     f += sprintf(f, PIC30_PROG_FLAG);
@@ -1270,7 +1653,7 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
     tree secure_attr;
 
     p = sprintf(buffer,
-               "%%Jboot() attribute for '%%s' incompatible with attribute(s):");
+             "%%Jboot() attribute for '%%s' incompatible with attribute(s):\n");
     if (fnear) {
       if (p < 100) p += sprintf(&buffer[p]," near");
       err++;
@@ -1295,6 +1678,13 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
       if (p < 100) p += sprintf(&buffer[p]," space(dma)");
       err++;
     }
+    if (pmp) {
+      if (p < 100) p += sprintf(&buffer[p]," space(pmp)");
+      err++;
+    } else if (memory) {
+      if (p < 100) p += sprintf(&buffer[p]," space(external)");
+      err++;
+    }
     secure_attr = lookup_attribute(IDENTIFIER_POINTER(pic30_identSecure[0]),
                                    DECL_ATTRIBUTES(decl));
 
@@ -1303,8 +1693,9 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
       err++;
     }
     if (err) warning(buffer,decl,ident);
-    else if (!current_function_decl && DECL_INITIAL(decl) && 
-             ((flags & SECTION_READ_ONLY) == 0) && !auto_psv && !eedata) {
+    else if (!current_function_decl && (TREE_CODE(decl) == VAR_DECL) &&
+             DECL_INITIAL(decl) && ((flags & SECTION_READ_ONLY) == 0) && 
+             !auto_psv && !eedata) {
       error("%J boot() attributed variable '%s' cannot be initialized",
             decl,ident);
     } else {
@@ -1327,7 +1718,7 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
                             DECL_ATTRIBUTES(decl));
     if (attr) {
       p = sprintf(buffer,
-             "%%Jsecure() attribute for '%%s' incompatible with attribute(s):");
+           "%%Jsecure() attribute for '%%s' incompatible with attribute(s):\n");
       if (fnear) {
         if (p < 100) p += sprintf(&buffer[p]," near");
         err++;
@@ -1346,6 +1737,13 @@ static int pic30_build_prefix(tree decl, int fnear, char *prefix) {
       }
       if (flags & SECTION_INFO) {
         if (p < 100) p += sprintf(&buffer[p]," info");
+        err++;
+      }
+      if (pmp) {
+        if (p < 100) p += sprintf(&buffer[p]," space(pmp)");
+        err++;
+      } else if (memory) {
+        if (p < 100) p += sprintf(&buffer[p]," space(external)");
         err++;
       }
       if (space_attr && (IDENT_DMA(TREE_VALUE(TREE_VALUE(space_attr))))) {
@@ -1378,10 +1776,9 @@ static const char *default_section_name(tree decl, SECTION_FLAGS_INT flags) {
   char *f;
   int i,psv=0,implied_psv=0,prog=0;
   tree a,r,u,p,is_aligned,b,s;
+  tree memory = 0;
   const char *pszSectionName=0;
   int is_default = 0;
-  static char this_default_name[sizeof("_012345670123456701234567")];
-  static time_t current_time = 0;
   int len_this_default_name;
 
   if (current_time == 0) current_time = time(0);
@@ -1389,7 +1786,7 @@ static const char *default_section_name(tree decl, SECTION_FLAGS_INT flags) {
    * if we have a decl, use its address as the unique section name
    */
   if (decl) {
-    len_this_default_name = sprintf(this_default_name,"_%8.8x%lx", 
+    len_this_default_name = sprintf(this_default_name,"*_%8.8x%lx", 
                                     (unsigned) decl, current_time);
   } else {
     len_this_default_name = 1;
@@ -1422,6 +1819,19 @@ static const char *default_section_name(tree decl, SECTION_FLAGS_INT flags) {
     if (p) {
       psv = IDENT_CONST(TREE_VALUE(TREE_VALUE(p)));
       prog = IDENT_PROG(TREE_VALUE(TREE_VALUE(p)));
+      if (TREE_CODE(TREE_VALUE(TREE_VALUE(p))) == CALL_EXPR) {
+        tree id, id_args;
+
+        id = TREE_OPERAND(TREE_OPERAND(TREE_VALUE(TREE_VALUE(p)),0),0);
+        id_args = TREE_OPERAND(TREE_VALUE(TREE_VALUE(p)),1);
+        if (IDENT_EXTERNAL(DECL_NAME(id)) || IDENT_PMP(DECL_NAME(id))) {
+          if (TREE_CODE(TREE_VALUE(id_args)) == CALL_EXPR)
+            warning("%JInvalid %s memory declaration?  This should be marked "
+                    "extern.\n",  decl,
+                    IDENT_EXTERNAL(DECL_NAME(id)) ? "external" : "pmp");
+          else memory = TREE_VALUE(id_args);
+        }
+      }
     }
     psv |= implied_psv;
     if (DECL_SECTION_NAME (decl)) {
@@ -1469,7 +1879,7 @@ static const char *default_section_name(tree decl, SECTION_FLAGS_INT flags) {
       else f += sprintf(result,"%s", SECTION_NAME_PROG);
     } else if ((b) && (TREE_CODE(decl) == FUNCTION_DECL)) {
       /* '*' will cause errors in elf -g, c30-168 - for now use a fixed name
-         until we can fixe the '*' assembler name */
+         until we can fix the '*' assembler name */
       f += sprintf(result,".%s", SECTION_ATTR_BOOT);
       if (TREE_VALUE(b)) {
         if (TREE_CODE(TREE_VALUE(TREE_VALUE(b))) == IDENTIFIER_NODE) {
@@ -1485,7 +1895,7 @@ static const char *default_section_name(tree decl, SECTION_FLAGS_INT flags) {
       }
     } else if ((s) && (TREE_CODE(decl) == FUNCTION_DECL)) {
       /* '*' will cause errors in elf -g, c30-168 - for now use a fixed name
-         until we can fixe the '*' assembler name */
+         until we can fixer the '*' assembler name */
       f += sprintf(result,".%s", SECTION_ATTR_SECURE);
       if (TREE_VALUE(s)) {
         if (TREE_CODE(TREE_VALUE(TREE_VALUE(s))) == IDENTIFIER_NODE) {
@@ -1502,6 +1912,19 @@ static const char *default_section_name(tree decl, SECTION_FLAGS_INT flags) {
     } else {
       if (!is_aligned) is_default = 1;
       f+= sprintf(result,"%s", this_default_name);
+    }
+    if (memory) {
+      pic30_external_memory *m;
+
+      is_default = 0;
+      for (m = pic30_external_memory_head; m; m = m->next)
+        if (m->decl == memory) break;
+      if (m == 0) error("ooopsy\n");
+      f += sprintf(f,",memory(_%s)", m->name);
+      if (!(flags & SECTION_NOLOAD)) {
+        f += sprintf(f, "," SECTION_ATTR_NOLOAD);
+      }
+
     }
     if (b) {
       is_default = 0;
@@ -1583,17 +2006,15 @@ int pic30_data_alignment(tree type, int align) {
 /*
 ** Determine if the output format is ELF/DWARF or COFF
 */
-static inline int
-pic30_obj_elf_p(void)
-{
+static inline int pic30_obj_elf_p(void) {
 #if defined(OBJECT_FORMAT_ELF)
-    return(1);
+    return 1 ;
 #else
     int fObjELF;
 
     fObjELF = (write_symbols == DWARF2_DEBUG);
 
-    return(fObjELF);
+    return fObjELF;
 #endif
 }
 
@@ -1601,48 +2022,15 @@ pic30_obj_elf_p(void)
  *  Called after options are processed.  Verifies the option values are
  *   valid for the -m<target> options
  */
-void pic30_override_options() {
+void pic30_override_options(void) {
   static int override_options = 0;
   int pic30_license_valid = 1;
 
   /*
-   *  On systems where we have a licence manager, call it
+   *  On systems where we have a license manager, call it
    */
   if (override_options) return;
   override_options = 1;
-#ifdef LICENSE_MANAGER
-  pic30_license_valid = 0;
-  { char *path;
-    char *exec;
-    char *args[] = { 0, "-k", 0 };
-    char *c;
-    char *err_msg, *err_arg;
-    int pid;
-    int status;
-    extern char **save_argv;
-
-    pic30_license_valid = 0;
-    path = make_relative_prefix(save_argv[0], STANDARD_BINDIR_PREFIX,
-                                         STANDARD_EXEC_PREFIX);
-
-    if (!path) fatal_error("Could not locate `%s`\n", save_argv[0]);
-    exec = xmalloc(strlen(path)+sizeof("pic30-lm.exe") + 1);
-    sprintf(exec, "%spic30-lm.exe", path);
-    args[0] = exec;
-    pid = pexecute(exec, args, "foobar", 0, &err_msg, &err_arg,
-                   PEXECUTE_FIRST | PEXECUTE_LAST);
-    if (pid == -1) fatal_error (err_msg, exec);
-    pid = pwait(pid, &status, 0);
-    if (pid < 0) abort();
-    if (WIFEXITED(status) && (WEXITSTATUS(status) == 0)) {
-      pic30_license_valid=1;
-    } else if (WIFEXITED(status)) {
-      pic30_license_valid=WEXITSTATUS(status) - 256;
-    }
-    free(exec);
-  }
-#endif
-
   validate_ordered_tables();
   /* disable scheduling */
   flag_schedule_insns = 0;
@@ -1669,11 +2057,13 @@ void pic30_override_options() {
       target_flags |= mask;
       strcat(copy, "__");
       pic30_target_cpu = copy;
-      if (TARGET_ARCH(PIC24F) || TARGET_ARCH(PIC24H)) {
+      if (TARGET_ARCH(PIC24F) || TARGET_ARCH(PIC24H) ||
+          TARGET_ARCH(PIC24FK)) {
         copy2 = xmalloc(80);
         copy[2] = '_';
         copy[3] = '_';
-        sprintf(copy2, "__PIC24%c__", TARGET_ARCH(PIC24F) ? 'F' : 'H');
+        sprintf(copy2, "__PIC24%s__", 
+                TARGET_ARCH(PIC24FK) ? "FK" : TARGET_ARCH(PIC24F) ? "F" : "H");
         pic30_target_cpu = copy+2;
       } else if (TARGET_ARCH(PIC33)) {
         copy2 = (char *)"__dsPIC33F__";
@@ -1689,12 +2079,56 @@ void pic30_override_options() {
       pic30_target_cpu = 0;
       pic30_target_cpu_id = (char *)"invalid target";
     }
-  }
-  else { 
+  } else { 
     /* set the default architecture */
     target_flags |= TARGET_MASK_ARCH_PIC30;
     pic30_target_cpu_id = (char *)"unspecified dsPIC30F";
   }
+
+#ifdef LICENSE_MANAGER
+  { char *path;
+    char *exec;
+    char *args[] = { 0, 0, 0, 0 };
+    char *err_msg, *err_arg;
+    char *cpu_option;
+    int pid;
+    int status;
+    extern char **save_argv;
+
+    pic30_license_valid = 0;
+    path = make_relative_prefix(save_argv[0], STANDARD_BINDIR_PREFIX,
+                                         STANDARD_EXEC_PREFIX);
+
+    if (!path) fatal_error("Could not locate `%s`\n", save_argv[0]);
+    exec = xmalloc(strlen(path)+sizeof("pic30-lm.exe") + 7);
+    sprintf(exec, "%s\\..\\pic30-lm.exe", path);
+    if (pic30_resource_file && pic30_target_cpu && !TARGET_ARCH(GENERIC)) {
+      /* pic30_target_cpu == 0 -> no -mcpu= command line option */
+      /* TARGET_ARCH(GENERIC) => -mcpu=generic-16bit */
+      cpu_option = xmalloc(strlen(pic30_resource_file)+6+
+                           strlen(pic30_target_cpu_id)+1);
+      sprintf(cpu_option,"-cpu=%s;%s", pic30_resource_file, pic30_target_cpu_id);
+      args[1] = cpu_option;
+      args[2] = "-k";
+    } else {
+      args[1] = "-k";
+      args[2] = 0;
+    }
+    args[0] = exec;
+    pid = pexecute(exec, args, "foobar", 0, &err_msg, &err_arg,
+                   PEXECUTE_FIRST | PEXECUTE_LAST);
+    if (pid == -1) fatal_error (err_msg, exec);
+    pid = pwait(pid, &status, 0);
+    if (pid < 0) abort();
+    if (WIFEXITED(status) && (WEXITSTATUS(status) == 0)) {
+      pic30_license_valid=1;
+    } else if (WIFEXITED(status)) {
+      pic30_license_valid=WEXITSTATUS(status) - 256;
+    }
+    free(exec);
+  }
+#endif
+
   if (pic30_io_size) {
     pic30_io_size_val = -1;
     if (*pic30_io_size == '0') {
@@ -1764,6 +2198,7 @@ void pic30_override_options() {
     }
   }
   flag_force_mem = 0;
+#if 0
   if (optimize_size) {
     extern int flag_inline_trees;
 
@@ -1773,6 +2208,7 @@ void pic30_override_options() {
     flag_inline_trees = 0;
     flag_tree_loop_optimize = 0;
   }
+#endif
   if (pic30_license_valid < 0) {
     /* an invalid license, 
        disable those optimizations turned on by -O2,-O3,-Os */
@@ -1781,12 +2217,28 @@ void pic30_override_options() {
 
     #define NULLIFY(X) \
     if ((X) && (message_displayed++ == 0)) \
-      warning("Options have been disabled due to %s license", invalid); \
+      warning("Options have been disabled due to %s license\n" \
+              "Visit http://www.microchip.com/ to purchase a new key.", \
+              invalid); \
     X
 
-    if ((pic30_license_valid == -253) ||
-        (pic30_license_valid == -252))  invalid = (char*) "missing";
-    else if (pic30_license_valid == -248) invalid = (char*) "expired";
+    if (pic30_license_valid == -246) invalid = (char*) "expired";
+    else if (pic30_license_valid == -245) {
+      // academic key, silence the errors
+      message_displayed++;
+    } else if (pic30_license_valid == -247) {
+      error("Your license is invalid for the device selected.\n"
+            "Select an appropriate device, or acquire the correct license.\n"
+            "Visit http://www.microchip.com/ to purchase a new key.");
+      return;
+    } else if (pic30_license_valid == -255) {
+      error("License manager failure, please contact your support\n"
+            "representative or http://support.microchip.com");
+      return;
+    } else {
+      error("General License error, please install a license");
+      return;
+    }
     NULLIFY(flag_optimize_sibling_calls) = 0;
     NULLIFY(flag_cse_follow_jumps) = 0;
     NULLIFY(flag_cse_skip_blocks) = 0;
@@ -1846,9 +2298,7 @@ void pic30_override_options() {
  */
 
 #if !defined(__CYGWIN__)
-static void
-pfatal_with_name (const char *name)
-{
+static void pfatal_with_name (const char *name) {
   fprintf (stderr, "%s: ", progname);
   perror (name);
   exit (FATAL_EXIT_CODE);
@@ -1859,9 +2309,7 @@ pfatal_with_name (const char *name)
  *  Sometimes the oldways are the best; stolen from varasm.c in 2.95
  */
 
-static bool
-pic30_assemble_integer(rtx x, unsigned int size, int aligned_p)
-{
+static bool pic30_assemble_integer(rtx x, unsigned int size, int aligned_p) {
 
   /* First try to use the standard 1, 2, 4, 8, and 16 byte
      ASM_OUTPUT... macros.  */
@@ -1880,11 +2328,11 @@ pic30_assemble_integer(rtx x, unsigned int size, int aligned_p)
         fprintf(asm_out_file, "\t.2byte\t");
         output_addr_const(asm_out_file, x);
         fprintf(asm_out_file, "\n");
-              return(1);
+              return 1;
     }
 #ifdef ASM_OUTPUT_SHORT
     ASM_OUTPUT_SHORT(asm_out_file, x);
-    return(1);
+    return 1;
 #endif
     break;
 
@@ -1894,10 +2342,9 @@ pic30_assemble_integer(rtx x, unsigned int size, int aligned_p)
       if (GET_CODE(x) != SYMBOL_REF) {
         error("Complex initializer for 24 bit pointers not yet supported");
         return 0;
-      } else {
-#else
-      {
+      } else 
 #endif
+      {
         fprintf(asm_out_file, "\t.word tbloffset(");
         output_addr_const(asm_out_file, x);
         fprintf(asm_out_file, ")\n");
@@ -1906,17 +2353,19 @@ pic30_assemble_integer(rtx x, unsigned int size, int aligned_p)
         fprintf(asm_out_file, ")\n");
         return 1;
       }
+    } else if (GET_MODE(x) == P32EXTmode) {
+      return pic30_output_address_of_external(asm_out_file, x);
     }
     if (pic30_obj_elf_p() && !aligned_p)
     {
         fprintf(asm_out_file, "\t.4byte\t");
         output_addr_const(asm_out_file, x);
         fprintf(asm_out_file, "\n");
-              return(1);
+              return 1;
     }
 #ifdef ASM_OUTPUT_INT
     ASM_OUTPUT_INT(asm_out_file, x);
-    return(1);
+    return 1;
 #endif
     break;
 
@@ -1932,7 +2381,7 @@ pic30_assemble_integer(rtx x, unsigned int size, int aligned_p)
       return 1;
 #endif
     }
-    return(0);
+    return 0;
 }
 
 /* formerly macro STRIP_NAME_ENCODING;
@@ -1982,9 +2431,7 @@ const char *pic30_strip_name_encoding(const char *symbol_name) {
 }
 
 /* formerly macro ASM_GLOBALIZE_LABEL */
-static void
-pic30_globalize_label(FILE *f, const char *l)
-{
+static void pic30_globalize_label(FILE *f, const char *l) {
    fputs("\t.global\t", f);
    assemble_name(f, l);
    fputs("\t; export\n", f);
@@ -1994,9 +2441,9 @@ pic30_globalize_label(FILE *f, const char *l)
  *  Initialize symbol names for any builtin function and other symbols that
  *    that we may need
  */
-static void
-pic30_init_builtins(void)
-{
+tree ext_ptr_type;
+
+static void pic30_init_builtins(void) {
   tree fn_type;
   tree argtype;
   tree p0_type;
@@ -2004,15 +2451,17 @@ pic30_init_builtins(void)
   tree p2_type;
   tree psv_ptr_type;
   tree prog_ptr_type;
+  tree pmp_ptr_type;
   int nbits;
   
   /* type for the 24bit pointers */
   psv_ptr_type = make_node(INTEGER_TYPE);
+  nbits = GET_MODE_BITSIZE(P24PSVmode);
   TYPE_MODE(psv_ptr_type) = P24PSVmode;
+  nbits = GET_MODE_BITSIZE(TYPE_MODE(psv_ptr_type));
   TYPE_PRECISION (psv_ptr_type) = nbits;
   TYPE_MIN_VALUE(psv_ptr_type) = build_int_cst(unsigned_type_node,0);
   TYPE_MAX_VALUE(psv_ptr_type) = build_int_cst(unsigned_type_node,(1<<23)-1);
-  nbits = GET_MODE_BITSIZE(TYPE_MODE(psv_ptr_type));
   TYPE_SIZE (psv_ptr_type) = bitsize_int (nbits);
   TYPE_SIZE_UNIT (psv_ptr_type) = size_int (nbits / BITS_PER_UNIT);
   TYPE_UNSIGNED (psv_ptr_type) = 1;
@@ -2020,19 +2469,48 @@ pic30_init_builtins(void)
   (*lang_hooks.types.register_builtin_type) (psv_ptr_type, "__psv_ptr_t");
 
   prog_ptr_type = make_node(POINTER_TYPE);
+  nbits = GET_MODE_BITSIZE(P24PROGmode);
   TREE_TYPE(prog_ptr_type) = char_type_node;
   TYPE_MODE(prog_ptr_type) = P24PROGmode;
+  nbits = GET_MODE_BITSIZE(TYPE_MODE(prog_ptr_type));
   TYPE_PRECISION (prog_ptr_type) = nbits;
   TYPE_MIN_VALUE(prog_ptr_type) = build_int_cst(unsigned_type_node,0);
   TYPE_MAX_VALUE(prog_ptr_type) = build_int_cst(unsigned_type_node,(1<<23)-1);
-  nbits = GET_MODE_BITSIZE(TYPE_MODE(prog_ptr_type));
   TYPE_SIZE (prog_ptr_type) = bitsize_int (nbits);
   TYPE_SIZE_UNIT (prog_ptr_type) = size_int (nbits / BITS_PER_UNIT);
   TYPE_UNSIGNED (prog_ptr_type) = 1;
   TYPE_ALIGN (prog_ptr_type) = 32;
   (*lang_hooks.types.register_builtin_type) (prog_ptr_type, "__prog_ptr_t");
   
+  /* type for the 16bit PMP pointer type */
+  pmp_ptr_type = make_node(POINTER_TYPE);
+  TREE_TYPE(pmp_ptr_type) = char_type_node;
+  TYPE_MODE(pmp_ptr_type) = P16PMPmode;
+  nbits = GET_MODE_BITSIZE(TYPE_MODE(pmp_ptr_type));
+  TYPE_PRECISION (pmp_ptr_type) = nbits;
+  TYPE_MIN_VALUE(pmp_ptr_type) = build_int_cst(unsigned_type_node,0);
+  TYPE_MAX_VALUE(pmp_ptr_type) = build_int_cst(unsigned_type_node,(1<<16)-1);
+  TYPE_SIZE (pmp_ptr_type) = bitsize_int (nbits);
+  TYPE_SIZE_UNIT (pmp_ptr_type) = size_int (nbits / BITS_PER_UNIT);
+  TYPE_UNSIGNED (pmp_ptr_type) = 1;
+  TYPE_ALIGN (pmp_ptr_type) = 16;
+  (*lang_hooks.types.register_builtin_type) (pmp_ptr_type, "__pmp_ptr_t");
 
+  /* type for the 32it EXT pointer type */
+  ext_ptr_type = make_node(POINTER_TYPE);
+  TREE_TYPE(ext_ptr_type) = char_type_node;
+  TYPE_MODE(ext_ptr_type) = P32EXTmode;
+  nbits = GET_MODE_BITSIZE(TYPE_MODE(ext_ptr_type));
+  TYPE_PRECISION (ext_ptr_type) = nbits;
+  TYPE_MIN_VALUE(ext_ptr_type) = build_int_cst(long_unsigned_type_node,0);
+  TYPE_MAX_VALUE(ext_ptr_type) = build_int_cst(long_unsigned_type_node,-1);
+  TYPE_SIZE (ext_ptr_type) = bitsize_int (nbits);
+  TYPE_SIZE_UNIT (ext_ptr_type) = size_int (nbits / BITS_PER_UNIT);
+  TYPE_UNSIGNED (ext_ptr_type) = 1;
+  TYPE_ALIGN (ext_ptr_type) = 32;
+  (*lang_hooks.types.register_builtin_type) (ext_ptr_type, "__ext_ptr_t");
+
+  /* attribute sub-values */
   fn_type = build_function_type(void_type_node, NULL_TREE);
   builtin_function("save", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
   builtin_function("__save__", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
@@ -2044,6 +2522,19 @@ pic30_init_builtins(void)
   builtin_function("__altirq__", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
 
   fn_type = build_function_type(unsigned_type_node, NULL_TREE);
+
+  /* more attribute sub-values */
+  builtin_function("external", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+  builtin_function("__external__", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+  builtin_function("pmp", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+  builtin_function("__pmp__", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+  builtin_function("origin", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+  builtin_function("__origin__", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+  builtin_function("size", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+  builtin_function("__size__", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+  builtin_function("cs", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+  builtin_function("__cs__", fn_type, CODE_FOR_nop, NOT_BUILT_IN, 0, 0);
+
   builtin_function("__builtin_ittype", fn_type, PIC30_BUILTIN_ITTYPE,
                    BUILT_IN_MD, NULL, NULL_TREE);
 
@@ -2368,6 +2859,13 @@ pic30_init_builtins(void)
    builtin_function("__builtin_tblrdh", fn_type,
                     PIC30_BUILTIN_TBLRDH, BUILT_IN_MD, NULL, NULL_TREE);
 
+   fn_type = build_function_type_list(unsigned_char_type_node,
+                                      unsigned_type_node, NULL_TREE);
+   builtin_function("__builtin_tblrdhb", fn_type,
+                    PIC30_BUILTIN_TBLRDHB, BUILT_IN_MD, NULL, NULL_TREE);
+   builtin_function("__builtin_tblrdlb", fn_type,
+                    PIC30_BUILTIN_TBLRDLB, BUILT_IN_MD, NULL, NULL_TREE);
+
    fn_type = build_function_type_list(void_type_node,
                                       unsigned_type_node, unsigned_type_node,
                                       NULL_TREE);
@@ -2375,17 +2873,27 @@ pic30_init_builtins(void)
                     PIC30_BUILTIN_TBLWTL, BUILT_IN_MD, NULL, NULL_TREE);
    builtin_function("__builtin_tblwth", fn_type,
                     PIC30_BUILTIN_TBLWTH, BUILT_IN_MD, NULL, NULL_TREE);
+
+   fn_type = build_function_type_list(void_type_node,
+                                      unsigned_type_node, 
+                                      unsigned_char_type_node,
+                                      NULL_TREE);
+   builtin_function("__builtin_tblwtlb", fn_type,
+                    PIC30_BUILTIN_TBLWTLB, BUILT_IN_MD, NULL, NULL_TREE);
+   builtin_function("__builtin_tblwthb", fn_type,
+                    PIC30_BUILTIN_TBLWTHB, BUILT_IN_MD, NULL, NULL_TREE);
+
+
    fn_type = build_function_type_list(void_type_node, integer_type_node,
                                      NULL_TREE);
    builtin_function("__builtin_disi", fn_type,
                    PIC30_BUILTIN_DISI, BUILT_IN_MD, NULL, NULL_TREE);
 }
+
 /*
 ** Determine the section name of an operand
 */
-static const char *
-pic30_section_name(rtx op)
-{
+static const char * pic30_section_name(rtx op) {
   const char *pszSectionName = NULL;
   const char *real_name;
   tree sym;
@@ -2399,12 +2907,12 @@ pic30_section_name(rtx op)
       sym = maybe_get_identifier(real_name);
       if (sym == 0)
       {
-        return(0);
+        return 0;
       }
       sym = lookup_name(sym);
       if (sym == 0)
       {
-        return(0);
+        return 0;
       }
       switch (TREE_CODE(sym))
       {
@@ -2422,10 +2930,10 @@ pic30_section_name(rtx op)
     case PLUS:
       /* Assume canonical format of symbol + constant.  Fall through.  */
     case CONST:
-      return(pic30_section_name(XEXP(op, 0)));
+      return pic30_section_name(XEXP(op, 0));
     default: break;
   }
-  return(pszSectionName);
+  return pszSectionName;
 }
 
 static tree pic30_pointer_expr(tree arg) {
@@ -2456,9 +2964,8 @@ static tree pic30_pointer_expr(tree arg) {
 ** Determine if a parameter is suitable as an argument to
 ** the builtin table and psv instructions.
 */
-static int
-pic30_builtin_tblpsv_arg_p(tree arg0 ATTRIBUTE_UNUSED, rtx r0)
-{ int p = 0;
+static int pic30_builtin_tblpsv_arg_p(tree arg0 ATTRIBUTE_UNUSED, rtx r0) { 
+  int p = 0;
 
   if ((pic30_program_space_operand_p(r0)) ||
       (pic30_has_space_operand_p(r0, (char *) PIC30_APSV_FLAG)) ||
@@ -2485,16 +2992,15 @@ pic30_builtin_tblpsv_arg_p(tree arg0 ATTRIBUTE_UNUSED, rtx r0)
       }
     }
   }
-  return(p);
+  return p;
 }
 
 /*
 ** Determine if a parameter is suitable as an argument to
 ** the builtin dma instrucitons
 */
-static int
-pic30_builtin_dma_arg_p(tree arg0 ATTRIBUTE_UNUSED, rtx r0)
-{ int p = 0;
+static int pic30_builtin_dma_arg_p(tree arg0 ATTRIBUTE_UNUSED, rtx r0) { 
+  int p = 0;
 
   if (pic30_has_space_operand_p(r0, (char *) PIC30_DMA_FLAG))
   {
@@ -2516,7 +3022,7 @@ pic30_builtin_dma_arg_p(tree arg0 ATTRIBUTE_UNUSED, rtx r0)
       }
     }
   }
-  return(p);
+  return p;
 }
 
 /* return true if reg is a reg suitable for a builtin that will require
@@ -2541,14 +3047,9 @@ static int pic30_reg_for_builtin(rtx reg) {
 ** <ignore> is nonzero if the value is to be ignored.
 ** This function should return the result of the call to the built-in function.
 */
-rtx
-pic30_expand_builtin (exp, target, subtarget, mode, ignore)
-     tree exp;
-     rtx target;
-     rtx subtarget ATTRIBUTE_UNUSED;
-     enum machine_mode mode ATTRIBUTE_UNUSED;
-     int ignore ATTRIBUTE_UNUSED;
-{
+rtx pic30_expand_builtin(tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED, 
+                         enum machine_mode mode ATTRIBUTE_UNUSED, 
+                         int ignore ATTRIBUTE_UNUSED) {
   tree fndecl = TREE_OPERAND(TREE_OPERAND(exp, 0), 0);
   unsigned int fcode = DECL_FUNCTION_CODE(fndecl);
   tree arglist = TREE_OPERAND(exp, 1);
@@ -2570,6 +3071,8 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
   rtx r6 = 0;
   rtx r7 = 0;
   rtx r8 = 0;
+  rtx (*fn2)(rtx,rtx) = 0;
+  enum machine_mode reqd_mode;
   const char *id = 0;
 
   switch (fcode)
@@ -2630,7 +3133,7 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
 
         if (TREE_CODE(sub_arg0) == STRING_CST) {
           if (TREE_STRING_LENGTH(sub_arg0) > 20) {
-             error("__builtin_unique_id arguement 0 exceeds maximum length");
+             error("__builtin_unique_id argument 0 exceeds maximum length");
           }
           label_name = xmalloc(TREE_STRING_LENGTH(sub_arg0) + 5);
           fmt = TREE_STRING_POINTER(sub_arg0);
@@ -2702,7 +3205,7 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
         target = gen_reg_rtx(HImode);
       }
       emit_insn(gen_readsfr(target, r0));
-      return(target);
+      return target;
 
     case PIC30_BUILTIN_WRITESFR:
     /*
@@ -2730,74 +3233,79 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       if (!pic30_builtin_tblpsv_arg_p(arg0, r0))
       {
-        error("Argument to __builtin_tbaddress() is not the address of an object"
-              " in a code, psv, or eedata section");
+       error("Argument to __builtin_tbladdress() is not the address\n"
+             "of an object in a code, psv, or eedata section;\n"
+             "the object must not be qualified with any form of index");
       }
       if (!target || !register_operand(target, SImode))
       {
         target = gen_reg_rtx(SImode);
       }
       emit_insn(gen_tbladdress(target, r0));
-      return(target);
+      return target;
 
     case PIC30_BUILTIN_TBLPAGE:
       arg0 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       if (!pic30_builtin_tblpsv_arg_p(arg0, r0))
       {
-        error("Argument to __builtin_tblpage() is not the address of an object"
-              " in a code, psv, or eedata section");
+        error("Argument to __builtin_tblpage() is not the address\n"
+              "of an object in a code, psv, or eedata section;\n"
+              "the object must not be qualified with any form of index");
       }
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
       }
       emit_insn(gen_tblpage(target, r0));
-      return(target);
+      return target;
 
     case PIC30_BUILTIN_TBLOFFSET:
       arg0 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       if (!pic30_builtin_tblpsv_arg_p(arg0, r0))
       {
-        error("Argument to __builtin_tbloffset() is not the address of an"
-              " object in a code, psv, or eedata section");
+        error("Argument to __builtin_tbloffset() is not the address\n"
+              "of an object in a code, psv, or eedata section;\n"
+              "the object must not be qualified with any form of index");
       }
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
       }
       emit_insn(gen_tbloffset(target, r0));
-      return(target);
+      return target;
 
     case PIC30_BUILTIN_PSVPAGE:
       arg0 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       if (!pic30_builtin_tblpsv_arg_p(arg0, r0)) {
-        error("Argument to __builtin_psvpage() is not the address of an object"
-              " in a code, psv, or eedata section");
+        error("Argument to __builtin_psvpage() is not the address\n"
+              "of an object in a code, psv, or eedata section;\n"
+              "the object must not be qualified with any form of index");
       }
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
       }
       emit_insn(gen_psvpage(target, r0));
-      return(target);
+      return target;
 
     case PIC30_BUILTIN_PSVOFFSET:
       arg0 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       if (!pic30_builtin_tblpsv_arg_p(arg0, r0))
       {
-        error("Argument to __builtin_psvoffset()  is not the address of an"
-              " object in a code, psv, or eedata section");
+        error("Argument to __builtin_psvoffset()  is not the address\n"
+              "of an in a code, psv, or eedata section;\n"
+              "the object must not be qualified with any form of index");
       }
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
       }
       emit_insn(gen_psvoffset(target, r0));
-      return(target);
+      return target;
 
     case PIC30_BUILTIN_DMAOFFSET:
       if (!(pic30_device_mask & HAS_DMA)) {
@@ -2808,19 +3316,20 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       if (!pic30_builtin_dma_arg_p(arg0, r0))
       {
-        error("Argument to __builtin_dmaoffset()  is not the address of an"
-              " object in a dma section");
+        error("Argument to __builtin_dmaoffset()  is not the address\n"
+              "of an object in a dma section;\n"
+              "the object must not be qualified with any form of index");
       }
       if (!target || !register_operand(target, HImode))
       {
         target = gen_reg_rtx(HImode);
       }
       emit_insn(gen_dmaoffset(target, r0));
-      return(target);
+      return target;
 
     case PIC30_BUILTIN_NOP:
       emit_insn(gen_bifnop());
-      return(NULL_RTX);
+      return NULL_RTX;
 
     case PIC30_BUILTIN_DIVF:
       arg0 = TREE_VALUE(arglist);
@@ -3492,7 +4001,6 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
       id = "fbcl";
       arg0 = TREE_VALUE(arglist);
       arglist = TREE_CHAIN(arglist);
-      arg1 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       if (!pic30_reg_for_builtin(r0)) {
         rtx reg;
@@ -4414,10 +4922,27 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
     }
 
     case PIC30_BUILTIN_TBLRDL:
-    case PIC30_BUILTIN_TBLRDH:  {
+      fn2 = gen_tblrdl;
+      reqd_mode = HImode;
+    case PIC30_BUILTIN_TBLRDLB:
+      if (fn2 == 0) {
+        fn2 = gen_tblrdlb;
+        reqd_mode = QImode;
+      }
+    case PIC30_BUILTIN_TBLRDH:  
+      if (fn2 == 0) {
+        fn2 = gen_tblrdh;
+        reqd_mode = HImode;
+      }
+    case PIC30_BUILTIN_TBLRDHB:  {
       rtx new_target = 0;
-      if ((!target) || (!pic30_mode2_operand(target,HImode))) {
-         new_target = gen_reg_rtx(HImode);
+
+      if (fn2 == 0) {
+        fn2 = gen_tblrdhb;
+        reqd_mode = QImode;
+      }
+      if ((!target) || (!pic30_mode2_operand(target,reqd_mode))) {
+         new_target = gen_reg_rtx(reqd_mode);
       }
       arg0 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
@@ -4431,14 +4956,20 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
         r0 = reg;
       }
       emit_insn(
-        fcode == PIC30_BUILTIN_TBLRDL ? 
-                  gen_tblrdl(new_target ? new_target : target,r0) :
-                  gen_tblrdh(new_target ? new_target : target,r0)
+        fn2(new_target ? new_target : target,r0)
       );
       if ((new_target) && (target)) {
-        emit_insn(
-          gen_movhi(target, new_target)
-        );
+        switch (reqd_mode) {
+          default:  gcc_assert(0);
+          case QImode: emit_insn(
+                          gen_movqi(target, new_target)
+                       );
+                       break;
+          case HImode: emit_insn(
+                          gen_movhi(target, new_target)
+                       );
+                       break;
+        }
         return target;
       } else if (new_target) {
         return new_target;
@@ -4447,7 +4978,23 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
     }
   
     case PIC30_BUILTIN_TBLWTL:
-    case PIC30_BUILTIN_TBLWTH: {
+      fn2 = gen_tblwtl;
+      reqd_mode = HImode;
+    case PIC30_BUILTIN_TBLWTLB:
+      if (fn2 == 0) {
+        fn2 = gen_tblwtlb;
+        reqd_mode = QImode;
+      }
+    case PIC30_BUILTIN_TBLWTH:
+      if (fn2 == 0) {
+        fn2 = gen_tblwth;
+        reqd_mode = HImode;
+      }
+    case PIC30_BUILTIN_TBLWTHB: {
+      if (fn2 == 0) {
+        fn2 = gen_tblwthb;
+        reqd_mode = QImode;
+      }
       arg0 = TREE_VALUE(arglist);
       r0 = expand_expr(arg0, NULL_RTX, HImode, EXPAND_NORMAL);
       if (GET_CODE(r0) != REG) {
@@ -4461,20 +5008,26 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
       }
       arglist = TREE_CHAIN(arglist);
       arg1 = TREE_VALUE(arglist);
-      r1 = expand_expr(arg1, NULL_RTX, HImode, EXPAND_NORMAL);
-      if (!pic30_mode2_operand(r1,HImode)) {
+      r1 = expand_expr(arg1, NULL_RTX, reqd_mode, EXPAND_NORMAL);
+      if (!pic30_mode2_operand(r1,reqd_mode)) {
         rtx reg;
   
-        reg = gen_reg_rtx(HImode);
-        emit_insn(
-          gen_movhi(reg, r1)
-        );
+        reg = gen_reg_rtx(reqd_mode);
+        switch (reqd_mode) {
+          default: gcc_assert(0);
+          case QImode: emit_insn(
+                          gen_movqi(reg, r1)
+                       );
+                       break;
+          case HImode: emit_insn(
+                          gen_movhi(reg, r1)
+                       );
+                       break;
+        }
         r1 = reg;
       }
       emit_insn(
-        fcode == PIC30_BUILTIN_TBLWTL ? 
-                  gen_tblwtl(r0,r1) :
-                  gen_tblwth(r0,r1)
+        fn2(r0,r1)
       );
       return NULL_RTX;
     }
@@ -4495,11 +5048,7 @@ pic30_expand_builtin (exp, target, subtarget, mode, ignore)
 ** some or all of the saved cc's so they won't be used.
 */
 /************************************************************************/
-void
-pic30_notice_update_cc(exp, insn)
-     rtx exp;
-     rtx insn;
-{
+void pic30_notice_update_cc(rtx exp, rtx insn) {
     switch (get_attr_cc(insn))
     {
     case CC_SET:
@@ -4512,8 +5061,8 @@ pic30_notice_update_cc(exp, insn)
             /*
             ** insns with scratch registers
             */
-               exp = XVECEXP(exp, 0, 0);
-               if (GET_CODE(exp) != SET)
+            exp = XVECEXP(exp, 0, 0);
+            if (GET_CODE(exp) != SET)
             {
                 break;
             }
@@ -4567,6 +5116,7 @@ pic30_notice_update_cc(exp, insn)
         break;
     }
 }
+
 /*************************************************************************
 **
 ** On some machines, double-precision values must be kept in even/odd
@@ -4574,14 +5124,12 @@ pic30_notice_update_cc(exp, insn)
 ** odd register numbers for such modes. 
 **
 *************************************************************************/
-int
-pic30_hard_regno_mode_ok (regno, mode)
-     int regno;
-     enum machine_mode mode;
-{ int fOkay;
+int pic30_hard_regno_mode_ok(int regno, enum machine_mode mode) { 
+  int fOkay;
 
   switch (mode)
   {
+    case P32EXTmode:
     case P24PROGmode:
     case P24PSVmode:
     case SImode:        /* Integer (32 bits) */
@@ -4601,21 +5149,18 @@ pic30_hard_regno_mode_ok (regno, mode)
   return(fOkay);
 }
 
-
 int pic30_pp_modify_valid(rtx opnd ATTRIBUTE_UNUSED) {
   int pre=0;
 
   return pre;
 }
+
 /************************************************************************/
 /*
 ** Preserve the operands of a compare instruction.
 */
 /************************************************************************/
-const char *
-pic30_compare(operands)
-     rtx *operands;
-{
+const char * pic30_compare(rtx *operands) {
     rtxCmpOperands[0] = operands[0];
     rtxCmpOperands[1] = operands[1];
 
@@ -4628,13 +5173,11 @@ pic30_compare(operands)
         return("");
     }
 }
+
 /************************************************************************/
 /*    Convert a condition code id to a name.                */
 /************************************************************************/
-static const char *
-pic30_condition_code_name(cond)
-    enum rtx_code cond;
-{
+static const char * pic30_condition_code_name(enum rtx_code cond) {
     const char *pszCondition = "";
 
     switch (cond)
@@ -4674,6 +5217,7 @@ pic30_condition_code_name(cond)
     }
     return(pszCondition);
 }
+
 /************************************************************************/
 /*
 ** Construct an SImode conditional branch instruction.
@@ -4683,13 +5227,9 @@ pic30_condition_code_name(cond)
 ** If the condition is false, fall through to the next sequential insn.
 */
 /************************************************************************/
-static char *
-pic30_conditional_branchSI(cond, rtxThenLabel, buf)
-    enum rtx_code cond;
-    rtx rtxThenLabel;
-    char *buf;
-{
-        rtx rtxElseLabel = NULL_RTX;
+static char * pic30_conditional_branchSI(enum rtx_code cond, rtx rtxThenLabel, 
+                                         char *buf) {
+    rtx rtxElseLabel = NULL_RTX;
 
     switch (cond)
     {
@@ -4823,17 +5363,14 @@ pic30_conditional_branchSI(cond, rtxThenLabel, buf)
 
     return(buf);
 }
+
 /************************************************************************/
 /*
 ** Construct an HImode conditional branch instruction.
 */
 /************************************************************************/
 #define    SR_OV    "2"            /* Status Register OV bit #    */
-static char *
-pic30_conditional_branchHI(cond, buf)
-    enum rtx_code cond;
-    char *buf;
-{
+static char *pic30_conditional_branchHI(enum rtx_code cond,char *buf) {
     char *obuf = buf;
     const char *pszCondition = pic30_condition_code_name(cond);
 
@@ -4870,42 +5407,35 @@ pic30_conditional_branchHI(cond, buf)
     default:
         break;
     }
-    sprintf(buf, "bra %s,%%0", pszCondition);
+    sprintf(buf, "bra %s,%%0", pszCondition);   // max length 25
 
     return(obuf);
 }
+
 /************************************************************************/
 /*
 ** Construct a conditional branch instruction.
 */
 /************************************************************************/
-char *
-pic30_conditional_branch(cond, rtxThenLabel)
-    enum rtx_code cond;
-    rtx rtxThenLabel;
-{
-   static char buf[30];
-#if (1)
-    int pred_val = 0;
-    double pr;
-    rtx p = find_reg_note(current_output_insn, REG_BR_PROB, 0);
-    if (p)
-    {
-        pred_val = INTVAL(XEXP(p, 0));
-    }
-    pr = pred_val * 100.0 / REG_BR_PROB_BASE;
+char * pic30_conditional_branch(enum rtx_code cond, rtx rtxThenLabel) {
+  static char buf[30];
+  int pred_val = 0;
+  double pr;
+  rtx p = find_reg_note(current_output_insn, REG_BR_PROB, 0);
 
-     asm_fprintf(asm_out_file, "\t.set ___BP___,%d\n", (int)pr);
-#endif
-    if (rtxCmpOperands[0] != NULL_RTX)
-    {
-        return(pic30_conditional_branchSI(cond, rtxThenLabel, buf));
-    }
-    else
-    {
-        return(pic30_conditional_branchHI(cond, buf));
-    }
+  if (p) {
+    pred_val = INTVAL(XEXP(p, 0));
+  }
+  pr = pred_val * 100.0 / REG_BR_PROB_BASE;
+
+  asm_fprintf(asm_out_file, "\t.set ___BP___,%d\n", (int)pr);
+  if (rtxCmpOperands[0] != NULL_RTX) {
+    return(pic30_conditional_branchSI(cond, rtxThenLabel, buf));
+  } else {
+    return(pic30_conditional_branchHI(cond, buf));
+  }
 }
+
 /*
 ** For an arg passed partly in registers and partly on the stack,
 ** this is the number of registers used.
@@ -4915,8 +5445,7 @@ int pic30_function_arg_partial_nregs(
      CUMULATIVE_ARGS *cum ATTRIBUTE_UNUSED,    /* current arg information */
      enum machine_mode mode ATTRIBUTE_UNUSED,    /* current arg mode */
      tree type ATTRIBUTE_UNUSED, /* type of the argument or 0 if lib support */
-     bool named ATTRIBUTE_UNUSED) /* whether or not the argument was named */
-{
+     bool named ATTRIBUTE_UNUSED) /* whether or not the argument was named */ {
     int nregs = 0;
 
     /*
@@ -4933,19 +5462,16 @@ int pic30_function_arg_partial_nregs(
 ** function whose data type is FNTYPE.
 ** For a library call, FNTYPE is  0.
 */
-void
-pic30_init_cumulative_args (cum, fntype, libname)
-     CUMULATIVE_ARGS *cum;    /* argument info to initialize */
-     tree fntype ATTRIBUTE_UNUSED;    /* tree ptr for function decl */
-     rtx libname ATTRIBUTE_UNUSED;    /* SYMBOL_REF of library name or 0 */
-{
-    int i;
+void pic30_init_cumulative_args (CUMULATIVE_ARGS *cum, 
+                                 tree fntype ATTRIBUTE_UNUSED, 
+                                 rtx libname ATTRIBUTE_UNUSED) {
+  int i;
 
-    for (i = 0; i < (int)NELEMENTS(cum->parmregs); ++i)
-    {
-        cum->parmregs[i] = -1;
-    }
+  for (i = 0; i < (int)NELEMENTS(cum->parmregs); ++i) {
+    cum->parmregs[i] = -1;
+  }
 }
+
 /*************************************************************************
 **
 ** A C function that controls whether a function argument is passed
@@ -4964,13 +5490,8 @@ pic30_init_cumulative_args (cum, fntype, libname)
 ** (otherwise it is an extra parameter matching an ellipsis).
 **
 *************************************************************************/
-rtx
-pic30_function_arg(cum, mode, type, named)
-     CUMULATIVE_ARGS *cum;
-     enum machine_mode mode;
-     tree type;
-     int named;
-{
+rtx pic30_function_arg(CUMULATIVE_ARGS *cum, enum machine_mode mode, 
+                       tree type, int named) {
   rtx arg = NULL_RTX;
 
   /* see Changelog.3 for precedent, look for void_type_node.
@@ -5017,18 +5538,14 @@ pic30_function_arg(cum, mode, type, named)
   }
   return(arg);
 }
+
 /*
 ** Update the data in CUM to advance over an argument
 ** of mode MODE and data type TYPE.
 ** (TYPE is null for libcalls where that information may not be available.)
 */
-void
-pic30_function_arg_advance(cum, mode, type, named)
-     CUMULATIVE_ARGS *cum;    /* current arg information */
-     enum machine_mode mode;    /* current arg mode */
-     tree type;            /* type of the argument or 0 if lib support */
-     int named;            /* whether or not the argument was named */
-{
+void pic30_function_arg_advance(CUMULATIVE_ARGS *cum, enum machine_mode mode,
+                                tree type,int named) {
   if (named && !targetm.calls.must_pass_in_stack(mode, type))
   {
     int i;
@@ -5070,21 +5587,16 @@ pic30_function_arg_advance(cum, mode, type, named)
 /*
 ** Convert and RTX double to a C double
 */
-static double
-pic30_get_double (x)
-     rtx x;
-{
-    union
-    {
-        double d;
-        long i[2];
-    }
-    du;
+static double pic30_get_double(rtx x) {
+  union {
+    double d;
+    long i[2];
+  } du;
 
-    du.i[0] = CONST_DOUBLE_LOW (x);
-    du.i[1] = CONST_DOUBLE_HIGH (x);
+  du.i[0] = CONST_DOUBLE_LOW (x);
+  du.i[1] = CONST_DOUBLE_HIGH (x);
 
-    return du.d;
+  return du.d;
 }
 
 /*
@@ -5092,9 +5604,7 @@ pic30_get_double (x)
 ** This is done by searching ahead for either the next use
 ** (i.e., reg is live), a death note, or a set of <reg>.
 */
-int
-pic30_dead_or_set_p(rtx first, rtx reg)
-{
+int pic30_dead_or_set_p(rtx first, rtx reg) {
   rtx insn;
 
   if (first == 0) return 1;
@@ -5167,12 +5677,11 @@ pic30_dead_or_set_p(rtx first, rtx reg)
   */
   return(0);
 }
+
 /*
 ** See if a register (reg) is dereferenced in an RTL (in).
 */
-static int
-pic30_reg_dereferenced_p(rtx reg, rtx in)
-{
+static int pic30_reg_dereferenced_p(rtx reg, rtx in) {
     register const char *fmt;
     register int i;
     register enum rtx_code code;
@@ -5325,6 +5834,7 @@ pic30_reg_dereferenced_p(rtx reg, rtx in)
     }
     return(0);
 }
+
 /*
 ** This function corrects the value of COST based on the relationship between
 ** INSN and DEP_INSN through the dependence LINK. It should return the new
@@ -5340,9 +5850,7 @@ pic30_reg_dereferenced_p(rtx reg, rtx in)
 #define    DEF_USE_COST    2
 #define    DEBUG_SCHED    0
 
-static int
-pic30_sched_adjust_cost(rtx insn, rtx link, rtx dep_insn, int cost)
-{
+static int pic30_sched_adjust_cost(rtx insn, rtx link, rtx dep_insn, int cost) {
     enum attr_type tyd;
     enum attr_type tyi;
     enum rtx_code code;
@@ -5513,14 +6021,13 @@ pic30_sched_adjust_cost(rtx insn, rtx link, rtx dep_insn, int cost)
     }
     return(cost);
 }
+
 /*
 ** This Function returns nonzero if the DFA based scheduler interface
 ** is to be used.
 */
-static int
-pic30_sched_use_dfa_interface(void)
-{
-    return(1);
+static int pic30_sched_use_dfa_interface(void) {
+    return 1;
 }
 
 /*
@@ -5529,10 +6036,7 @@ pic30_sched_use_dfa_interface(void)
 ** This is used in cse and loop optimisation to determine
 ** if it is worthwhile storing a common address into a register. 
 */
-static int
-pic30_address_cost(op)
-     rtx op;
-{
+static int pic30_address_cost(rtx op) {
     static int recurred = 0;
     int nCost = 3;
 
@@ -5642,12 +6146,8 @@ int pic30_volatile_operand(rtx opnd, enum machine_mode mode) {
 /*      -k    Small literal, negative                                   */
 /*                                                                      */
 /************************************************************************/
-static int
-pic30_mode1MinMax_operand(op, mode, nMin, nMax)
-   rtx op;
-   enum machine_mode mode;
-    int nMin, nMax;
-{
+static int pic30_mode1MinMax_operand(rtx op, enum machine_mode mode, 
+                                     int nMin,int nMax) {
     int nLiteral;
     int fMode1Operand;
     enum rtx_code code;
@@ -5717,6 +6217,10 @@ pic30_mode1MinMax_operand(op, mode, nMin, nMax)
         */
         nLiteral = INTVAL(op);
         fMode1Operand = (nMin <= nLiteral) && (nLiteral <= nMax);
+#if 0
+                        (((mode > QImode) && ((nLiteral & 1) == 0)) ||
+                         (mode <= QImode));
+#endif
         break;
     default:
         break;
@@ -5744,50 +6248,32 @@ int pic30_mode1i_operand(rtx op, enum machine_mode mode) {
 ** Canonical mode1: literal range is [-16,15]
 */
 int
-pic30_mode1_operand(op, mode)
-   rtx op;
-   enum machine_mode mode;
-{
+pic30_mode1_operand(rtx op, enum machine_mode mode) {
     return(pic30_mode1MinMax_operand(op, mode, -16, 15));
 }
 /*
 ** Special mode1: literal range is [0,31]
 */
-int
-pic30_mode1P_operand(op, mode)
-   rtx op;
-   enum machine_mode mode;
-{
+int pic30_mode1P_operand(rtx op, enum machine_mode mode) {
     return(pic30_mode1MinMax_operand(op, mode, 0, 31));
 }
 /*
 ** Special mode1: literal range is [-31,31]
 */
-int
-pic30_mode1PN_operand(op, mode)
-   rtx op;
-   enum machine_mode mode;
-{
+int pic30_mode1PN_operand(rtx op, enum machine_mode mode) {
     return(pic30_mode1MinMax_operand(op, mode, -31, 31));
 }
 /*
 ** Special mode1: literal range is [-31,1023]
 */
 int
-pic30_mode1JN_operand(op, mode)
-   rtx op;
-   enum machine_mode mode;
-{
+pic30_mode1JN_operand(rtx op, enum machine_mode mode) {
     return(pic30_mode1MinMax_operand(op, mode, -31, 1023));
 }
 /*
 ** Special mode1: literal range is [0,1023]
 */
-int
-pic30_mode1J_operand(op, mode)
-   rtx op;
-   enum machine_mode mode;
-{
+int pic30_mode1J_operand(rtx op, enum machine_mode mode) {
     return(pic30_mode1MinMax_operand(op, mode, 0, 1023));
 }
 
@@ -5798,8 +6284,7 @@ pic30_mode1J_operand(op, mode)
  *      [--Wn]  Indirect with pre-decrement
  */
 
-int
-pic30_indirect_mem_operand_modify(rtx op, enum machine_mode mode) {
+int pic30_indirect_mem_operand_modify(rtx op, enum machine_mode mode) {
   if (GET_CODE(op) == MEM)
     switch (GET_CODE(XEXP(op,0)))
     {
@@ -5833,8 +6318,7 @@ pic30_indirect_mem_operand_modify(rtx op, enum machine_mode mode) {
  *    [++Wn]    Indirect with pre-increment
  *    [--Wn]    Indirect with pre-decrement
  */
-int
-pic30_indirect_mem_operand(rtx op, enum machine_mode mode) {
+int pic30_indirect_mem_operand(rtx op, enum machine_mode mode) {
   rtx x;
 
   if (GET_CODE(op) == MEM) {
@@ -5853,6 +6337,24 @@ pic30_indirect_mem_operand(rtx op, enum machine_mode mode) {
   return FALSE;
 }
 
+/*
+ * return true if the operand is modek or can be made moke with a constant
+ * sum
+ *
+ */
+int pic30_modek_possible_operand(rtx op, enum machine_mode mode) {
+  rtx x;
+
+  if (GET_CODE(op) == MEM) {
+    x = XEXP(op,0);
+    if (GET_CODE(x) == REG) {
+      return (GET_MODE(op) == mode) && (GET_MODE(x) == Pmode);
+    }
+    else return pic30_modek_operand(op,mode);
+  }
+  return 0;
+}
+
 /************************************************************************/
 /* pic30_mode2_operand(): predicate for the mode2 addressing modes      */
 /*                                                                      */
@@ -5867,11 +6369,7 @@ pic30_indirect_mem_operand(rtx op, enum machine_mode mode) {
 /*    [++Wn]    Indirect with pre-increment                             */
 /*    [--Wn]    Indirect with pre-decrement                             */
 /************************************************************************/
-int
-pic30_mode2_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_mode2_operand(rtx op, enum machine_mode mode) {
     int fMode2Operand;
     enum rtx_code code;
 
@@ -5899,21 +6397,14 @@ pic30_mode2_operand(op, mode)
     return(fMode2Operand);
 }
 
-int pic30_mode2_or_near_operand(op, mode)
-   rtx op;
-   enum machine_mode mode;
-{
+int pic30_mode2_or_near_operand(rtx op, enum machine_mode mode) {
    return (pic30_mode2_operand(op,mode) || pic30_near_operand(op,mode));
 }
 
 /************************************************************************/
 /* pic30_mode2res_operand(): predicate for restricted mode2 addr modes    */
 /************************************************************************/
-int
-pic30_mode2res_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_mode2res_operand(rtx op, enum machine_mode mode) {
     int fMode2Operand;
     fMode2Operand = pic30_mode2_operand(op, mode);
     if (fMode2Operand)
@@ -5942,11 +6433,7 @@ pic30_mode2res_operand(op, mode)
 /************************************************************************/
 /* pic30_mode2mres_operand(): predicate for restricted mode2 addr modes    */
 /************************************************************************/
-int
-pic30_mode2mres_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_mode2mres_operand(rtx op, enum machine_mode mode) {
     int fMode2Operand;
     fMode2Operand = pic30_mode2_operand(op, mode);
     if (fMode2Operand)
@@ -5977,19 +6464,15 @@ pic30_mode2mres_operand(op, mode)
     return(fMode2Operand);
 }
 /************************************************************************/
-/* pic30_modek_operand(): predicate for the modek addressing modes    */
-/*                                    */
+/* pic30_modek_operand(): predicate for the modek addressing modes      */
+/*                                                                      */
 /* MODEk addressing modifiers are used for source and destination of    */
 /* move instructions (excluding TABLE & DSP single operand instructions)*/
-/*                                    */
-/* The encoding is as follows:                        */
-/*    [Wn+k]    Indirect + displacement                    */
+/*                                                                      */
+/* The encoding is as follows:                                          */
+/*    [Wn+k]    Indirect + displacement                                 */
 /************************************************************************/
-int
-pic30_modek_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_modek_operand(rtx op, enum machine_mode mode) {
   int fModekOperand;
   rtx rtxInner;
   rtx rtxPlusOp0;
@@ -6055,6 +6538,7 @@ pic30_modek_operand(op, mode)
                       break;
                     case P24PROGmode:
                     case P24PSVmode:
+                    case P16PMPmode:
                     case SFmode:
                     case DFmode:
                     case HImode:
@@ -6105,11 +6589,7 @@ pic30_modek_operand(op, mode)
 /*    [++Wn]    Indirect with pre-increment                             */
 /*    [Wn+Wb]    Indirect with base                                     */
 /************************************************************************/
-int
-pic30_mode3_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_mode3_operand(rtx op, enum machine_mode mode) {
     int fMode3Operand = -1;
     rtx rtxInner;
     rtx rtxPlusOp0;
@@ -6130,8 +6610,11 @@ pic30_mode3_operand(op, mode)
 
                 subop = SUBREG_REG(op);
                 submd = GET_MODE(subop);
-                fMode3Operand =
-                    pic30_mode3_operand(subop, submd);
+                if (SUBREG_BYTE(op) != 0) {
+                  fMode3Operand = pic30_modek_possible_operand(subop, submd);
+                } else {
+                  fMode3Operand = pic30_mode3_operand(subop, submd);
+                }
             }
         }
         else
@@ -6252,11 +6735,7 @@ pic30_mode3_operand(op, mode)
 /************************************************************************/
 /* pic30_wreg_operand(): predicate for the WREG addressing mode        */
 /************************************************************************/
-int
-pic30_wreg_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_wreg_operand(rtx op, enum machine_mode mode) {
     int fWReg = FALSE;
 
     if (register_operand(op, mode))
@@ -6272,11 +6751,7 @@ pic30_wreg_operand(op, mode)
 /************************************************************************/
 /* pic30_breg_operand(): predicate for the W1 addressing mode        */
 /************************************************************************/
-int
-pic30_breg_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_breg_operand(rtx op, enum machine_mode mode) {
     int bBReg = FALSE;
 
     if (register_operand(op, mode))
@@ -6310,11 +6785,7 @@ int pic30_creg_operand(rtx op, enum machine_mode mode) {
 /************************************************************************/
 /* pic30_ereg_operand(): predicate for the W2..W14 addressing mode    */
 /************************************************************************/
-int
-pic30_ereg_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_ereg_operand(rtx op, enum machine_mode mode) {
     int bEReg = FALSE;
 
     if (register_operand(op, mode))
@@ -6343,11 +6814,7 @@ int pic30_near_operand(rtx op, enum machine_mode mode) {
 /************************************************************************/
 /* pic30_T_operand(): predicate for the data addressing mode        */
 /************************************************************************/
-int
-pic30_T_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_T_operand(rtx op, enum machine_mode mode) {
     int fT;
 
     fT = (mode == GET_MODE(op)) && pic30_T_constraint(op);
@@ -6355,14 +6822,14 @@ pic30_T_operand(op, mode)
     return(fT);
 }
 
+int pic30_UT_operand(rtx op, enum machine_mode mode) {
+  return (pic30_near_operand(op,mode) || pic30_T_operand(op,mode));
+}
+
 /************************************************************************/
 /* pic30_data_operand(): predicate for the data addressing mode        */
 /************************************************************************/
-int
-pic30_data_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_data_operand(rtx op, enum machine_mode mode) {
     int fData;
 
     switch (mode)
@@ -6376,14 +6843,11 @@ pic30_data_operand(op, mode)
     }
     return(fData);
 }
+
 /************************************************************************/
 /* pic30_code_operand(): predicate for the code addressing mode        */
 /************************************************************************/
-int
-pic30_code_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_code_operand(rtx op, enum machine_mode mode) {
     int fCode;
 
     fCode = (mode == GET_MODE(op)) &&
@@ -6392,55 +6856,40 @@ pic30_code_operand(op, mode)
 
     return(fCode);
 }
+
 /************************************************************************/
 /* pic30_reg_or_code_operand(): predicate for reg or code addr mode    */
 /************************************************************************/
-int
-pic30_reg_or_code_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_reg_or_code_operand(rtx op, enum machine_mode mode) {
   return register_operand(op, mode) || pic30_code_operand(op, mode);
 }
+
 /************************************************************************/
 /* pic30_reg_or_near_operand(): predicate for reg/near data addr mode    */
 /************************************************************************/
-int
-pic30_reg_or_near_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_reg_or_near_operand(rtx op,enum machine_mode mode) {
   return (register_operand(op, mode) || pic30_near_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_reg_imm_or_near_operand(): predicate for reg/imm/near addr mode*/
 /************************************************************************/
-int
-pic30_reg_imm_or_near_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_reg_imm_or_near_operand(rtx op, enum machine_mode mode) {
   return (register_operand(op, mode) || immediate_operand(op, mode) ||
           pic30_near_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_rR_or_near_operand(): predicate for the r/R/near data addr mode*/
 /************************************************************************/
-int
-pic30_rR_or_near_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_rR_or_near_operand(rtx op,enum machine_mode mode) {
   return (pic30_reg_or_R_operand(op, mode) || pic30_near_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_wreg_or_near_operand(): predicate for the WREG/near data addr mode*/
 /************************************************************************/
-int
-pic30_wreg_or_near_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_wreg_or_near_operand(rtx op, enum machine_mode mode) {
   return (pic30_wreg_operand(op, mode) || pic30_near_operand(op, mode));
 }
 
@@ -6458,11 +6907,7 @@ int pic30_reg_or_imm_operand(rtx op, enum machine_mode mode) {
 /************************************************************************/
 /* pic30_imm2to15_operand(): predicate for imm const [2,15] addressing    */
 /************************************************************************/
-int
-pic30_imm2to15_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_imm2to15_operand(rtx op,enum machine_mode mode) {
     int fImm2to15;
 
     fImm2to15 = immediate_operand(op, mode) && 
@@ -6470,34 +6915,29 @@ pic30_imm2to15_operand(op, mode)
 
     return(fImm2to15);
 }
+
 /************************************************************************/
 /* pic30_imm8_operand(): predicate for imm const 8 addressing        */
 /************************************************************************/
-int
-pic30_imm8_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_imm8_operand(rtx op, enum machine_mode mode) {
     int fImm8;
 
     fImm8 = immediate_operand(op, mode) && (INTVAL(op) == 8);
 
     return(fImm8);
 }
+
 /************************************************************************/
 /* pic30_imm16plus_operand(): predicate for imm const 16+ addressing    */
 /************************************************************************/
-int
-pic30_imm16plus_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_imm16plus_operand(rtx op, enum machine_mode mode) {
     int fImm16;
 
     fImm16 = immediate_operand(op, mode) && (INTVAL(op) >= 16);
 
     return(fImm16);
 }
+
 /************************************************************************/
 /* pic30_math_operand(): predicate for the math instruction operand.    */
 /*                                    */
@@ -6505,11 +6945,7 @@ pic30_imm16plus_operand(op, mode)
 /* addhi to accept an immediate operand.  Constraints will prevent    */
 /* a non-J or -K operand from actually being accepted.            */
 /************************************************************************/
-int
-pic30_math_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_math_operand(rtx op,enum machine_mode mode) {
     int fMathOperand;
 
     fMathOperand = pic30_mode1_operand(op, mode) ||
@@ -6517,14 +6953,11 @@ pic30_math_operand(op, mode)
 
     return(fMathOperand);
 }
+
 /************************************************************************/
 /* pic30_inc_imm_operand(): predicate for imm opnd suitable for inc/dec */
 /************************************************************************/
-int 
-pic30_inc_imm_operand(op, mode) 
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_inc_imm_operand(rtx op,enum machine_mode mode) {
     return immediate_operand(op,mode) && 
                (-2<=INTVAL(op)) && (INTVAL(op)!=0) && (INTVAL(op)<=2);
 }
@@ -6532,59 +6965,46 @@ pic30_inc_imm_operand(op, mode)
 /************************************************************************/
 /* pic30_near_math_operand(): predicate for the math instruction operand*/
 /************************************************************************/
-int
-pic30_near_math_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_near_math_operand(rtx op, enum machine_mode mode) {
     return(    pic30_math_operand(op, mode) ||
         pic30_wreg_or_near_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_near_mode2_operand(): predicate for math instruction operand.    */
 /************************************************************************/
-int
-pic30_near_mode2_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
-    return(    pic30_mode2_operand(op, mode) ||
-        pic30_wreg_or_near_operand(op, mode));
+int pic30_near_mode2_operand(rtx op,enum machine_mode mode) {
+    return (pic30_mode2_operand(op, mode) || 
+            pic30_wreg_or_near_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_near_mode1PN_operand(): predicate for math instruction operand.*/
 /************************************************************************/
-int
-pic30_near_mode1PN_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
-    return(    pic30_mode1PN_operand(op, mode) ||
-        pic30_wreg_or_near_operand(op, mode));
+int pic30_near_mode1PN_operand(rtx op, enum machine_mode mode) {
+    return (pic30_mode1PN_operand(op, mode) ||
+            pic30_wreg_or_near_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_move_operand(): predicate for the move instruction operand.    */
 /************************************************************************/
-int
-pic30_move_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
-    int fMoveOperand;
+int pic30_move_operand(rtx op, enum machine_mode mode) {
+  int fMoveOperand;
 
-    fMoveOperand = pic30_mode3_operand(op, mode) ||
-            pic30_modek_operand(op, mode) ||
-            pic30_near_operand(op, mode) ||
-            pic30_data_operand(op, mode);
+  fMoveOperand = pic30_mode3_operand(op, mode) ||
+                 pic30_modek_operand(op, mode) ||
+                 pic30_near_operand(op, mode) ||
+                 pic30_data_operand(op, mode);
 
-    return(fMoveOperand);
+  return(fMoveOperand);
 }
 
 /* alternative move operand that does not have a near in it */
 int pic30_move2_operand(rtx op, enum machine_mode mode) {
-   return pic30_mode3_operand(op,mode) ||
-          pic30_modek_operand(op,mode) ||
-          pic30_data_operand(op,mode);
+  return pic30_mode3_operand(op,mode) ||
+         pic30_modek_operand(op,mode) ||
+         pic30_data_operand(op,mode);
 }
 
 /* 
@@ -6592,6 +7012,10 @@ int pic30_move2_operand(rtx op, enum machine_mode mode) {
  *
  *  becuase that will break most peepholes and such
  */
+/* stupid warning */
+int pic30_register_operand_helper(rtx op, enum machine_mode mode, 
+                                  int subreg_ok);
+
 int pic30_register_operand_helper(rtx op, enum machine_mode mode, 
                                   int subreg_ok) {
   if (GET_MODE (op) != mode && mode != VOIDmode)
@@ -6607,8 +7031,22 @@ int pic30_register_operand_helper(rtx op, enum machine_mode mode,
          (Ideally, (SUBREG (MEM)...) should not exist after reload,
          but currently it does result from (SUBREG (REG)...) where the
          reg went on the stack.)  */
-      if (! reload_completed && GET_CODE (sub) == MEM)
+      /* though subreg (mem (post_inc  X)) n)  where n != 0 is not okay,
+         as reload cannot load this into a proper mem instruction */
+      if (! reload_completed && GET_CODE (sub) == MEM) {
+        rtx sub_sub = XEXP(sub,0);
+        switch (GET_CODE(sub_sub)) {
+          default: 
+            /* not a post/pre inc, reload can handle it */
+            break;
+          case POST_INC:
+          case POST_DEC:
+          case PRE_INC:
+          case PRE_DEC:
+            if (SUBREG_BYTE(op) != 0) return 0;
+        }
         return general_operand (op, mode);
+      }
 
 #ifdef CANNOT_CHANGE_MODE_CLASS
       if (GET_CODE (sub) == REG
@@ -6654,8 +7092,9 @@ int pic30_general_operand(rtx op, enum machine_mode mode) {
   if (GET_CODE(op) == MEM) {
     rtx inner = XEXP(op,0);
    
-    if ((GET_MODE(inner) == P24PROGmode) || (GET_MODE(inner) == P24PSVmode)) 
-      /* a de-reference of a 24bit pointer - not general */
+    if ((GET_MODE(inner) == P24PROGmode) || (GET_MODE(inner) == P24PSVmode) ||
+        (GET_MODE(inner) == P16PMPmode) || (GET_MODE(inner) == P32EXTmode)) 
+      /* a de-reference of an extended pointer - not general */
       return 0;
   }
   return result;
@@ -6730,9 +7169,7 @@ int pic30_valid_operator(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
 /************************************************************************/
 /* pic30_mode3_index(): Extract index field for mode3            */
 /************************************************************************/
-static void
-pic30_mode3_index(rtx op, int *pnIndex)
-{
+static void pic30_mode3_index(rtx op, int *pnIndex) {
     rtx rtxInner;
     rtx rtxPlusOp0;
     rtx rtxPlusOp1;
@@ -6803,14 +7240,11 @@ pic30_mode3_index(rtx op, int *pnIndex)
         break;
     }
 }
+
 /************************************************************************/
 /* pic30_IndexEqual(): Compare the index field for 2 mode3 ops        */
 /************************************************************************/
-int
-pic30_IndexEqual(op0, op1)
-     rtx op0;
-     rtx op1;
-{
+int pic30_IndexEqual(rtx op0,rtx op1) {
     int fEqual;
     int nIndex0[2];
     int nIndex1[2];
@@ -6833,16 +7267,11 @@ pic30_IndexEqual(op0, op1)
     }
     return(fEqual);
 }
+
 /************************************************************************/
 /* pic30_registerpairs_p(): See if a two sets of registers are pairs.    */
 /************************************************************************/
-int
-pic30_registerpairs_p(op0, op1, op2, op3)
-     rtx op0;
-     rtx op1;
-     rtx op2;
-     rtx op3;
-{
+int pic30_registerpairs_p(rtx op0,rtx op1,rtx op2,rtx op3) {
     int id0, id1;
     int id2, id3;
     int fPair = FALSE;
@@ -6869,11 +7298,7 @@ pic30_registerpairs_p(op0, op1, op2, op3)
 /*
 ** Predicate for symbolic address operand.
 */
-int
-pic30_symbolic_address_operand(op, mode)
-     register rtx op;
-     enum machine_mode mode;
-{
+int pic30_symbolic_address_operand(rtx op, enum machine_mode mode) {
     switch (GET_CODE (op))
     {
     case SYMBOL_REF:
@@ -6891,8 +7316,14 @@ pic30_symbolic_address_operand(op, mode)
           }
           return ((GET_MODE(op) == mode) && 
                   (string_constant || pic30_builtin_tblpsv_arg_p(NULL,op)));
+        } else if (mode == P32EXTmode) {
+          if (pic30_has_space_operand_p(op,PIC30_EXT_FLAG)) return TRUE;
+          else return FALSE;
+        } else if (mode == P16PMPmode) {
+          if (pic30_has_space_operand_p(op,PIC30_PMP_FLAG)) return TRUE;
+          else return FALSE;
         }
-        return(TRUE);
+        return TRUE;
     case CONST:
         op = XEXP (op, 0);
         if ((mode == P24PSVmode) || (mode == P24PROGmode)) {
@@ -6901,6 +7332,8 @@ pic30_symbolic_address_operand(op, mode)
                    (GET_MODE(XEXP(op,0)) == mode) &&
                    (pic30_builtin_tblpsv_arg_p(NULL,op))) &&
                   GET_CODE (XEXP (op, 1)) == CONST_INT);
+        } else if ((mode == P16PMPmode) || (mode == P32EXTmode)) {
+          return pic30_symbolic_address_operand(XEXP(op,0),mode);
         } else {
           return (((GET_CODE (XEXP (op, 0)) == SYMBOL_REF || 
                     GET_CODE (XEXP (op, 0)) == LABEL_REF)) &&
@@ -6915,10 +7348,8 @@ pic30_symbolic_address_operand(op, mode)
 ** More fully check address operand, ensuring the destination address is
 **   in the correct section.
 */
-static int
-pic30_valid_symbolic_address_operand(register rtx op,
-     enum machine_mode mode ATTRIBUTE_UNUSED)
-{
+static int pic30_valid_symbolic_address_operand(rtx op,
+                                       enum machine_mode mode ATTRIBUTE_UNUSED){
    tree sym;
    const char *real_name;
 
@@ -6961,10 +7392,7 @@ pic30_valid_symbolic_address_operand(register rtx op,
 }
 
 int
-pic30_valid_call_address_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+pic30_valid_call_address_operand(rtx op, enum machine_mode mode) {
         return(REG_P(op) || pic30_valid_symbolic_address_operand(op, mode));
 }
 
@@ -6999,31 +7427,21 @@ int pic30_invalid_address_operand(rtx op, enum machine_mode mode) {
 /************************************************************************/
 /* pic30_call_address_operand(): Predicate for the call insn operand.    */
 /************************************************************************/
-int
-pic30_call_address_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_call_address_operand(rtx op, enum machine_mode mode) {
       return(REG_P(op) || pic30_symbolic_address_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_reg_or_zero_operand(): Predicate for register or zero operand.    */
 /************************************************************************/
-int
-pic30_reg_or_zero_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_reg_or_zero_operand(rtx op, enum machine_mode mode) {
     return(register_operand(op, mode) || (op == CONST0_RTX(mode)));
 }
+
 /************************************************************************/
 /* pic30_rR_or_zero_operand(): Predicate for register or zero operand.    */
 /************************************************************************/
-int
-pic30_rR_or_zero_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_rR_or_zero_operand(rtx op, enum machine_mode mode) {
     return(pic30_reg_or_R_operand(op, mode) || (op == CONST0_RTX(mode)));
 }
 
@@ -7093,6 +7511,28 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
         }
       }
     }
+    /*
+    ** Check for move immediate.
+    */
+    if (!reload_in_progress && (GET_CODE(op0) == MEM))
+    {
+      fForce = FALSE;
+      switch (GET_CODE(op1)) {
+        case CONST:
+        case CONST_INT:
+        case CONST_DOUBLE:
+        case SYMBOL_REF:
+        case LABEL_REF:
+          /*
+          ** Source operand is an immediate constant.
+          ** Insert a load to a register.
+          */
+          fForce = TRUE;
+          break;
+        default: break;
+      }
+      if (fForce) op1 = force_reg(mode, op1);
+    }
     if ((GET_CODE(op1) == MEM) && (pic30_move_operand(op0, mode))) {
       rtx (*fn)(rtx,rtx) = 0;
 
@@ -7100,18 +7540,22 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
         /* our move is a P24PROG psv access */
    
         switch (mode) {
+          case QImode: fn = gen_P24PROGrd_qi; 
+                       break;
           case HImode: fn = gen_P24PROGrd_hi;
                        break;
+          case P16PMPmode: fn = gen_P24PROGrd_P16PMP;
+                       break;
           case P24PROGmode: fn = gen_P24PROGrd_P24PROG;
-                         break;
-          case QImode: fn = gen_P24PROGrd_qi; 
+                       break;
+          case P24PSVmode: fn = gen_P24PROGrd_P24PSV;
                        break;
           case SImode: fn = gen_P24PROGrd_si;
                        break;
+          case P32EXTmode: fn = gen_P24PROGrd_P32EXT;
+                       break;
           case SFmode: fn = gen_P24PROGrd_sf;
                        break;
-          case P24PSVmode: fn = gen_P24PROGrd_P24PSV;
-                         break;
           case DImode: fn = gen_P24PROGrd_di;
                        break;
           case DFmode: fn = gen_P24PROGrd_df;
@@ -7124,17 +7568,21 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
         /* our move is a P24PSV psv access */
   
         switch (mode) {
+          case QImode: fn = gen_P24PSVrd_qi;
+                       break;
           case HImode: fn = gen_P24PSVrd_hi;
+                       break;
+          case P16PMPmode: fn = gen_P24PSVrd_P16PMP;
                        break;
           case P24PSVmode: fn = gen_P24PSVrd_P24PSV;
                        break;
-          case QImode: fn = gen_P24PSVrd_qi;
+          case P24PROGmode: fn = gen_P24PSVrd_P24PROG;
                        break;
           case SImode: fn = gen_P24PSVrd_si;
                        break;
-          case SFmode: fn = gen_P24PSVrd_sf;
+          case P32EXTmode: fn = gen_P24PSVrd_P32EXT;
                        break;
-          case P24PROGmode: fn = gen_P24PSVrd_P24PROG;
+          case SFmode: fn = gen_P24PSVrd_sf;
                        break;
           case DImode: fn = gen_P24PSVrd_di;
                        break;
@@ -7144,11 +7592,133 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
              error("Undefined PSV access");
              break;
         }
+      } else if (pic30_pmp_operand(XEXP(op1,0),P16PMPmode)) {
+        /* our move is a P16PMP access */
+
+        switch (mode) {
+          case QImode: fn = gen_P16PMPrd_qi;
+                       break;
+          case HImode: fn = gen_P16PMPrd_hi;
+                       break;
+          case P16PMPmode: fn = gen_P16PMPrd_P16PMP;
+                       break;
+          case P24PSVmode: fn = gen_P16PMPrd_P24PSV;
+                       break;
+          case P24PROGmode: fn = gen_P16PMPrd_P24PROG;
+                       break;
+          case SImode: fn = gen_P16PMPrd_si;
+                       break;
+          case P32EXTmode: fn = gen_P16PMPrd_P32EXT;
+                       break;
+          case SFmode: fn = gen_P16PMPrd_sf;
+                       break;
+          case DImode: fn = gen_P16PMPrd_di;
+                       break;
+          case DFmode: fn = gen_P16PMPrd_df;
+                       break;
+          default:
+             error("Undefined PSV access");
+             break;
+        }
+      } else if (pic30_ext_operand(XEXP(op1,0),P32EXTmode)) {
+        /* our move is a P32EXT access */
+
+        switch (mode) {
+          case QImode: fn = gen_P32EXTrd_qi;
+                       break;
+          case HImode: fn = gen_P32EXTrd_hi;
+                       break;
+          case P16PMPmode: fn = gen_P32EXTrd_P16PMP;
+                       break;
+          case P24PSVmode: fn = gen_P32EXTrd_P24PSV;
+                       break;
+          case P24PROGmode: fn = gen_P32EXTrd_P24PROG;
+                       break;
+          case SImode: fn = gen_P32EXTrd_si;
+                       break;
+          case P32EXTmode: fn = gen_P32EXTrd_P32EXT;
+                       break;
+          case SFmode: fn = gen_P32EXTrd_sf;
+                       break;
+          case DImode: fn = gen_P32EXTrd_di;
+                       break;
+          case DFmode: fn = gen_P32EXTrd_df;
+                       break;
+          default:
+             error("Undefined PSV access");
+             break;
+        }
       } else if (pic30_invalid_address_operand(op1, GET_MODE(op1))) {
-        return 0;
+        return -1;
       }
       if (fn) {
         emit_insn(fn(op0,XEXP(op1,0)));
+        return 1;
+      }
+    } else if ((GET_CODE(op0) == MEM) && (pic30_move_operand(op1, mode))) {
+      rtx (*fn)(rtx,rtx) = 0;
+
+      if (pic30_pmp_operand(XEXP(op0,0),P16PMPmode)) {
+        /* our move is a P16PMP write */
+
+        switch (mode) {
+          case QImode: fn = gen_P16PMPwt_qi;
+                       break;
+          case HImode: fn = gen_P16PMPwt_hi;
+                       break;
+          case P16PMPmode: fn = gen_P16PMPwt_P16PMP;
+                       break;
+          case P24PSVmode: fn = gen_P16PMPwt_P24PSV;
+                       break;
+          case P24PROGmode: fn = gen_P16PMPwt_P24PROG;
+                       break;
+          case SImode: fn = gen_P16PMPwt_si;
+                       break;
+          case P32EXTmode: fn = gen_P16PMPwt_P32EXT;
+                       break;
+          case SFmode: fn = gen_P16PMPwt_sf;
+                       break;
+          case DImode: fn = gen_P16PMPwt_di;
+                       break;
+          case DFmode: fn = gen_P16PMPwt_df;
+                       break;
+          default:
+             error("Undefined PMP access");
+             break;
+        }
+      } else if (pic30_ext_operand(XEXP(op0,0),P32EXTmode)) {
+        /* our move is a P32EXT write */
+
+        switch (mode) {
+          case QImode: fn = gen_P32EXTwt_qi;
+                       break;
+          case HImode: fn = gen_P32EXTwt_hi;
+                       break;
+          case P16PMPmode: fn = gen_P32EXTwt_P16PMP;
+                       break;
+          case P24PSVmode: fn = gen_P32EXTwt_P24PSV;
+                       break;
+          case P24PROGmode: fn = gen_P32EXTwt_P24PROG;
+                       break;
+          case SImode: fn = gen_P32EXTwt_si;
+                       break;
+          case P32EXTmode: fn = gen_P32EXTwt_P32EXT;
+                       break;
+          case SFmode: fn = gen_P32EXTwt_sf;
+                       break;
+          case DImode: fn = gen_P32EXTwt_di;
+                       break;
+          case DFmode: fn = gen_P32EXTwt_df;
+                       break;
+          default:
+             error("Undefined EXT access");
+             break;
+        }
+      } else if (pic30_invalid_address_operand(op1, GET_MODE(op1))) {
+        return -1;
+      }
+      if (fn) {
+        emit_insn(fn(XEXP(op0,0),op1));
         return 1;
       }
     }
@@ -7169,31 +7739,24 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
     } else if (pic30_symbolic_address_operand(op1,VOIDmode)) {
       const char *symbol = pic30_strip_name_encoding_helper(XSTR(op1,0));
  
-      error("Cannot take managed PSV address of object '%s', which is not in "
-            "FLASH", symbol);
+      error("Cannot take managed PSV address of object:\n"
+            " '%s', which is not in FLASH", symbol);
+      return -1;
     }
-  }
-  /*
-  ** Check for move immediate.
-  */
-  if (!reload_in_progress && (GET_CODE(op0) == MEM))
-  {
-    fForce = FALSE;
-    switch (GET_CODE(op1)) {
-      case CONST:
-      case CONST_INT:
-      case CONST_DOUBLE:
-      case SYMBOL_REF:
-      case LABEL_REF:
-        /*
-        ** Source operand is an immediate constant.
-        ** Insert a load to a register.
-        */
-        fForce = TRUE;
-        break;
-      default: break;
+  } else if ((mode == P16PMPmode) || (mode == P32EXTmode)) {
+    if (pic30_symbolic_address_operand(op1,mode)) {
+      rtx (*fn)(rtx,rtx) = 0;
+
+      if (mode == P16PMPmode)
+        fn = gen_movP16PMP_address;
+      if (mode == P32EXTmode)
+        fn = gen_movP32EXT_address;
+ 
+      if (fn) {
+        emit_insn(fn(op0,op1));
+        return 1;
+      }
     }
-    if (fForce) op1 = force_reg(mode, op1);
   }
   if (pic30_accumulator_operand(op0,mode)) {
     /* op1 must be a REG or MEM (REG)) */
@@ -7212,6 +7775,22 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
       return 1;
     }
   }
+  if (!reload_in_progress && (GET_CODE(op0) == MEM)) {
+    if (pic30_move_operand(op0,mode) == 0) {
+      rtx new_inner = XEXP(op0,0);
+
+      new_inner = force_reg(GET_MODE(new_inner),new_inner);
+      op0 = gen_rtx_MEM(mode,new_inner);
+    }
+  }
+  if (!reload_in_progress && (GET_CODE(op1) == MEM)) {
+    if (pic30_move_operand(op1,mode) == 0) {
+      rtx new_inner = XEXP(op1,0);
+
+      new_inner = force_reg(GET_MODE(new_inner),new_inner);
+      op1 = gen_rtx_MEM(mode,new_inner);
+    }
+  }
   /*
   ** Adjust operands in case we have modified them.
   */
@@ -7223,31 +7802,21 @@ int pic30_emit_move_sequence(rtx *operands, enum machine_mode mode) {
 /************************************************************************/
 /* pic30_O_operand(): dsPIC30 operand O: constant 0            */
 /************************************************************************/
-int
-pic30_O_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_O_operand(rtx op, enum machine_mode mode) {
     return(op == CONST0_RTX (mode));
 }
+
 /************************************************************************/
 /* pic30_I_operand(): dsPIC30 operand I: constant 1            */
 /************************************************************************/
-int
-pic30_I_operand(op, mode)
-     rtx op;
-     enum machine_mode mode;
-{
+int pic30_I_operand(rtx op, enum machine_mode mode) {
     return(op == CONST1_RTX (mode));
 }
+
 /************************************************************************/
 /* pic30_J_operand(): dsPIC30 operand J: 10-bit, unsigned        */
 /************************************************************************/
-int
-pic30_J_operand(op, mode)
-    rtx op;
-    enum machine_mode mode ATTRIBUTE_UNUSED;
-{
+int pic30_J_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
     int fJ = FALSE;
 
     if (    (GET_CODE(op) == CONST_INT) &&
@@ -7257,125 +7826,89 @@ pic30_J_operand(op, mode)
     }
     return(fJ);
 }
+
 /************************************************************************/
 /* pic30_M_operand(): dsPIC30 operand M: 10-bit, unsigned        */
 /************************************************************************/
-int
-pic30_M_operand(op, mode)
-    rtx op;
-    enum machine_mode mode ATTRIBUTE_UNUSED;
-{
-    int fM = FALSE;
+int pic30_M_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
+  int fM = FALSE;
 
-    if (    (GET_CODE(op) == CONST_INT) &&
-        (-1023 <= INTVAL(op) && INTVAL(op) <= 0))
-    {
-        fM = TRUE;
-    }
-    return(fM);
+  if ((GET_CODE(op) == CONST_INT) && (-1023 <= INTVAL(op) && INTVAL(op) <= 0)) {
+    fM = TRUE;
+  }
+  return(fM);
 }
+
 /************************************************************************/
 /* pic30_JM_operand(): dsPIC30 operand J&M: 10-bit, signed & unsigned    */
 /************************************************************************/
-int
-pic30_JM_operand(op, mode)
-    rtx op;
-    enum machine_mode mode ATTRIBUTE_UNUSED;
-{
-    int fJM = FALSE;
+int pic30_JM_operand(rtx op,enum machine_mode mode ATTRIBUTE_UNUSED) {
+  int fJM = FALSE;
 
-    if (    (GET_CODE(op) == CONST_INT) &&
-        (-1023 <= INTVAL(op) && INTVAL(op) <= 1023))
-    {
-        fJM = TRUE;
-    }
-    return(fJM);
+  if ((GET_CODE(op) == CONST_INT) && 
+      (-1023 <= INTVAL(op) && INTVAL(op) <= 1023)) {
+    fJM = TRUE;
+  }
+  return(fJM);
 }
+
 /************************************************************************/
 /* pic30_JN_operand(): dsPIC30 operand J&N: 10-bit, signed & unsigned    */
 /************************************************************************/
-int
-pic30_JN_operand(op, mode)
-    rtx op;
-    enum machine_mode mode ATTRIBUTE_UNUSED;
+int pic30_JN_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED)
 {
   int fJN = FALSE;
 
-  if ((mode == P24PSVmode) || (mode == P24PROGmode)) {
-    /* psv or prog mode reduces the effective range */
-    if ((GET_CODE(op) == CONST_INT) && 
-        (-15 <= INTVAL(op) && INTVAL(op) <= 511)) {
-      fJN = TRUE;
-    }
-  } else if ((GET_CODE(op) == CONST_INT) && 
-             (-31 <= INTVAL(op) && INTVAL(op) <= 1023)) {
+  if ((GET_CODE(op) == CONST_INT) && (-31 <= INTVAL(op) && INTVAL(op) <= 1023)){
     fJN = TRUE;
   }
   return(fJN);
 }
+
 /************************************************************************/
 /* pic30_PN_operand(): dsPIC30 operand P&N: 5-bit, signed & unsigned    */
 /************************************************************************/
-int
-pic30_PN_operand(op, mode)
-    rtx op;
-    enum machine_mode mode ATTRIBUTE_UNUSED;
-{
-    int fPN = FALSE;
+int pic30_PN_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
+  int fPN = FALSE;
 
-    if (    (GET_CODE(op) == CONST_INT) &&
-        (-31 <= INTVAL(op) && INTVAL(op) <= 31))
-    {
-        fPN = TRUE;
-    }
-    return(fPN);
+  if ((GET_CODE(op) == CONST_INT) && (-31 <= INTVAL(op) && INTVAL(op) <= 31)) {
+    fPN = TRUE;
+  }
+  return(fPN);
 }
+
 /************************************************************************/
 /* pic30_reg_or_P_operand(): dsPIC30 operand reg/P: 5-bit, unsigned    */
 /************************************************************************/
-int
-pic30_reg_or_P_operand(op, mode)
-    rtx op;
-    enum machine_mode mode;
-{
+int pic30_reg_or_P_operand(rtx op, enum machine_mode mode) {
     return(register_operand(op, mode) || pic30_P_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_mode2_or_P_operand(): dsPIC30 operand mode2/P: 5-bit, unsigned    */
 /************************************************************************/
-int
-pic30_mode2_or_P_operand(rtx op, enum machine_mode mode)
-{
+int pic30_mode2_or_P_operand(rtx op, enum machine_mode mode) {
     return(pic30_mode2_operand(op, mode) || pic30_P_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_rR_or_JN_operand(): dsPIC30 operand J&M: 11-bit, signed    */
 /************************************************************************/
-int
-pic30_rR_or_JN_operand(op, mode)
-    rtx op;
-    enum machine_mode mode;
-{
+int pic30_rR_or_JN_operand(rtx op, enum machine_mode mode) {
     return(pic30_reg_or_R_operand(op, mode) || pic30_JN_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_reg_or_R_operand(): dsPIC30 operand r or R            */
 /************************************************************************/
-int
-pic30_reg_or_R_operand(op, mode)
-    rtx op;
-    enum machine_mode mode;
-{
+int pic30_reg_or_R_operand(rtx op, enum machine_mode mode) {
     return(register_operand(op, mode) || pic30_R_operand(op, mode));
 }
+
 /************************************************************************/
 /* pic30_P_operand(): dsPIC30 operand P: 0 <= k <= 31            */
 /************************************************************************/
-int
-pic30_P_operand(op, mode)
-    rtx op;
-    enum machine_mode mode ATTRIBUTE_UNUSED;
-{
+int pic30_P_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
     int fP = FALSE;
 
     if (    (GET_CODE(op) == CONST_INT) &&
@@ -7385,13 +7918,11 @@ pic30_P_operand(op, mode)
     }
     return(fP);
 }
+
 /************************************************************************/
 /* pic30_Q_base(): extract the base for the Q addressing mode.        */
 /************************************************************************/
-int
-pic30_Q_base(op)
-    rtx op;
-{
+int pic30_Q_base(rtx op) {
     int idBase = FIRST_PSEUDO_REGISTER;
     rtx rtxPlusop0;
     rtx rtxPlusop1;
@@ -7420,13 +7951,11 @@ pic30_Q_base(op)
     }
     return(idBase);
 }
+
 /************************************************************************/
 /* pic30_Q_displacement(): extract the displacement for the Q address    */
 /************************************************************************/
-int
-pic30_Q_displacement(op)
-    rtx op;
-{
+int pic30_Q_displacement(rtx op) {
     int nDisplacement = INT_MAX;
     rtx rtxPlusOp0;
     rtx rtxPlusOp1;
@@ -7462,13 +7991,11 @@ pic30_Q_displacement(op)
     }
     return(nDisplacement);
 }
+
 /************************************************************************/
 /* pic30_Q_constraint(): dsPIC30 constraint Q: base+displacement    */
 /************************************************************************/
-int
-pic30_Q_constraint(op)
-     rtx op;
-{
+int pic30_Q_constraint(rtx op) {
     int bQ;
     int nDisplacement;
     int nScale;
@@ -7483,23 +8010,18 @@ pic30_Q_constraint(op)
     }
     return(bQ);
 }
+
 /************************************************************************/
 /* pic30_Q_operand(): dsPIC30 predicate Q: base+displacement addressing    */
 /************************************************************************/
-int
-pic30_Q_operand(op, mode)
-     rtx op;
-     enum machine_mode mode ATTRIBUTE_UNUSED;
-{
+int pic30_Q_operand(rtx op, enum machine_mode mode ATTRIBUTE_UNUSED) {
     return((mode == GET_MODE(op)) && pic30_Q_constraint(op));
 }
+
 /************************************************************************/
 /* pic30_R_constraint(): dsPIC30 constraint R: indirect addressing    */
 /************************************************************************/
-int
-pic30_R_constraint(op)
-     rtx op;
-{
+int pic30_R_constraint(rtx op) {
     int fR = FALSE;
     rtx rtxInner;
 
@@ -7525,23 +8047,18 @@ pic30_R_constraint(op)
     }
     return(fR);
 }
+
 /************************************************************************/
 /* pic30_R_operand(): dsPIC30 predicate R: indirect addressing        */
 /************************************************************************/
-int
-pic30_R_operand(op, mode)
-     rtx op;
-     enum machine_mode mode ATTRIBUTE_UNUSED;
-{
+int pic30_R_operand(rtx op,enum machine_mode mode ATTRIBUTE_UNUSED) {
     return(pic30_R_constraint(op));
 }
+
 /************************************************************************/
 /* pic30_S_constraint(): dsPIC30 constraint S: base+index        */
 /************************************************************************/
-int
-pic30_S_constraint(op)
-     rtx op;
-{
+int pic30_S_constraint(rtx op) {
     int fS = FALSE;
     enum machine_mode mode = VOIDmode;
     rtx rtxInner;
@@ -7589,13 +8106,11 @@ pic30_S_constraint(op)
     }
     return(fS);
 }
+
 /************************************************************************/
 /* pic30_T_constraint(): dsPIC30 constraint T: direct address (far)    */
 /************************************************************************/
-int
-pic30_T_constraint(op)
-     rtx op;
-{
+int pic30_T_constraint(rtx op) {
     int fT = FALSE;
 
     if (GET_CODE(op) == MEM)
@@ -7605,11 +8120,11 @@ pic30_T_constraint(op)
     }
     return(fT);
 }
+
 /************************************************************************/
 /* pic30_U_constraint(): dsPIC30 constraint U: direct address (near)    */
 /************************************************************************/
-int pic30_U_constraint(rtx op, enum machine_mode mode)
-{
+int pic30_U_constraint(rtx op, enum machine_mode mode) {
   int bU = FALSE;
   enum rtx_code code = GET_CODE(op);
 
@@ -7627,6 +8142,7 @@ int pic30_U_constraint(rtx op, enum machine_mode mode)
   }
   return bU;
 }
+
 /*
 ** A C compound statement to output to stdio stream STREAM the
 ** assembler syntax for an instruction operand X.  X is an RTL
@@ -7682,12 +8198,7 @@ int pic30_U_constraint(rtx op, enum machine_mode mode)
 ** 'z' for int >> 0
 ** 
 */
-void
-pic30_print_operand(file, x, letter)
-     FILE *file;
-     rtx x;
-     int letter;
-{
+void pic30_print_operand(FILE *file, rtx x, int letter) {
   rtx inner;
   int nDelta = 0;
 
@@ -7988,11 +8499,7 @@ pic30_print_operand(file, x, letter)
 ** for an instruction operand that is a memory reference whose address is x.
 ** x is an RTL expression.
 */
-void
-pic30_print_operand_address(file, addr)
-     FILE *file;
-     rtx addr;
-{
+void pic30_print_operand_address(FILE *file, rtx addr) {
     switch (GET_CODE (addr))
     {
     case REG:
@@ -8112,28 +8619,24 @@ pic30_print_operand_address(file, addr)
         break;
     }
 }
+
 /*
 ** Return non zero if the given value has just one bit set,
 ** otherwise return zero. Note this function may be used to detect one
 ** bit clear by inverting the param.
 */
-int
-pic30_one_bit_set_p (x)
-     int x;
-{
+int pic30_one_bit_set_p(int x) {
     /*
     ** (x-1) is (x) with the LSB changed.
     ** If their intersection is zero, then there is a single bit set.
     */
     return(x && (x & (x - 1)) == 0);
 }
+
 /*
 ** Return the number of the least significant bit set.
 */
-int
-pic30_which_bit(x)
-     int x;
-{
+int pic30_which_bit(int x) {
     int b = 0;
 
     while (x && ((x & 1) == 0))
@@ -8143,23 +8646,20 @@ pic30_which_bit(x)
     }
     return(b);
 }
-int
-pic30_get_function_return(void)
-{
+
+int pic30_get_function_return(void) {
     return(lbFunctionHasReturn);
 }
-void
-pic30_set_function_return(int bState)
-{
+
+void pic30_set_function_return(int bState) {
     lbFunctionHasReturn = bState;
 }
+
 /*
 ** Determine if we must save a register.
 */
 #define    CALLEE_SAVED(r)    (call_used_regs[(r)]==0)
-static int
-pic30_mustsave(int r, int fLeaf, int fInterrupt)
-{
+static int pic30_mustsave(int r, int fLeaf, int fInterrupt) {
     int fMustSave;
 
     if (fInterrupt)
@@ -8197,6 +8697,7 @@ pic30_mustsave(int r, int fLeaf, int fInterrupt)
     }
     return(fMustSave);
 }
+
 /*
 ** See if we need to set up the frame pointer.
 ** The frame pointer is required for any of the following reasons:
@@ -8211,9 +8712,7 @@ pic30_mustsave(int r, int fLeaf, int fInterrupt)
 **    we can eliminate the frame pointer. In particular, we don't know
 **    if the function needs any local variable space.
 */
-static int
-pic30_frame_pointer_needed_p(int size)
-{
+static int pic30_frame_pointer_needed_p(int size) {
     int fNeeded;
 
     fNeeded = (frame_pointer_needed || size);
@@ -8236,9 +8735,7 @@ pic30_frame_pointer_needed_p(int size)
     return(fNeeded);
 }
 
-int
-pic30_asm_function_p(int bDiscover)
-{
+int pic30_asm_function_p(int bDiscover) {
   rtx insn;
   rtx body;
   enum rtx_code code;
@@ -8252,9 +8749,20 @@ pic30_asm_function_p(int bDiscover)
       if (code == INSN) {
         body = PATTERN(insn);
         code = GET_CODE(body);
-        if (code == ASM_INPUT) {
+        if (((code == SET) && (GET_CODE(XEXP(body,1)) == ASM_OPERANDS)) ||
+            (code == ASM_INPUT) || (code == ASM_OPERANDS)) {
           bAsmFunction = TRUE;
           break;
+        } else if (code == PARALLEL) {
+          int i;
+          static rtx x;
+
+          for (i = 0; i < XVECLEN (body, 0); i++) {
+            x = XVECEXP (body, 0, i);
+            if ((GET_CODE(x) == ASM_INPUT) || (GET_CODE(x) == ASM_OPERANDS)) {
+              bAsmFunction = TRUE;
+            }
+          }
         }
       }
     }
@@ -8265,10 +8773,7 @@ pic30_asm_function_p(int bDiscover)
 /*
 ** Calculate the offset between two frame registers.
 */
-void
-pic30_initial_elimination_offset(from, to, poffset)
-    int from, to, *poffset;
-{
+void pic30_initial_elimination_offset(int from, int to, int *poffset) {
   int fLeaf;
   int fInterrupt;
   int nLastReg;
@@ -8290,9 +8795,9 @@ pic30_initial_elimination_offset(from, to, poffset)
     ** greater addressibility to local variables.)
     */
     nOffset = 0;
-    if (!pic30_noreturn_function(current_function_decl)) {
+    if (!pic30_noreturn_function(current_function_decl) && !fInterrupt) {
       /* a comment */
-      for (regno = 0; !fInterrupt && (regno < nLastReg); regno++)
+      for (regno = 0; (regno < nLastReg); regno++)
       {
         if (pic30_mustsave(regno, fLeaf, fInterrupt))
         {
@@ -8301,6 +8806,25 @@ pic30_initial_elimination_offset(from, to, poffset)
       }
       if (pic30_mustsave(A_REGNO, fLeaf, fInterrupt)) nOffset += 6;
       if (pic30_mustsave(B_REGNO, fLeaf, fInterrupt)) nOffset += 6;
+      /* and the PSVPAG, if we are saving it... */
+      { int is_secure_fn, is_boot_fn;
+        enum psv_model_kind psv_model = psv_unspecified;
+        is_boot_fn = (lookup_attribute(
+                          IDENTIFIER_POINTER(pic30_identBoot[0]),
+                          DECL_ATTRIBUTES(current_function_decl)) != 0);
+        is_secure_fn = (lookup_attribute(
+                          IDENTIFIER_POINTER(pic30_identSecure[0]),
+                          DECL_ATTRIBUTES(current_function_decl))!= 0);
+        if (lookup_attribute(IDENTIFIER_POINTER(pic30_identConst[0]),
+                             DECL_ATTRIBUTES(current_function_decl))) {
+          psv_model = psv_auto_psv;
+        } else if (lookup_attribute(IDENTIFIER_POINTER(pic30_identNoAutoPSV[0]),
+                                    DECL_ATTRIBUTES(current_function_decl))) {
+          psv_model = psv_no_auto_psv;
+        }
+        if ((is_boot_fn) || (is_secure_fn) || (psv_model == psv_auto_psv))
+          nOffset += 2;
+      }
     }
     *poffset = -(get_frame_size() + nOffset);
   }
@@ -8313,12 +8837,11 @@ pic30_initial_elimination_offset(from, to, poffset)
     abort();
   }
 }
+
 /*
 ** Return the interrupt save variable list for the current function.
 */
-static tree
-pic30_get_save_variable_list()
-{
+static tree pic30_get_save_variable_list(void) {
     tree v;
     tree fcn;
     tree fcnargs = NULL_TREE;
@@ -8346,12 +8869,11 @@ pic30_get_save_variable_list()
     }
     return(fcnargs);
 }
+
 /*
 ** Return the interrupt save variable decl for the current list element.
 */
-static tree
-pic30_get_save_variable_decl(tree vl, int *pnwords, int *pnoffset)
-{
+static tree pic30_get_save_variable_decl(tree vl, int *pnwords, int *pnoffset) {
     int nwords = 0;
     int noffset = 0;
 
@@ -8394,31 +8916,38 @@ pic30_get_save_variable_decl(tree vl, int *pnwords, int *pnoffset)
         abort();
     return(decl);
 }
+
 /*
 ** Verify that interrupt functions take no parameters and return void.
 */
-static void
-pic30_validate_isp(void)
-{
-    tree fntype = TREE_TYPE(current_function_decl);
-      tree ret_type = TREE_TYPE(fntype);
-    tree param;
+static int pic30_validate_void_fn(tree decl, const char *prefix) {
+  tree fntype;
+  tree ret_type;
+  tree param;
+  int errors = 0;
 
-    if (ret_type != void_type_node)
-    {
-        error("interrupt functions must return void");
+  if (decl) {
+    fntype = TREE_TYPE(decl);
+    ret_type = TREE_TYPE(fntype);
+  } else {
+    fntype = TREE_TYPE(current_function_decl);
+    ret_type = TREE_TYPE(fntype);
+  }
+  if (ret_type != void_type_node) {
+    error("%s functions must return void", decl ? prefix : "interrupt");
+    errors++;
+  }
+  for (param = TYPE_ARG_TYPES(fntype); param; param = TREE_CHAIN(param)) {
+    if (TREE_VALUE(param) != void_type_node) {
+      error("%s functions must not take parameters",
+             decl ? prefix : "interrupt");
+      errors++;
+      break;
     }
-      for (    param = TYPE_ARG_TYPES(fntype);
-        param;
-              param = TREE_CHAIN(param))
-    {
-        if (TREE_VALUE(param) != void_type_node)
-        {
-            error("interrupt functions must not take parameters");
-            break;
-        }
-    }
+  }
+  return errors;
 }
+
 /*
 ** LIFO stack element.
 */
@@ -8434,9 +8963,7 @@ static ptreelifo pic30_savelifo;
 /*
 ** Push a save variable decl onto a LIFO stack.
 */
-static void
-pic30_push_save_variable(tree decl)
-{
+static void pic30_push_save_variable(tree decl) {
     ptreelifo tlnew;
 
     tlnew = (ptreelifo) xmalloc(sizeof(struct tagtreelifo));
@@ -8449,9 +8976,7 @@ pic30_push_save_variable(tree decl)
 /*
 ** Pop a save variable decl from a LIFO stack.
 */
-static tree
-pic30_pop_save_variable()
-{
+static tree pic30_pop_save_variable(void) {
   tree decl = NULL_TREE;
   tree fndecl;
 
@@ -8471,10 +8996,8 @@ pic30_pop_save_variable()
 /*
 ** Find a register to use as a save variable scratch register.
 */
-static int
-pic30_get_save_variable_scratch(int fShadow, int fLeaf, int interruptfn, 
-                                int *pfScratch)
-{
+static int pic30_get_save_variable_scratch(int fShadow, int fLeaf, 
+                                           int interruptfn, int *pfScratch) {
     int regno = 0;
     tree vl;
     int nLastReg = (frame_pointer_needed) ? FP_REGNO : SP_REGNO;
@@ -8526,7 +9049,9 @@ static int pic30_scan_reg_sets(unsigned int regno) {
     if (INSN_P(insn)) {
       pattern = PATTERN(insn);
       if ((GET_CODE(pattern) == SET) && (GET_CODE(SET_DEST(pattern)) == REG)) {
-        if (REGNO(SET_DEST(pattern)) == regno) return 1;
+        if (REGNO(SET_DEST(pattern)) == regno) {
+          return 1;
+        }
         if ((REGNO(SET_DEST(pattern)) < regno) &&
             (REGNO(SET_DEST(pattern)) + 
              HARD_REGNO_NREGS(0,GET_MODE(SET_DEST(pattern))) > regno)) 
@@ -8540,9 +9065,7 @@ static int pic30_scan_reg_sets(unsigned int regno) {
 /*
 ** Set up the callee stack frame.
 */
-static void
-pic30_expand_prologue_frame(int size)
-{
+static void pic30_expand_prologue_frame(int size) {
     /*
     ** Set up the frame pointer
     */
@@ -8576,12 +9099,11 @@ pic30_expand_prologue_frame(int size)
         }
     }
 }
+
 /*
 ** Destroy the callee stack frame.
 */
-static void
-pic30_expand_epilogue_frame(int size)
-{
+static void pic30_expand_epilogue_frame(int size) {
     /*
     ** Restore caller's frame
     */
@@ -8614,9 +9136,7 @@ pic30_expand_epilogue_frame(int size)
 /*
 ** Generate an RTL insn to push a register on the stack
 */
-static rtx
-pic30_expand_pushhi(int regno)
-{
+static rtx pic30_expand_pushhi(int regno) {
     rtx insn;
     rtx sp;
     rtx reg;
@@ -8632,12 +9152,11 @@ pic30_expand_pushhi(int regno)
 
     return(insn);
 }
+
 /*
 ** Generate an RTL insn to pop an HI or SI register from the stack
 */
-static rtx
-pic30_expand_pop(enum machine_mode mode, int regno)
-{
+static rtx pic30_expand_pop(enum machine_mode mode, int regno) {
     rtx insn;
     rtx sp;
     rtx reg;
@@ -8661,6 +9180,7 @@ pic30_expand_pop(enum machine_mode mode, int regno)
 
     return(insn);
 }
+
 /*
 ** The prologue pattern emits RTL for entry to a function.
 ** The function entry is responsible for setting up the stack frame,
@@ -8672,15 +9192,7 @@ pic30_expand_pop(enum machine_mode mode, int regno)
 ** The prologue pattern is particularly useful for targets that perform
 ** instruction scheduling. 
 */
-enum psv_model_kind {
-  psv_unspecified,
-  psv_auto_psv,
-  psv_no_auto_psv
-};
-
-void
-pic30_expand_prologue(void)
-{
+void pic30_expand_prologue(void) {
   rtx insn;
   int is_secure_fn, is_boot_fn;
   enum psv_model_kind psv_model = psv_unspecified;
@@ -8733,7 +9245,7 @@ pic30_expand_prologue(void)
     ** Enable PA
     */
     insn = emit_insn(gen_pa(GEN_INT(1)));
-  }
+  } else insn = emit_insn(gen_pa(GEN_INT(0)));
   /*
   ** Special handling for interrupt functions.
   */
@@ -8745,7 +9257,7 @@ pic30_expand_prologue(void)
     ** Verify that interrupt functions take
     ** no parameters and return void
     */
-    pic30_validate_isp();
+    pic30_validate_void_fn(0,0);
     /*
     ** Emit the interrupt vector, if needed.
     */
@@ -8878,9 +9390,15 @@ pic30_expand_prologue(void)
           sp = gen_rtx_MEM(SImode, sp);
           r = gen_rtx_REG(SImode, regno);
           insn = emit_insn(gen_pushsi(sp, r));
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
           regno++;
         } else {
           insn = pic30_expand_pushhi(regno);
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
         }
       }
     }
@@ -8897,12 +9415,18 @@ pic30_expand_prologue(void)
       sfr = gen_rtx_SYMBOL_REF(HImode, ACCAL);
       sfr = gen_rtx_MEM(HImode, sfr);
       insn = emit_insn(gen_pushhi(sp, sfr));
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
       sfr = gen_rtx_SYMBOL_REF(HImode, ACCAH);
       sfr = gen_rtx_MEM(HImode, sfr);
       insn = emit_insn(gen_pushhi(sp, sfr));
       sfr = gen_rtx_SYMBOL_REF(HImode, ACCAU);
       sfr = gen_rtx_MEM(HImode, sfr);
       insn = emit_insn(gen_pushhi(sp, sfr));
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
     }
     if (pic30_mustsave(B_REGNO, fLeaf, fInterrupt)) {
       rtx sp;
@@ -8914,12 +9438,21 @@ pic30_expand_prologue(void)
       sfr = gen_rtx_SYMBOL_REF(HImode, ACCBL);
       sfr = gen_rtx_MEM(HImode, sfr);
       insn = emit_insn(gen_pushhi(sp, sfr));
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
       sfr = gen_rtx_SYMBOL_REF(HImode, ACCBH);
       sfr = gen_rtx_MEM(HImode, sfr);
       insn = emit_insn(gen_pushhi(sp, sfr));
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
       sfr = gen_rtx_SYMBOL_REF(HImode, ACCBU);
       sfr = gen_rtx_MEM(HImode, sfr);
       insn = emit_insn(gen_pushhi(sp, sfr));
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
     }
     /*
      * For a boot or secure function, set the PSV page
@@ -8936,6 +9469,9 @@ pic30_expand_prologue(void)
       sfr = gen_rtx_SYMBOL_REF(HImode, psvpage);
       sfr = gen_rtx_MEM(HImode, sfr);
       insn = emit_insn(gen_pushhi(sp, sfr));
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
 
       if (is_boot_fn)
         sfr = gen_rtx_SYMBOL_REF(QImode, bootconst);
@@ -8948,9 +9484,18 @@ pic30_expand_prologue(void)
         pop_scratch_regno = 1;
         reg = gen_rtx_REG(QImode, WR8_REGNO);
         insn = pic30_expand_pushhi(WR8_REGNO);
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
       } else reg = gen_rtx_REG(QImode, scratch_regno);
       emit_insn(gen_movhi_address(reg,sfr));
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
       emit_insn(gen_set_psv(reg));
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
     }
     if (pop_scratch_regno) { 
       if (fInterrupt && pic30_get_save_variable_list()) {
@@ -8966,6 +9511,9 @@ pic30_expand_prologue(void)
                       old_attrs);
       } else {
         insn = pic30_expand_pop(HImode, scratch_regno); 
+#if MAKE_FRAME_RELATED
+          RTX_FRAME_RELATED_P(insn) = 1;
+#endif
         scratch_regno = -1;
       }
     }
@@ -9065,9 +9613,7 @@ pic30_expand_prologue(void)
 ** instruction scheduling or which have delay slots for their return
 ** instruction.
 */
-void
-pic30_expand_epilogue(void)
-{
+void pic30_expand_epilogue(void) {
   rtx insn;
   rtx sp,sfr;
   int is_secure_fn, is_boot_fn;
@@ -9206,7 +9752,7 @@ pic30_expand_epilogue(void)
       addr = gen_rtx_MEM(HImode, 
                          gen_rtx_SYMBOL_REF(HImode, PIC30_SFR_FLAG "SR"));
       SYMBOL_REF_FLAG(XEXP(addr,0)) = 1;  /* mark it as near */
-      insn = emit_insn(gen_iorhi3_sfr0( addr, w0));
+      insn = emit_insn(gen_iorhi3_sfr0( addr, w0 ));
       insn = pic30_expand_pop(HImode, WR0_REGNO);
     }
   } else if (is_boot_fn || is_secure_fn) {
@@ -9358,9 +9904,7 @@ pic30_expand_epilogue(void)
 /*
 ** See if the current function requires epilogue code.
 */
-int
-pic30_null_epilogue_p()
-{
+int pic30_null_epilogue_p(void) {
     int regno;
 
     if (reload_completed &&
@@ -9382,6 +9926,7 @@ pic30_null_epilogue_p()
     }
     return(FALSE);
 }
+
 /*
 ** Table of library function names
 */
@@ -9454,13 +9999,12 @@ static const char *lpszLibcallNames[] =
     "__ucmpdi2",
 
 };
+
 static int lfLibcallNamesSorted = FALSE;
 /************************************************************************/
 /* pic30_SortLibcallNames() -- Sort the array of libcall names.        */
 /************************************************************************/
-static void
-pic30_SortLibcallNames()
-{
+static void pic30_SortLibcallNames(void) {
     long gap, i, j;
     const char **ppj;
     const char **ppg;
@@ -9495,12 +10039,11 @@ pic30_SortLibcallNames()
     }
     lfLibcallNamesSorted = TRUE;
 }
+
 /*
 ** Return 1 if the operand is the name of a LIBCALL library routine.
 */
-int
-pic30_libcall(const char *pszSymbolName)
-{
+int pic30_libcall(const char *pszSymbolName) {
     int compare;
     int base,last,this;
 
@@ -9529,13 +10072,11 @@ pic30_libcall(const char *pszSymbolName)
     }
     return(FALSE);
 }
+
 /*
 ** Return 1 if the operand is a near data space reference.
 */
-int
-pic30_neardata_space_operand_p(op)
-     rtx op;
-{
+int pic30_neardata_space_operand_p(rtx op) {
     int fNear;
 
     fNear = FALSE;
@@ -9557,11 +10098,11 @@ pic30_neardata_space_operand_p(op)
     }
     return(fNear);
 }
+
 /*
 ** Return 1 if the operand is a program space reference.
 */
-rtx pic30_program_space_operand_p(rtx op)
-{
+rtx pic30_program_space_operand_p(rtx op) {
   const char *pszSymbolName;
 
   switch (GET_CODE (op))
@@ -9621,16 +10162,14 @@ int pic30_has_space_operand_p(rtx op, char *has) {
 /*
 ** Return 1 if the operand is a data space reference.
 */
-int
-pic30_data_space_operand_p(mode,op)
-     enum machine_mode mode;
-     rtx op;
-{
+int pic30_data_space_operand_p(enum machine_mode mode,rtx op) {
     if (GET_MODE(op) != mode) {
       switch (GET_MODE(op)) {
         default: break;
         case P24PROGmode:
         case P24PSVmode:
+        case P16PMPmode:
+        case P32EXTmode:
           return 0;
       }
     }
@@ -9662,12 +10201,7 @@ pic30_data_space_operand_p(mode,op)
 ** The MODE argument is the machine mode for the MEM expression
 ** that wants to use this address.
 */
-int
-pic30_check_legit_addr(mode, addr, fStrict)
-     enum machine_mode mode;
-     rtx addr;
-     int fStrict;
-{
+int pic30_check_legit_addr(enum machine_mode mode, rtx addr, int fStrict) {
     int fLegit;
     rtx base = NULL_RTX;        /* Base register */
     rtx indx = NULL_RTX;        /* Index register */
@@ -9678,8 +10212,10 @@ pic30_check_legit_addr(mode, addr, fStrict)
     {
         switch (mode)
         {
+        case P16PMPmode:
+        case P32EXTmode:
         case P24PSVmode:
-        case P24PROGmode:  // if (reload_in_progress) return FALSE;
+        case P24PROGmode:  /* if (reload_in_progress) return FALSE; */
         case HImode:
         case SImode:
         case SFmode:
@@ -9700,6 +10236,8 @@ pic30_check_legit_addr(mode, addr, fStrict)
     case POST_INC:
         switch (mode)
         {
+        case P16PMPmode:
+        case P32EXTmode:
         case P24PSVmode:
         case P24PROGmode:  if (reload_in_progress) return FALSE;
         case HImode:
@@ -9782,6 +10320,8 @@ pic30_check_legit_addr(mode, addr, fStrict)
         {
             switch (mode)
             {
+            case P16PMPmode:
+            case P32EXTmode:
             case P24PSVmode:
             case P24PROGmode:  if (reload_in_progress) return FALSE;
             case QImode:
@@ -9884,11 +10424,7 @@ pic30_check_legit_addr(mode, addr, fStrict)
     return(fLegit);
 }
 
-enum reg_class
-pic30_preferred_reload_class (x, class)
-     rtx x;
-     enum reg_class class;
-{
+enum reg_class pic30_preferred_reload_class(rtx x, enum reg_class class) {
     /* what do we do if we *can't* reload to A_REGS because it is fixed? -
        reload will fail because it is unable to find a spill register for
        A_REGS... don't do this if we are reloading. */
@@ -9898,17 +10434,14 @@ pic30_preferred_reload_class (x, class)
     }
     return(class);
 }
+
 /*
 ** Return the register class of a scratch register needed to load
 ** or store a register of class CLASS in MODE.
 ** For dsPIC, we can only load/store QImode using WREG.
 */
-enum reg_class
-pic30_secondary_reload_class (class, mode, x)
-     enum reg_class class;
-     enum machine_mode mode;
-     rtx x;
-{
+enum reg_class pic30_secondary_reload_class(enum reg_class class,
+                                            enum machine_mode mode, rtx x) {
     enum reg_class src = NO_REGS;
 
     if ((mode == QImode) && pic30_U_constraint(x,mode))
@@ -9917,6 +10450,7 @@ pic30_secondary_reload_class (class, mode, x)
     }
     return(src);
 }
+
 /*
 ** Handle dsPIC30 specific pragmas for compatibility with existing
 ** compilers for the C17/C18.
@@ -9935,112 +10469,90 @@ pic30_secondary_reload_class (class, mode, x)
 ** Parse the <#pragma <section> [section]> pragma.
 */
 /************************************************************************/
-static void 
-pic30_handle_section_pragma(pfile, pvalue)
-     cpp_reader *pfile ATTRIBUTE_UNUSED;
-     tree *pvalue;
-{
-    int c;
-    const char *pszScnName;
-    tree x;
+static void pic30_handle_section_pragma(cpp_reader *pfile ATTRIBUTE_UNUSED, 
+                                        tree *pvalue) {
+  int c;
+  const char *pszScnName;
+  tree x;
 
-        c = c_lex(&x);
-        if (c == CPP_EOF) *pvalue = NULL_TREE;
-        else
-    {
-        /*
-        ** User-specified <section-type> section name
-        */
-        for ( ; ; )
-        {
-            if (pic30_parse_pragma_option(c) == 0) {
-                error("Invalid or missing section name");
-            }
-            /*
-            ** Check for data qualifiers; keep reading until we
-             ** get an identifier... we read one extra token
-            ** but consume it later
-            */
-            pszScnName = IDENTIFIER_POINTER(x);
-            c = c_lex(&x);
-            if (    (strcmp("access", pszScnName) == 0) ||
-                (strcmp("shared", pszScnName) == 0) ||
-                (strcmp("overlay", pszScnName) == 0) )
-            {
-                warning("data qualifier '%s' ignored",
-                                pszScnName);
-                pszScnName = NULL;
-            }
-            else
-            {
-                break;
-            }
-        }
-        *pvalue = build_string(strlen(pszScnName),pszScnName);
-        /*
-        ** Check for <location> specification
-        */
-        if (c == CPP_EQ)
-        {
-            warning("absolute address specification ignored");
-            do {
-                c = c_lex(&x);
-            } while (c != CPP_EOF);
-        }
-        else if (c != CPP_EOF)
-        {
-            if (pic30_parse_pragma_option(c) == 0) {
-                error("Invalid location qualifier: '%s'", 
-                                      pszScnName);
-                return;
-            }
-             pszScnName = IDENTIFIER_POINTER(x);
-            /*
-            ** Validate the location qualifier
-            */
-            if (    (strcmp("gpr", pszScnName) == 0) ||
-                (strcmp("sfr", pszScnName) == 0) )
-            {
-                warning("location qualifier '%s' ignored",
-                                pszScnName);
-                pszScnName = NULL;
-            }
-            else
-            {
-                error("Invalid location qualifier: '%s'", 
-                    pszScnName);
-            }
-        }
+  c = c_lex(&x);
+  if (c == CPP_EOF) *pvalue = NULL_TREE;
+  else {
+    /*
+    ** User-specified <section-type> section name
+    */
+    for ( ; ; ) {
+      if (pic30_parse_pragma_option(c) == 0) {
+        error("Invalid or missing section name");
+      }
+      /*
+       ** Check for data qualifiers; keep reading until we
+       ** get an identifier... we read one extra token
+       ** but consume it later
+       */
+      pszScnName = IDENTIFIER_POINTER(x);
+      c = c_lex(&x);
+      if ((strcmp("access", pszScnName) == 0) ||
+          (strcmp("shared", pszScnName) == 0) ||
+          (strcmp("overlay", pszScnName) == 0)) {
+        warning("data qualifier '%s' ignored", pszScnName);
+        pszScnName = NULL;
+      } else {
+        break;
+      }
     }
+    *pvalue = build_string(strlen(pszScnName),pszScnName);
+    /*
+     ** Check for <location> specification
+     */
+    if (c == CPP_EQ) {
+      warning("absolute address specification ignored");
+      do {
+        c = c_lex(&x);
+      } while (c != CPP_EOF);
+    } else if (c != CPP_EOF) {
+      if (pic30_parse_pragma_option(c) == 0) {
+        error("Invalid location qualifier: '%s'", pszScnName);
+        return;
+      }
+      pszScnName = IDENTIFIER_POINTER(x);
+      /*
+       ** Validate the location qualifier
+       */
+      if ((strcmp("gpr", pszScnName) == 0) || (strcmp("sfr", pszScnName) == 0)){
+        warning("location qualifier '%s' ignored", pszScnName);
+        pszScnName = NULL;
+      } else {
+        error("Invalid location qualifier: '%s'", pszScnName);
+      }
+    }
+  }
 }
+
 /************************************************************************/
 /*
 ** Parse the <#pragma code [section]> pragma.
 */
 /************************************************************************/
-void
-pic30_handle_code_pragma(cpp_reader *pfile)
-{
+void pic30_handle_code_pragma(cpp_reader *pfile) {
     pic30_handle_section_pragma(pfile, &lTreeTextScnName);
 }
+
 /************************************************************************/
 /*
 ** Parse the <#pragma idata [section]> pragma.
 */
 /************************************************************************/
-void
-pic30_handle_idata_pragma(cpp_reader *pfile)
-{
+void pic30_handle_idata_pragma(cpp_reader *pfile) {
     pic30_handle_section_pragma(pfile, &lTreeIDataScnName);
 }
+
 /************************************************************************/
 /*
 ** Parse the <#pragma udata [section]> pragma.
 */
 /************************************************************************/
-void
-pic30_handle_udata_pragma(cpp_reader *pfile)
-{
+void pic30_handle_udata_pragma(cpp_reader *pfile) {
     pic30_handle_section_pragma(pfile, &lTreeUDataScnName);
 }
 
@@ -10049,10 +10561,7 @@ pic30_handle_udata_pragma(cpp_reader *pfile)
 ** Parse a pragma option.
 */
 /************************************************************************/
-static int 
-pic30_parse_pragma_option(pc)
-     int pc;
-{
+static int pic30_parse_pragma_option(int pc) {
     return (pc == CPP_NAME);
 }
 
@@ -10061,10 +10570,7 @@ pic30_parse_pragma_option(pc)
 ** Lookup a name in the current scope.
 */
 /************************************************************************/
-static tree
-pic30_lookup_vardecl(pszName)
-    const char *pszName;
-{
+static tree pic30_lookup_vardecl(const char *pszName) {
     int i, len;
     tree decl;
     tree namelist;
@@ -10085,6 +10591,7 @@ pic30_lookup_vardecl(pszName)
     }
     return(decl);
 }
+
 /************************************************************************/
 /*
 ** Parse the interrupt pragma:
@@ -10092,9 +10599,7 @@ pic30_lookup_vardecl(pszName)
 ** #pragma interrupt <functionname> [shadow] [save=<symbol-list>]
 */
 /************************************************************************/
-void
-pic30_handle_interrupt_pragma(cpp_reader *pfile ATTRIBUTE_UNUSED)
-{
+void pic30_handle_interrupt_pragma(cpp_reader *pfile ATTRIBUTE_UNUSED) {
     int c;
     tree treeOptName;
     tree treeFcnName;
@@ -10265,11 +10770,8 @@ pic30_handle_interrupt_pragma(cpp_reader *pfile ATTRIBUTE_UNUSED)
 ** assocatied name "isr", and so the function declaration will be tagged
 ** with an interrupt attribute.
 */
-static int
-pic30_check_decl_attribute(attrib, list, decl, attributes)
-     tree attrib;
-     tree list, decl, *attributes;
-{
+static int pic30_check_decl_attribute(tree attrib, tree list, tree decl, 
+                                      tree *attributes) {
     int fCheck;
     const char *pszDeclName;
 
@@ -10293,10 +10795,8 @@ pic30_check_decl_attribute(attrib, list, decl, attributes)
     }
     return(fCheck);
 }
-static void
-pic30_check_type_attribute(attrib, decl, attributes)
-     tree attrib;
-     tree decl, *attributes;
+
+static void pic30_check_type_attribute(tree attrib, tree decl, tree *attributes)
 {
     tree attr;
     tree type;
@@ -10317,12 +10817,11 @@ pic30_check_type_attribute(attrib, decl, attributes)
         }
     }
 }
+
 /*
 ** See if the <interrupt> attribute is set for a function.
 */
-int
-pic30_interrupt_function_p(tree decl)
-{
+int pic30_interrupt_function_p(tree decl) {
   const char *attrname = IDENTIFIER_POINTER(pic30_identInterrupt[0]);
   tree attrlist = DECL_ATTRIBUTES(decl);
   int fInterrupt = lookup_attribute(attrname, attrlist) != NULL_TREE;
@@ -10346,23 +10845,18 @@ int pic30_noreturn_function(tree decl) {
 /*
 ** See if the <shadow> attribute is set for a function.
 */
-int
-pic30_shadow_function_p(decl)
-    tree decl;
-{
+int pic30_shadow_function_p(tree decl) {
     const char *attrname = IDENTIFIER_POINTER(pic30_identShadow[0]);
     tree attrlist = DECL_ATTRIBUTES(decl);
     int fShadow = lookup_attribute(attrname, attrlist) != NULL_TREE;
 
     return(fShadow);
 }
+
 /*
 ** See if the <shadow> attribute is set for an operand.
 */
-int
-pic30_shadow_operand_p(operand)
-    rtx operand;
-{
+int pic30_shadow_operand_p(rtx operand) {
   int fShadow;
   rtx symbol;
   const char *pszSymbolName;
@@ -10379,13 +10873,11 @@ pic30_shadow_operand_p(operand)
   }
   return(fShadow);
 }
+
 /*
 ** See if the <interrupt(vector(id))> attribute is set for a function.
 */
-static int
-pic30_interrupt_vector_id(decl)
-    tree decl;
-{
+static int pic30_interrupt_vector_id(tree decl) {
     tree attr;
     tree v;
     tree fcn;
@@ -10422,14 +10914,13 @@ pic30_interrupt_vector_id(decl)
     }
     return(nVectorID);
 }
+
 /*
 ** See if the <interrupt(preprologe("asm"))> attribute is set for 
 ** the current function.
 */
-char *
-pic30_interrupt_preprologue(void)
-{
-        tree decl = current_function_decl;
+char * pic30_interrupt_preprologue(void) {
+    tree decl = current_function_decl;
     tree attr;
     tree v;
     tree fcn;
@@ -10465,13 +10956,11 @@ pic30_interrupt_preprologue(void)
     }
     return((char *)pszPreprologue);
 }
+
 /*
 ** See if the <near> attribute is set for a decl.
 */
-int
-pic30_near_decl_p(decl)
-    tree decl;
-{
+int pic30_near_decl_p(tree decl) {
     int fNear;
 
     fNear = (lookup_attribute(IDENTIFIER_POINTER(pic30_identNear[0]),
@@ -10481,13 +10970,11 @@ pic30_near_decl_p(decl)
 
     return(fNear);
 }
+
 /*
 ** See if the <far> attribute is set for a decl.
 */
-int
-pic30_far_decl_p(decl)
-    tree decl;
-{
+int pic30_far_decl_p(tree decl) {
     int fFar;
 
     fFar = lookup_attribute(IDENTIFIER_POINTER(pic30_identFar[0]),
@@ -10495,23 +10982,19 @@ pic30_far_decl_p(decl)
 
     return(fFar);
 }
+
 /*
 ** Nothing yet.
 */
-void
-pic30_insert_attributes(node, attributes, prefix_attributes)
-    tree node ATTRIBUTE_UNUSED,
-    *attributes ATTRIBUTE_UNUSED,
-    *prefix_attributes ATTRIBUTE_UNUSED;
-{
+void pic30_insert_attributes(tree node ATTRIBUTE_UNUSED,
+                             tree *attributes ATTRIBUTE_UNUSED,
+                             tree *prefix_attributes ATTRIBUTE_UNUSED) {
 }
+
 /*
 ** Assign default attributes to a newly defined declaration.
 */
-static void
-pic30_set_default_decl_attributes(decl, attributes)
-     tree decl, *attributes;
-{
+static void pic30_set_default_decl_attributes(tree decl, tree *attributes) {
     pic30_init_idents();
 
     switch (TREE_CODE(decl))
@@ -10575,14 +11058,15 @@ pic30_set_default_decl_attributes(decl, attributes)
         break;
     }
 }
+
 /*
 ** Initialize our target-specific identifiers.
 */
-static void
-pic30_init_idents(void)
-{
+static void pic30_init_idents(void) {
     if (pic30_identInterrupt[0] == 0)
     {
+        pic30_identUserinit[0] = get_identifier ("user_init");
+        pic30_identUserinit[1] = get_identifier ("__user_init__");
         pic30_identInterrupt[0] = get_identifier ("interrupt");
         pic30_identInterrupt[1] = get_identifier ("__interrupt__");
         pic30_identShadow[0] = get_identifier ("shadow");
@@ -10621,6 +11105,16 @@ pic30_init_idents(void)
         pic30_identPersistent[1] = get_identifier("__persistent__");
         pic30_identPsv[0] = get_identifier("psv");
         pic30_identPsv[1] = get_identifier("__psv__");
+        pic30_identExternal[0] = get_identifier("external");
+        pic30_identExternal[1] = get_identifier("__external__");
+        pic30_identSize[0] = get_identifier("size");
+        pic30_identSize[1] = get_identifier("__size__");
+        pic30_identCs[0] = get_identifier("cs");
+        pic30_identCs[1] = get_identifier("__cs__");
+        pic30_identOrigin[0] = get_identifier("origin");
+        pic30_identOrigin[1] = get_identifier("__origin__");
+        pic30_identPmp[0] = get_identifier("pmp");
+        pic30_identPmp[1] = get_identifier("__pmp__");
         pic30_identEedata[0] = get_identifier("eedata");
         pic30_identEedata[1] = get_identifier("__eedata__");
         pic30_identDma[0] = get_identifier("dma");
@@ -10650,15 +11144,40 @@ pic30_init_idents(void)
         pic30_identScratchReg[1] = get_identifier("__scratch_reg__");
         pic30_identFillUpper[0] = get_identifier("fillupper");
         pic30_identFillUpper[1] = get_identifier("__fillupper__");
+
+#if 0
+        /*
+         * experimental - probably toss
+         */
+        pic30_identRead[0] = get_identifier("read");
+        pic30_identRead[1] = get_identifier("__read__");
+        pic30_identRead8[0] = get_identifier("read8");
+        pic30_identRead8[1] = get_identifier("__read8__");
+        pic30_identRead16[0] = get_identifier("read16");
+        pic30_identRead16[1] = get_identifier("__read16__");
+        pic30_identRead32[0] = get_identifier("read32");
+        pic30_identRead32[1] = get_identifier("__read32__");
+        pic30_identRead64[0] = get_identifier("read64");
+        pic30_identRead64[1] = get_identifier("__read64__");
+
+        pic30_identWrite[0] = get_identifier("write");
+        pic30_identWrite[1] = get_identifier("__write__");
+        pic30_identWrite8[0] = get_identifier("write8");
+        pic30_identWrite8[1] = get_identifier("__write8__");
+        pic30_identWrite16[0] = get_identifier("write16");
+        pic30_identWrite16[1] = get_identifier("__write16__");
+        pic30_identWrite32[0] = get_identifier("write32");
+        pic30_identWrite32[1] = get_identifier("__write32__");
+        pic30_identWrite64[0] = get_identifier("write64");
+        pic30_identWrite64[1] = get_identifier("__write64__");
+#endif
     }
 }
+
 /*
 ** Return nonzero if ARGS are valid decl interrupt(save) attribute args.
 */
-static int
-pic30_valid_machine_decl_save(fcnargs)
-     tree fcnargs;
-{
+static int pic30_valid_machine_decl_save(tree fcnargs) {
     while (fcnargs)
     {
         const char *pszv = NULL;
@@ -10717,13 +11236,11 @@ pic30_valid_machine_decl_save(fcnargs)
     }
     return(TRUE);
 }
+
 /*
 ** Return nonzero if ARGS are valid decl interrupt(preprologue) attribute args.
 */
-static int
-pic30_valid_machine_decl_preprologue(fcnargs)
-    tree fcnargs;
-{
+static int pic30_valid_machine_decl_preprologue(tree fcnargs) {
     tree v = TREE_VALUE(fcnargs);
     while ( (TREE_CODE(v) == NOP_EXPR) ||
         (TREE_CODE(v) == ADDR_EXPR))
@@ -10737,13 +11254,12 @@ pic30_valid_machine_decl_preprologue(fcnargs)
     }
     return(TRUE);
 }
+
 /*
 ** Return nonzero if ARGS are valid SFR attribute args.
 */
 #define    MAX_SFR_ADDRESS    (8*1024-1)
-static int
-pic30_valid_machine_decl_sfr_attribute(tree decl, tree args)
-{
+static int pic30_valid_machine_decl_sfr_attribute(tree decl, tree args) {
     int address;
     PSFR pSFR;
     const char *pszIdent = IDENTIFIER_POINTER(DECL_NAME(decl));
@@ -10791,12 +11307,13 @@ struct pic30_invalid_isr {
 /*
 ** Return nonzero if ARGS are valid decl interrupt attribute args.
 */
+
 /* Quiet the stupidest warning ever invented */
 int pic30_valid_machine_decl_interrupt_attribute(tree args, char *attached_to, 
                                              tree decl);
+
 int pic30_valid_machine_decl_interrupt_attribute(tree args, char *attached_to, 
-                                             tree decl)
-{
+                                                 tree decl) {
   tree a;
   int validate_name = TARGET_ISR_WARN;
   int result = TRUE;
@@ -10961,18 +11478,14 @@ int pic30_valid_machine_decl_interrupt_attribute(tree args, char *attached_to,
   }
   return result;
 }
+
 /*
 ** Return nonzero if IDENTIFIER is a valid attribute.
 */
-
-static tree 
-pic30_valid_machine_attribute(decl, identifier, args, flags, no_add_attrs)
-     tree *decl;
-     tree identifier;
-     tree args;
-     int flags ATTRIBUTE_UNUSED;
-     bool *no_add_attrs;
-{ const char *pszIdent;
+static tree pic30_valid_machine_attribute(tree *decl, tree identifier, 
+                                          tree args, int flags ATTRIBUTE_UNUSED,
+                                          bool *no_add_attrs) {
+  const char *pszIdent;
   const char *attached_to = 0;
   
   pic30_init_idents();
@@ -11022,7 +11535,9 @@ static int ignore_attribute(const char *attribute, const char *attached_to,
   /* DECL_CONTEXT is not set up by the time we process the attributes */
   scope = current_function_decl;
 #endif
-  if (scope && (TREE_CODE(scope) == FUNCTION_DECL) && (!TREE_STATIC(node))) {
+  if (scope && (TREE_CODE(scope) == FUNCTION_DECL) && 
+      (!TREE_STATIC(node)) && 
+      ((TREE_CODE(node) != VAR_DECL) || !TREE_PUBLIC(node))) {
     warning("ignoring %s attribute applied to automatic %s", attribute,
             attached_to);
     return 1;
@@ -11030,15 +11545,9 @@ static int ignore_attribute(const char *attribute, const char *attached_to,
   return 0;
 }
 
-static tree 
-pic30_valid_machine_decl_attribute(node, identifier, args, no_add_attrs,  
-                    attached_to)
-    tree *node;
-    tree identifier;
-    tree args;
-    bool *no_add_attrs;
-    const char *attached_to;
-{
+static tree pic30_valid_machine_decl_attribute(tree *node, tree identifier, 
+                                               tree args, bool *no_add_attrs,  
+                                               const char *attached_to) {
   tree decl = *node;
   const char *pszIdent;
   const char *boot_secure=0;
@@ -11096,7 +11605,7 @@ pic30_valid_machine_decl_attribute(node, identifier, args, no_add_attrs,
     if (IDENT_PROG(TREE_VALUE(args)) || IDENT_DATA(TREE_VALUE(args)) ||
         IDENT_XMEMORY(TREE_VALUE(args)) || IDENT_YMEMORY(TREE_VALUE(args)) ||
         IDENT_CONST(TREE_VALUE(args)) || IDENT_PSV(TREE_VALUE(args)) ||
-        IDENT_EEDATA(TREE_VALUE(args)) || IDENT_DMA(TREE_VALUE(args)))
+        IDENT_EEDATA(TREE_VALUE(args)) || IDENT_DMA(TREE_VALUE(args))) 
     { char space;
 
       if ((!(pic30_device_mask & HAS_EEDATA)) && 
@@ -11106,20 +11615,258 @@ pic30_valid_machine_decl_attribute(node, identifier, args, no_add_attrs,
                  ((space='x', IDENT_XMEMORY(TREE_VALUE(args))) || 
                   (space='y', IDENT_YMEMORY(TREE_VALUE(args))))) {
         error("space(%cmemory) not supported on this target", space);
-      } else if (IDENT_DMA(TREE_VALUE(args))) {
-        if (TARGET_ARCH(PIC24F) || TARGET_ARCH(PIC30)) {
+      } else if ((IDENT_DMA(TREE_VALUE(args))) &&
+                 (!(pic30_device_mask & HAS_DMA))) {
           warning("space(dma) not supported on this target, ignoring");
           *no_add_attrs=1;
-        }
       }
       return NULL_TREE;
-    }
-    else
-    {
-      error("invalid space argument for '%s'", attached_to);
-      *no_add_attrs = 1;
-      return NULL_TREE;
-    }
+    } else if (TREE_CODE(TREE_VALUE(args)) == CALL_EXPR) {
+      tree id;
+      tree id_args;
+      int is_pmp = 0;
+
+      id = TREE_OPERAND(TREE_OPERAND(TREE_VALUE(args),0),0);
+      id_args = TREE_OPERAND(TREE_VALUE(args),1);
+      /* might be a space(pmp( or space(external( */
+      if ((is_pmp=1,IDENT_PMP(DECL_NAME(id))) || 
+          (is_pmp=0,IDENT_EXTERNAL(DECL_NAME(id)))) {
+#if 1
+        if (is_pmp && !(pic30_device_mask & HAS_PMP))
+#else
+        // if (is_pmp && (!TARGET_ARCH(PIC24F)))
+        if (0)
+#endif
+        {  
+          error("space(pmp) not supported on this target, ignoring");
+          *no_add_attrs=1;
+          return NULL_TREE;
+        } else {
+          /* look for and validate required arguments */
+          tree sub_arglist;
+          tree sub_arg,sub_arg_arg;
+          pic30_external_memory *memory = 0;
+          
+          sub_arglist = id_args;
+          if (!sub_arglist) {
+            error("Could not find any of the required arguments to\nspace(%s)",
+                  is_pmp ? "pmp" : "external");
+            *no_add_attrs=1;
+            return NULL_TREE;
+          }
+          for (; sub_arglist && (sub_arg = TREE_VALUE(sub_arglist)); 
+                 sub_arglist = TREE_CHAIN(sub_arglist)) {
+            if (TREE_CODE(sub_arg) == CALL_EXPR) {
+              sub_arg_arg = TREE_OPERAND(sub_arg,1);
+              sub_arg = TREE_OPERAND(TREE_OPERAND(sub_arg,0),0);
+              if (IDENT_CS(DECL_NAME(sub_arg)) && is_pmp) {
+                int cs = 0;
+
+                if (sub_arg_arg == 0) {
+                  error("attribute cs() needs an argument");
+                  continue;
+                }
+                if (TREE_CODE(TREE_VALUE(sub_arg_arg)) == INTEGER_CST) {
+                  cs = TREE_INT_CST_LOW(TREE_VALUE(sub_arg_arg));
+                } else { 
+                  cs = -1;
+                }
+                if ((cs < 0) || (cs > 2)) {
+                  warning("Invalid argument to cs, assuming 0");
+                  cs = 0;
+                }
+                if (memory == 0) {
+                  memory = (pic30_external_memory *) 
+                           xcalloc(sizeof(pic30_external_memory),1);
+                  memory->name = attached_to;
+                  memory->decl = decl;
+                  memory->size = -1;
+                  memory->origin = -1;
+                }
+                if (memory->size > 0) {
+                  switch (cs) {
+                    case 0:  break;
+                    case 1:
+                    case 2:  if (memory->size <= 32768) break;
+                             error("cs(%d) conflicts with memory size\n",cs);
+                             cs = 0;
+                             break;
+                  }
+                }
+                memory->chip_select = cs;
+              } else if (IDENT_ORIGIN(DECL_NAME(sub_arg)) && !is_pmp) {
+                int origin = 0;
+
+                if (sub_arg_arg == 0) {
+                  error("attribute origin() needs an argument");
+                  continue;
+                }
+                if (TREE_CODE(TREE_VALUE(sub_arg_arg)) == INTEGER_CST) {
+                  origin = TREE_INT_CST_LOW(TREE_VALUE(sub_arg_arg));
+                } else {
+                  origin = -1;
+                }
+                if ((origin < 0) || (origin > 65535)) {
+                  error("Invalid argument to origin");
+                  origin = 0;
+                } else if ((origin & 1) == 1) {
+                  error("Invalid argument to origin; origin must be even");
+                  origin = 0;
+                }
+                if (memory == 0) {
+                  memory = (pic30_external_memory *)
+                           xcalloc(sizeof(pic30_external_memory),1);
+                  memory->name = attached_to;
+                  memory->decl = decl;
+                  memory->size = -1;
+                  memory->chip_select = -1;
+                }
+                memory->origin = origin;
+              } else if (IDENT_SIZE(DECL_NAME(sub_arg))) {
+                int size = 0;
+ 
+                if (sub_arg_arg == 0) {
+                  error("attribute size() needs an argument");
+                  continue;
+                }
+                if (TREE_CODE(TREE_VALUE(sub_arg_arg)) == INTEGER_CST) {
+                  size = TREE_INT_CST_LOW(TREE_VALUE(sub_arg_arg));
+                } else { 
+                  size = -1;
+                }
+                if ((size <= 0) || (size > 65535)) {
+                  error("Invalid argument to size");
+                  size = 0;
+                } else if ((size & 1) == 1) {
+                  error("Invalid argument to size; size must be even");
+                  size = 0;
+                }
+                if (memory == 0) {
+                  memory = (pic30_external_memory *) 
+                           xcalloc(sizeof(pic30_external_memory),1);
+                  memory->name = attached_to;
+                  memory->decl = decl;
+                  memory->chip_select = -1;
+                  memory->origin = -1;
+                }
+                if (memory->chip_select >= 0) {
+                  switch (memory->chip_select) {
+                    case 0:  break;
+                    case 1:
+                    case 2:  if (size <= 32768) break;
+                             error("size(%d) conflicts with cs\n",size);
+                             size = 32768;
+                             break;
+                  }
+                }
+                memory->size = size;
+              } else {
+                error("invalid sub argument to %s", is_pmp ? "space(pmp)"
+                                                           : "space(external)");
+                *no_add_attrs=1;
+                return NULL_TREE;
+              }
+            } else if (TREE_CODE(sub_arg) == VAR_DECL) {
+              pic30_external_memory *d;
+              char *space_man = is_pmp ? "pmp" : "external";
+
+              
+              for (d = pic30_external_memory_head; d; d = d->next) {
+                if (d->decl == sub_arg) break;
+              }
+              if (d == 0) {
+                error("sub argument to space(%s()) is not a\n"
+                      "space(%s()) definition", space_man, space_man);
+                *no_add_attrs=1;
+              }
+              return NULL_TREE;
+            } else {
+                error("invalid sub argument to %s", is_pmp ? "space(pmp)"
+                                                           : "space(external)");
+                if (memory) free(memory);
+                *no_add_attrs=1;
+                return NULL_TREE;
+            }
+          }
+          if (memory) {
+            pic30_external_memory *pic30_pmp_space = 0;
+    
+            switch (memory->chip_select) {
+              default:
+              case 0: pic30_pmp_space = pic30_pmp_space_cs0;
+                      if (pic30_pmp_space_cs1 || pic30_pmp_space_cs2) {
+                        error("Cannot declare PMP space with no chip-selects;\n"
+                              "\talready declared PMP space(s) with "
+                              "chip-selects!");
+                      }
+                      break;
+              case 1: pic30_pmp_space = pic30_pmp_space_cs1;
+                      if (pic30_pmp_space_cs0) {
+                        error("Cannot declare PMP space with chip-selects;\n"
+                              "\talready declared PMP space(s) with no "
+                              "chip-selects!");
+                      }
+                      break;
+              case 2: pic30_pmp_space = pic30_pmp_space_cs2;
+                      if (pic30_pmp_space_cs0) {
+                        error("Cannot declare PMP space with chip-selects;\n"
+                              "\talready declared PMP space(s) with no "
+                              "chip-selects!");
+                      }
+                      break;
+            }
+            if (is_pmp && pic30_pmp_space) {
+              if (pic30_pmp_space->size == memory->size)
+                warning("Duplicate but equivalent space(pmp) defined");
+              else warning("Duplicate space(pmp) defined");
+              memcpy(pic30_pmp_space, memory, sizeof(pic30_external_memory)-4);
+            } else {
+              if (memory->size == -1) {
+                error("space(%s) definition does not define size", 
+                      is_pmp ? "pmp" : "external");
+                memory->size = 0;
+              }
+              if (is_pmp) {
+                if (memory->chip_select == -1) {
+                  warning("space(pmp) definition does not define chip selects");
+                  memory->chip_select = 0;
+                }
+                switch (memory->chip_select) {
+                  default:
+                  case 0: pic30_pmp_space_cs0 = memory;
+                          break;
+                  case 1: pic30_pmp_space_cs1 = memory;
+                          if (memory->origin == -1) {
+                            memory->origin = 1 << 14;
+                          }
+                          break;
+                  case 2: pic30_pmp_space_cs2 = memory;
+                          if (memory->origin == -1) {
+                            memory->origin = 1 << 15;
+                          }
+                          break;
+                }
+              }
+              if (memory->origin == -1) memory->origin = 0;
+              if (pic30_external_memory_head == 0) {
+                pic30_external_memory_head = memory;
+                pic30_external_memory_tail = memory;
+              } else {
+                pic30_external_memory_tail->next = memory;
+                pic30_external_memory_tail = memory;
+              }
+            }
+            return NULL_TREE;
+          }
+        }
+      } 
+    } else if (IDENT_EXTERNAL(TREE_VALUE(args))) {
+      error("space(external) for '%s' requires sub-arguments", attached_to);
+    } else if (IDENT_PMP(TREE_VALUE(args))) {
+      error("space(pmp) for '%s' requires sub-arguments", attached_to);
+    } else error("invalid space argument for '%s'", attached_to);
+    *no_add_attrs = 1;
+    return NULL_TREE;
   }
   if (IDENT_ADDRESS(identifier))
   { tree address;
@@ -11158,6 +11905,16 @@ pic30_valid_machine_decl_attribute(node, identifier, args, no_add_attrs,
     /*
     ** Check for interrupt attributes.
     */
+#if 0
+    /*
+     * experimental - probably toss
+     */
+    if (IDENT_A_READ(identifier) || IDENT_A_WRITE(identifier)) {
+      *no_add_attrs = 
+         !pic30_valid_readwrite_attribute(args,identifier,attached_to,decl);
+       return NULL_TREE;
+    }
+#endif
     if (IDENT_INTERRUPT(identifier))
     {
       *no_add_attrs = !pic30_valid_machine_decl_interrupt_attribute(args,
@@ -11175,6 +11932,12 @@ pic30_valid_machine_decl_attribute(node, identifier, args, no_add_attrs,
     }
     else if (IDENT_NOAUTOPSV(identifier))
     {
+      return NULL_TREE;
+    } else if (IDENT_USERINIT(identifier)) {
+      if (pic30_validate_void_fn(decl,"user_init")) {
+        *no_add_attrs = 1;
+        return NULL_TREE;
+      }
       return NULL_TREE;
     }
   }
@@ -11275,18 +12038,15 @@ pic30_valid_machine_decl_attribute(node, identifier, args, no_add_attrs,
   }
   error("invalid attribute '%s' ignored", pszIdent);
   *no_add_attrs = 1;
-   return NULL_TREE;
+  return NULL_TREE;
 }
+
 /*
 ** Return nonzero if IDENTIFIER is a valid type attribute.
 */
-static tree
-pic30_valid_machine_type_attribute(node, identifier, args, no_add_attrs)
-     tree *node;
-     tree identifier;
-     tree args;
-     bool *no_add_attrs;
-{    tree type = *node;
+static tree pic30_valid_machine_type_attribute(tree *node, tree identifier, 
+                                               tree args, bool *no_add_attrs) {
+    tree type = *node;
     /*
     ** Check for near/far attributes.
     */
@@ -11335,13 +12095,11 @@ pic30_valid_machine_type_attribute(node, identifier, args, no_add_attrs)
 
    return(NULL_TREE);
 }
+
 /*
 ** Determine if a function can be called using a short RCALL instruction.
 */
-int
-pic30_near_function_p(operand)
-     rtx operand;
-{
+int pic30_near_function_p(rtx operand) {
     int fNear;
     rtx symbol;
     const char *pszSymbolName;
@@ -11353,13 +12111,13 @@ pic30_near_function_p(operand)
 
     return(fNear);
 }
+
 /*
 ** Encode section information of DECL, which is either a VAR_DECL,
 ** FUNCTION_DECL, STRING_CST, CONSTRUCTOR, or ???.
 */
-void
-pic30_encode_section_info(tree decl, rtx rtl, int first_seen)
-{
+void pic30_encode_section_info(tree decl, rtx rtl, 
+                               int first_seen ATTRIBUTE_UNUSED) {
   int fNear;
   char prefix[80] = { 0 };
   const char *fn_name;
@@ -11452,22 +12210,20 @@ pic30_encode_section_info(tree decl, rtx rtl, int first_seen)
     sprintf(newstr, "%s%s", prefix, stripped_str);
     XSTR(XEXP(rtl, 0), 0) = newstr;
     /* previously allocated ? */
-    if (stripped_str != str) free(str);
+    if (stripped_str != str) free((void*)str);
   }
 }
+
 /*
 ** A C statement or statements to switch to the appropriate
 ** section for output of DECL.  DECL is either a `VAR_DECL' node
 ** or a constant of some sort.  RELOC indicates whether forming
 ** the initial value of DECL requires link-time relocations.
 */
-void
-pic30_select_section (decl, reloc, align)
-     tree decl;
-     int reloc;
-     unsigned HOST_WIDE_INT align ATTRIBUTE_UNUSED;
-{ const char *s;
-  const char *ident;
+void pic30_select_section (tree decl, int reloc, 
+                           unsigned HOST_WIDE_INT align ATTRIBUTE_UNUSED) {
+  const char *s;
+  const char *ident = 0; /* compiler can't tell that this is intialized */
   rtx rtl;
   SECTION_FLAGS_INT flags = 0;
 
@@ -11483,7 +12239,7 @@ pic30_select_section (decl, reloc, align)
   }
   if (!flags) {
     if (TREE_CODE (decl) == STRING_CST) { 
-      pic30_push_pop_constant_section(0,2 /* activate */);
+      pic30_push_pop_constant_section(0,css_activate,0);
     } else if (TREE_CODE (decl) == VAR_DECL) { 
       int bNear = (PIC30_SFR_NAME_P(ident) != 0);
   
@@ -11517,6 +12273,7 @@ pic30_select_section (decl, reloc, align)
     }
   }
 }
+
 /************************************************************************/
 /* ASM_DECLARE_FUNCTION_NAME target macro.                */
 /* =======================================                */
@@ -11527,10 +12284,8 @@ pic30_select_section (decl, reloc, align)
 /* The argument <decl> is the FUNCTION_DECL tree node representing the    */
 /* function.                                 */
 /************************************************************************/
-void
-pic30_asm_declare_function_name(FILE *file, char *name, 
-                                tree decl ATTRIBUTE_UNUSED)
-{
+void pic30_asm_declare_function_name(FILE *file, char *name, 
+                                     tree decl ATTRIBUTE_UNUSED) {
     if (pic30_obj_elf_p())
     {
         fprintf(file, "%s", "\t.type\t");
@@ -11541,6 +12296,7 @@ pic30_asm_declare_function_name(FILE *file, char *name,
     }
     ASM_OUTPUT_LABEL(file, name);
 }
+
 /************************************************************************/
 /* ASM_DECLARE_OBJECT_NAME target macro.                */
 /* =====================================                */
@@ -11550,10 +12306,8 @@ pic30_asm_declare_function_name(FILE *file, char *name,
 /* The argument <decl> is the VAR_DECL tree node representing the    */
 /* variable.                                 */
 /************************************************************************/
-void
-pic30_asm_declare_object_name(FILE *file, char *name, 
-                              tree decl ATTRIBUTE_UNUSED)
-{
+void pic30_asm_declare_object_name(FILE *file, char *name, 
+                                   tree decl ATTRIBUTE_UNUSED) {
     if (pic30_obj_elf_p())
     {
         fprintf(file, "%s", "\t.type\t");
@@ -11564,6 +12318,7 @@ pic30_asm_declare_object_name(FILE *file, char *name,
     }
     ASM_OUTPUT_LABEL(file, name);
 }
+
 /************************************************************************/
 /* TARGET_ASM_NAMED_SECTION target hook.                */
 /* =====================================                */
@@ -11572,18 +12327,15 @@ pic30_asm_declare_object_name(FILE *file, char *name,
 /* The section should have attributes as specified by flags, which is a    */
 /* bit mask of the SECTION_* flags defined in output.h.         */
 /************************************************************************/
-static void
-pic30_asm_named_section(const char *pszSectionName, SECTION_FLAGS_INT flags,
-                        tree decl ATTRIBUTE_UNUSED)
-{
+static void pic30_asm_named_section(const char *pszSectionName, 
+                                    SECTION_FLAGS_INT flags,
+                                    tree decl ATTRIBUTE_UNUSED) {
    if (set_section_stack(pszSectionName, flags) == 0) return;
    pic30_merged_asm_named_section(pszSectionName, flags);
 }
 
-static void
-pic30_merged_asm_named_section(const char *pszSectionName, 
-                               SECTION_FLAGS_INT flags)
-{
+static void pic30_merged_asm_named_section(const char *pszSectionName, 
+                                           SECTION_FLAGS_INT flags) {
   char pszSectionFlag[80] = "invalid section flag";
   char *f;
 
@@ -11633,6 +12385,10 @@ pic30_merged_asm_named_section(const char *pszSectionName,
   if (flags & SECTION_DMA) {
     f += sprintf(f, "," SECTION_ATTR_DMA);
   }
+  if (flags & (SECTION_PMP | SECTION_EXTERNAL)) {
+    /* no other flags needed, it should be already in the name */
+    *f = 0;
+  }
   fprintf(asm_out_file, "\t.section\t%s%s\n", pszSectionName, pszSectionFlag);
 }
 
@@ -11641,7 +12397,6 @@ pic30_merged_asm_named_section(const char *pszSectionName,
 /************************************************************************/
 static int set_section_stack(const char *pszSectionName, 
                              SECTION_FLAGS_INT pszSectionFlag) {
-
    if (!lSectionStack) {
      if (freeSectionStack) {
        lSectionStack = freeSectionStack;
@@ -11667,10 +12422,9 @@ static int set_section_stack(const char *pszSectionName,
    return 1;
 }
 
-static void
-pic30_push_section_name(const char *pszSectionName, 
-                        SECTION_FLAGS_INT pszSectionFlag)
-{  sectionStack *s;
+static void pic30_push_section_name(const char *pszSectionName, 
+                                    SECTION_FLAGS_INT pszSectionFlag) {
+   sectionStack *s;
 
    if (lSectionStack->flags & ss_should_pop) {
      if ((lSectionStack->pszFlag == pszSectionFlag) &&
@@ -11696,7 +12450,8 @@ pic30_push_section_name(const char *pszSectionName,
    pic30_merged_asm_named_section(pszSectionName, pszSectionFlag);
 }
 
-static tree pic30_push_pop_constant_section(tree decl, int push) {
+static tree pic30_push_pop_constant_section(tree decl, enum css push, 
+                                            const char **section_name) {
   struct decl_stack {
     tree decl;
     struct decl_stack *next;
@@ -11705,24 +12460,27 @@ static tree pic30_push_pop_constant_section(tree decl, int push) {
   static struct decl_stack *my_decl_stack = 0;
   int activated = 0;
 
-  if (push == 1) {
+  if (push == css_push) {
     struct decl_stack *p;
 
     p = xcalloc(sizeof(struct decl_stack),1);
     p->next = my_decl_stack;
     p->decl = decl;
     my_decl_stack = p;
-  } else if (push == 2 /*activate */) {
+  } else if (push == css_activate /*activate */) {
     /* this can happen iff we are creating code to initialize */
     decl = my_decl_stack ? my_decl_stack->decl : 0;
-  } else if (push == 0 /*pop */) {
+  } else if (push == css_pop /*pop */) {
     if (my_decl_stack == 0) abort();
     if (decl != my_decl_stack->decl) abort();
     activated = my_decl_stack->activated;
     my_decl_stack = my_decl_stack->next;
+  } else if (push == css_tos) {
+    decl = my_decl_stack ? my_decl_stack->decl : 0;
   }
-  if (push == 1) return decl;
+  if (push == css_push) return decl;
   if (!decl || !DECL_SECTION_NAME(decl)) {
+    tree space_attr;
     const char *force_named_section = 0;
     SECTION_FLAGS_INT flags;
     /*
@@ -11744,12 +12502,39 @@ static tree pic30_push_pop_constant_section(tree decl, int push) {
               (lookup_attribute(IDENTIFIER_POINTER(pic30_identSecure[0]),
                                 DECL_ATTRIBUTES(decl))))) {
       force_named_section = SECTION_NAME_SECURE_CONST "," SECTION_ATTR_SECURE;
+    } else if (decl && (space_attr = lookup_attribute(
+                              IDENTIFIER_POINTER(pic30_identSpace[0]),
+                              DECL_ATTRIBUTES(decl)))) {
+      int pmp=0;
+      int external=0;
+      int psv=0;
+      int prog=0;
+      /* declaration is in space */
+
+      if (TREE_CODE(TREE_VALUE(TREE_VALUE(space_attr))) == CALL_EXPR) {
+        tree id;
+        id = TREE_OPERAND(TREE_OPERAND(TREE_VALUE(TREE_VALUE(space_attr)),0),0);
+        pmp = IDENT_PMP(DECL_NAME(id));
+        external = IDENT_EXTERNAL(DECL_NAME(id));
+      }
+      psv = (space_attr && IDENT_PSV(TREE_VALUE(TREE_VALUE(space_attr))));
+      prog = (space_attr && IDENT_PROG(TREE_VALUE(TREE_VALUE(space_attr))));
+      if (psv || prog) {
+        if (current_time == 0) current_time = time(0);
+        sprintf(this_default_name,"*_%8.8x%lx", (unsigned) decl, current_time);
+        force_named_section = xstrdup(this_default_name);
+      }
+      if (prog) {
+        flags = SECTION_CODE;
+      }
     }
     if (force_named_section) {
-      if (push == 2) {
+      if (push == css_activate) {
         pic30_push_section_name(force_named_section, flags);
         if (my_decl_stack) my_decl_stack->activated = 1;
-      } else if ((push == 0) && (activated)) pic30_pop_section_name();
+      } else if ((push == css_pop) && (activated)) pic30_pop_section_name();
+      else if ((push == css_tos) && (*section_name)) 
+        *section_name = force_named_section;
       return decl;
     }
   }
@@ -11758,41 +12543,47 @@ static tree pic30_push_pop_constant_section(tree decl, int push) {
     const char *name = TREE_STRING_POINTER(DECL_SECTION_NAME(decl));
 
     flags = pic30_section_type_flags(decl, name, 1);
-    if (flags & SECTION_PSV) {
-      if (push == 2) {
-        pic30_push_section_name(name, flags);
-        my_decl_stack->activated = 1;
-      } else if ((push == 0) && (activated))  pic30_pop_section_name();
-      return decl;
-    }
+    if (push == css_activate) {
+      pic30_push_section_name(name, flags);
+      my_decl_stack->activated = 1;
+    } else if ((push == css_pop) && (activated))  pic30_pop_section_name();
+    else if ((push == css_tos) && (section_name)) *section_name = name;
+    return decl;
   } 
 
-  if (push == 2) {
+  if (push == css_activate) {
     if (TARGET_CONST_IN_CODE | TARGET_CONST_IN_PROG | TARGET_CONST_IN_PSV) 
       const_section();
     else dconst_section();
+  } else if ((push == css_tos) && *section_name) {
+    if (TARGET_CONST_IN_CODE | TARGET_CONST_IN_PROG | TARGET_CONST_IN_PSV) 
+      *section_name = SECTION_NAME_CONST;
+    // else *section_name = SECTION_NAME_DCONST;
   }
   return decl;
 }
 
-int pic30_pushed_constant_section() {
-  return (lSectionStack->pszFlag & SECTION_PSV);
+const char *pic30_pushed_constant_section(void) {
+  const char *name = 0;
+
+  if (pic30_push_pop_constant_section(0, css_tos, &name) == 0) {
+     name= lSectionStack->pszFlag & SECTION_PSV ? lSectionStack->pszName : name;
+  }
+  return name;
 }
 
 void pic30_push_constant_section(tree decl) {
-  (void) pic30_push_pop_constant_section(decl,1);
+  (void) pic30_push_pop_constant_section(decl,css_push,0);
 }
 
 void pic30_pop_constant_section(tree decl) {
-  (void) pic30_push_pop_constant_section(decl,0);
+  (void) pic30_push_pop_constant_section(decl,css_pop,0);
 }
 
 /************************************************************************/
 /* Restore a saved section name.                    */
 /************************************************************************/
-static void
-pic30_pop_section_name(void)
-{
+static void pic30_pop_section_name(void) {
    if (lSectionStack->flags & ss_set) {
      /* popping back to a sectionStack item that was set using
         set_section_stack() as a result of a named section ... convert it
@@ -11821,9 +12612,7 @@ pic30_pop_section_name(void)
 /* hazard. This is done to work around an errror in the REV A silicon.    */
 /*                                    */
 /************************************************************************/
-static unsigned int
-pic30_reganydef(rtx op)
-{
+static unsigned int pic30_reganydef(rtx op) {
     unsigned regdef = 0;
     unsigned regmask = 0;
     rtx rtxInner;
@@ -11893,9 +12682,8 @@ pic30_reganydef(rtx op)
     }
     return(regdef);
 }
-static unsigned int
-pic30_reginduse(rtx op)
-{
+
+static unsigned int pic30_reginduse(rtx op) {
     rtx rtxInner;
     rtx rtxPlusOp0;
     rtx rtxPlusOp1;
@@ -11969,9 +12757,8 @@ pic30_reginduse(rtx op)
     return(regmask);
 }
 
-void
-pic30_final_prescan_insn(rtx insn ATTRIBUTE_UNUSED, rtx *opvec, int noperands)
-{
+void pic30_final_prescan_insn(rtx insn ATTRIBUTE_UNUSED, rtx *opvec, 
+                              int noperands) {
     int idop;
     bool bEmitNOP = false;
     unsigned int regdefmask = 0;
@@ -11997,9 +12784,7 @@ pic30_final_prescan_insn(rtx insn ATTRIBUTE_UNUSED, rtx *opvec, int noperands)
 ** location counter to a multiple of 2**LOG bytes.
 */
 /************************************************************************/
-void
-pic30_asm_output_align(FILE *file, int log)
-{
+void pic30_asm_output_align(FILE *file, int log) {
     if (log != 0)
     {
         int n = 1 << log;
@@ -12033,10 +12818,8 @@ pic30_asm_output_align(FILE *file, int log)
 **     where ASM_EMIT_COMMON is defined
 */
 /************************************************************************/
-void
-pic30_asm_output_common(FILE *file, char *name,
-            int size ATTRIBUTE_UNUSED, int rounded)
-{
+void pic30_asm_output_common(FILE *file, char *name,
+                             int size ATTRIBUTE_UNUSED, int rounded) {
   const char *pszSectionName;
 
   if (target_flags & TARGET_MASK_OLD_OMF) {
@@ -12116,10 +12899,8 @@ void pic30_emit_fillupper(tree decl, int set) {
 ** ASM_OUTPUT_COMMON always rounds up based on BIGGEST_ALIGNMENT.
 */
 /************************************************************************/
-void
-pic30_asm_output_aligned_common(FILE *file, tree decl, char *name, int size, 
-                                int alignment)
-{
+void pic30_asm_output_aligned_common(FILE *file, tree decl, char *name, 
+                                     int size, int alignment) {
    const char *pszSectionName;
    int reverse_aligned = 0;
    SECTION_FLAGS_INT flags;
@@ -12172,6 +12953,7 @@ pic30_asm_output_aligned_common(FILE *file, tree decl, char *name, int size,
    }
    pic30_pop_section_name();
 }
+
 /************************************************************************/
 /*
 ** A C statement (sans semicolon) to output to the stdio stream FILE the
@@ -12183,10 +12965,8 @@ pic30_asm_output_aligned_common(FILE *file, tree decl, char *name, int size,
 ** definitions of uninitialized static variables are output.
 */
 /************************************************************************/
-void
-pic30_asm_output_local(FILE *file, char *name,
-            int size ATTRIBUTE_UNUSED, int rounded)
-{
+void pic30_asm_output_local(FILE *file, char *name, int size ATTRIBUTE_UNUSED, 
+                            int rounded) {
    const char *pszSectionName;
 
    if (target_flags & TARGET_MASK_OLD_OMF) {
@@ -12209,6 +12989,7 @@ pic30_asm_output_local(FILE *file, char *name,
    fprintf(file, "%u\n", rounded);
    pic30_pop_section_name();
 }
+
 /************************************************************************/
 /*
 ** Like ASM_OUTPUT_LOCAL except takes the required alignment as a separate,
@@ -12219,10 +13000,8 @@ pic30_asm_output_local(FILE *file, char *name,
 ** NB: this function is used in preference to pic30_asm_output_local
 */
 /************************************************************************/
-void
-pic30_asm_output_aligned_decl_local(FILE *file, tree decl, char *name, 
-                                    int size, int alignment)
-{
+void pic30_asm_output_aligned_decl_local(FILE *file, tree decl, char *name, 
+                                         int size, int alignment) {
    const char *pszSectionName;
    int reverse_aligned = 0;
 
@@ -12251,6 +13030,7 @@ pic30_asm_output_aligned_decl_local(FILE *file, tree decl, char *name,
    fprintf(file, "%u\n", size);
    pic30_pop_section_name();
 }
+
 /************************************************************************/
 /*
 ** pic30_text_section_asm_op()
@@ -12259,14 +13039,11 @@ pic30_asm_output_aligned_decl_local(FILE *file, tree decl, char *name,
 ** data. Normally "\t.text" is right.
 */
 /************************************************************************/
-char *
-pic30_text_section_asm_op()
-{
+char * pic30_text_section_asm_op(void) {
   static char *pszSection;
   static unsigned int pszSection_len;
   const char *section_name;
 
-  
   if (current_function_decl) {
     section_name = default_section_name(current_function_decl, SECTION_CODE);
   } else {
@@ -12300,6 +13077,7 @@ pic30_text_section_asm_op()
                              SECTION_ATTR_CODE);
   return  (char *)pszSection;
 }
+
 /************************************************************************/
 /*
 ** pic30_data_section_asm_op()
@@ -12308,44 +13086,39 @@ pic30_text_section_asm_op()
 ** initialized data. Normally "\t.data" is right.
 */
 /************************************************************************/
-char *
-pic30_data_section_asm_op()
-{
+char * pic30_data_section_asm_op(void) {
   set_section_stack(SECTION_NAME_DATA,SECTION_WRITE);
   lfInExecutableSection = FALSE;
 
   return((char *)"\t.data");
 }
+
 /************************************************************************/
 /*
 ** pic30_ndata_section_asm_op()
 */
 /************************************************************************/
-char *
-pic30_ndata_section_asm_op()
-{
-static char szSection[32];
+char * pic30_ndata_section_asm_op(void) {
+  static char szSection[32];
 
-    lfInExecutableSection = FALSE;
-   if (target_flags & TARGET_MASK_OLD_OMF) {
-     set_section_stack(SECTION_NAME_NDATA, SECTION_WRITE);
-      if (pic30_obj_elf_p())
-      {
-          sprintf(szSection, "\t.section\t%s,\"aw\",@progbits",
-                     lSectionStack->pszName);
-      }
-      else
-      {
-          sprintf(szSection, "\t.section\t%s,\"%s\"",
-                lSectionStack->pszName, SECTION_FLAG_DATA);
-      }
-   } else {
-     sprintf(szSection, "\t.section\t%s,%s,%s",lSectionStack->pszName,
-                  SECTION_ATTR_NEAR, SECTION_ATTR_DATA);
-     set_section_stack(SECTION_NAME_NDATA, SECTION_WRITE | SECTION_NEAR);
-   }
-    return(szSection);
+  lfInExecutableSection = FALSE;
+  if (target_flags & TARGET_MASK_OLD_OMF) {
+    set_section_stack(SECTION_NAME_NDATA, SECTION_WRITE);
+    if (pic30_obj_elf_p()) {
+      sprintf(szSection, "\t.section\t%s,\"aw\",@progbits",
+              lSectionStack->pszName);
+    } else {
+      sprintf(szSection, "\t.section\t%s,\"%s\"",
+              lSectionStack->pszName, SECTION_FLAG_DATA);
+    }
+  } else {
+    sprintf(szSection, "\t.section\t%s,%s,%s",lSectionStack->pszName,
+            SECTION_ATTR_NEAR, SECTION_ATTR_DATA);
+    set_section_stack(SECTION_NAME_NDATA, SECTION_WRITE | SECTION_NEAR);
+  }
+  return(szSection);
 }
+
 /************************************************************************/
 /*
 ** pic30_const_section_asm_op()
@@ -12355,9 +13128,7 @@ static char szSection[32];
 ** so that the assembler knows the word width.
 */
 /************************************************************************/
-char *
-pic30_const_section_asm_op()
-{
+char *pic30_const_section_asm_op(void) {
   static char szSection[32];
 
   lfInExecutableSection = TRUE;
@@ -12388,6 +13159,7 @@ pic30_const_section_asm_op()
   }
   return(szSection);
 }
+
 /************************************************************************/
 /*
 ** pic30_dconst_section_asm_op()
@@ -12397,28 +13169,27 @@ pic30_const_section_asm_op()
 ** so that the assembler knows the word width.
 */
 /************************************************************************/
-char *
-pic30_dconst_section_asm_op()
-{
-static char szSection[32];
+char * pic30_dconst_section_asm_op(void) {
+  static char szSection[32];
 
-    lfInExecutableSection = FALSE;
+  lfInExecutableSection = FALSE;
 
-   set_section_stack(SECTION_NAME_DCONST, SECTION_WRITE);
-   if (target_flags & TARGET_MASK_OLD_OMF) {
-     if (pic30_obj_elf_p()) {
-       sprintf(szSection, "\t.section\t%s,\"aw\",@progbits",
-               lSectionStack->pszName);
-     } else {
-       sprintf(szSection, "\t.section\t%s,\"%s\"",
-               lSectionStack->pszName, SECTION_FLAG_DATA);
-     }
+  set_section_stack(SECTION_NAME_DCONST, SECTION_WRITE);
+  if (target_flags & TARGET_MASK_OLD_OMF) {
+    if (pic30_obj_elf_p()) {
+      sprintf(szSection, "\t.section\t%s,\"aw\",@progbits",
+              lSectionStack->pszName);
     } else {
-     sprintf(szSection, "\t.section\t%s,%s", SECTION_NAME_DCONST, 
-                                             SECTION_ATTR_DATA);
-   }
-    return(szSection);
+      sprintf(szSection, "\t.section\t%s,\"%s\"",
+              lSectionStack->pszName, SECTION_FLAG_DATA);
+    }
+  } else {
+    sprintf(szSection, "\t.section\t%s,%s", SECTION_NAME_DCONST, 
+                                            SECTION_ATTR_DATA);
+  }
+  return(szSection);
 }
+
 /************************************************************************/
 /*
 ** pic30_ndconst_section_asm_op()
@@ -12428,27 +13199,25 @@ static char szSection[32];
 ** so that the assembler knows the word width.
 */
 /************************************************************************/
-char *
-pic30_ndconst_section_asm_op()
-{
-   static char szSection[32];
+char * pic30_ndconst_section_asm_op(void) {
+  static char szSection[32];
 
-    lfInExecutableSection = FALSE;
-   if (target_flags & TARGET_MASK_OLD_OMF) {
-     set_section_stack(SECTION_NAME_NDCONST, SECTION_WRITE);
-     if (pic30_obj_elf_p()) {
-       sprintf(szSection, "\t.section\t%s,\"aw\",@progbits",
-                    lSectionStack->pszName);
-     } else {
-       sprintf(szSection, "\t.section\t%s,\"%s\"",
-               lSectionStack->pszName, SECTION_FLAG_DATA);
-      }
-   } else {
-     set_section_stack(SECTION_NAME_NDCONST, SECTION_WRITE | SECTION_NEAR);
-     sprintf(szSection, "\t.section %s, %s, %s", lSectionStack->pszName,
-             SECTION_ATTR_DATA, SECTION_ATTR_NEAR);
-   }
-   return(szSection);
+  lfInExecutableSection = FALSE;
+  if (target_flags & TARGET_MASK_OLD_OMF) {
+    set_section_stack(SECTION_NAME_NDCONST, SECTION_WRITE);
+    if (pic30_obj_elf_p()) {
+      sprintf(szSection, "\t.section\t%s,\"aw\",@progbits",
+              lSectionStack->pszName);
+    } else {
+      sprintf(szSection, "\t.section\t%s,\"%s\"",
+              lSectionStack->pszName, SECTION_FLAG_DATA);
+    }
+  } else {
+    set_section_stack(SECTION_NAME_NDCONST, SECTION_WRITE | SECTION_NEAR);
+    sprintf(szSection, "\t.section %s, %s, %s", lSectionStack->pszName,
+            SECTION_ATTR_DATA, SECTION_ATTR_NEAR);
+  }
+  return(szSection);
 }
 
 /*
@@ -12465,12 +13234,8 @@ pic30_ndconst_section_asm_op()
 ** <reloc> indicates whether the initial value of exp requires
 ** link-time relocations.
 */
-SECTION_FLAGS_INT
-pic30_section_type_flags(decl, name, reloc)
-    tree decl;
-    const char *name;
-    int reloc ATTRIBUTE_UNUSED;
-{
+SECTION_FLAGS_INT pic30_section_type_flags(tree decl, const char *name,
+                                           int reloc ATTRIBUTE_UNUSED) {
   SECTION_FLAGS_INT flag = 0;
   rtx rtl;
 
@@ -12489,17 +13254,13 @@ pic30_section_type_flags(decl, name, reloc)
 ** the fourth argument is the jump-table which follows (a jump_insn containing
 ** an addr_vec or addr_diff_vec).
 */
-void
-pic30_asm_output_case_label(file, prefix, num, table)
-    FILE *file;
-    char * prefix;
-    int num;
-    rtx table ATTRIBUTE_UNUSED;
-{   char buffer[80];
+void pic30_asm_output_case_label(FILE *file, char *prefix, int num, 
+                                 rtx table ATTRIBUTE_UNUSED) {
+  char buffer[80];
 
-    fprintf(file, "\t.set\t___PA___,%d\n", 0);
-    ASM_GENERATE_INTERNAL_LABEL(buffer, prefix, num);
-    ASM_OUTPUT_INTERNAL_LABEL(file, buffer);
+  fprintf(file, "\t.set\t___PA___,%d\n", 0);
+  ASM_GENERATE_INTERNAL_LABEL(buffer, prefix, num);
+  ASM_OUTPUT_INTERNAL_LABEL(file, buffer);
 }
 
 /*
@@ -12508,23 +13269,15 @@ pic30_asm_output_case_label(file, prefix, num, table)
 ** The argument <table> is the jump-table instruction, and <num> is the
 ** label number of the preceding label (i.e. the jump table label).
 */
-void
-pic30_asm_output_case_end(file, num, table)
-     FILE *file ATTRIBUTE_UNUSED;
-    int num ATTRIBUTE_UNUSED;
-    rtx table ATTRIBUTE_UNUSED;
-{
-    fprintf(file, "\t.set\t___PA___,%d\n", !pic30_asm_function_p(FALSE));
+void pic30_asm_output_case_end(FILE *file, int num ATTRIBUTE_UNUSED, 
+                               rtx table ATTRIBUTE_UNUSED) {
+  fprintf(file, "\t.set\t___PA___,%d\n", !pic30_asm_function_p(FALSE));
 }
 
 /*
 ** Output a 16-bit value.
 */
-void
-pic30_asm_output_short(file, value)
-    FILE *file;
-    rtx value;
-{
+void pic30_asm_output_short(FILE *file, rtx value) {
   rtx rtxPlusOp0;
   rtx rtxPlusOp1;
   rtx sym;
@@ -12624,15 +13377,11 @@ pic30_asm_output_short(file, value)
     fprintf(file, "\n");
   }
 }
+
 /************************************************************************/
 /* This is how to output an assembler line defining a string constant.  */
 /************************************************************************/
-void
-pic30_asm_output_ascii(stream, ptr, len)
-     FILE *stream;
-     char *ptr;
-     int len;
-{
+void pic30_asm_output_ascii(FILE *stream, char *ptr, int len) {
     unsigned int olen;
     unsigned char c;
     char oline[64+5];
@@ -12705,24 +13454,18 @@ pic30_asm_output_ascii(stream, ptr, len)
         fprintf(stream, "\t.ascii\t\"%s\"\n", oline);
     }
 }
+
 /*
 ** output to file some assembler code to call the profiling subroutine mcount
 */
-void
-pic30_function_profiler(file, labelno)
-     FILE *file;
-     int labelno;
-{
+void pic30_function_profiler(FILE *file, int labelno) {
     fprintf(file, "\tpush w0\n");
     fprintf(file, "\tmov #" LOCAL_LABEL_PREFIX "P%d,w0\n", labelno);
     fprintf(file, "\tcall __mcount\n");
     fprintf(file, "\tpop w0\n");
 }
-rtx
-pic30_return_addr_rtx(count, frameaddr)
-      int count ATTRIBUTE_UNUSED;
-      rtx frameaddr;
-{
+
+rtx pic30_return_addr_rtx(int count ATTRIBUTE_UNUSED, rtx frameaddr) {
   rtx ret = NULL_RTX;
 
   if (flag_omit_frame_pointer)
@@ -12736,12 +13479,11 @@ pic30_return_addr_rtx(count, frameaddr)
   }
   return(ret);
 }
+
 /************************************************************************/
 /*  Output an assembler .file directive.                */
 /************************************************************************/
-static void
-pic30_output_file_directive(FILE *file, const char *filename)
-{
+static void pic30_output_file_directive(FILE *file, const char *filename) {
     /*
     ** Emit the .file assembler directive.
     **
@@ -12749,6 +13491,7 @@ pic30_output_file_directive(FILE *file, const char *filename)
     ** the full path name of the main input file is used.
     */
 
+    if (TARGET_SKIP_DOT_FILE) return;
 #if defined(__CYGWIN__)
 extern void cygwin_conv_to_full_win32_path(const char *path, char *win32_path);
     char *name;
@@ -12865,12 +13608,11 @@ extern char *getpwd (void);
     }
 #endif
 }
+
 /************************************************************************/
 /* Output at beginning of assembler file.                             */
 /************************************************************************/
-void
-pic30_asm_file_start(void)
-{
+void pic30_asm_file_start(void) {
     /*
     ** Emit the .file assembler directive for the main input file.
     **
@@ -12879,6 +13621,7 @@ pic30_asm_file_start(void)
     */
     pic30_output_file_directive(asm_out_file, main_input_filename);
 }
+
 /************************************************************************/
 /* Record the beginning of a new source file, named filename.          */
 /************************************************************************/
@@ -12887,17 +13630,15 @@ pic30_asm_file_start(void)
  *  Replacement for debug target hook for starting source file
  */
 #if (!PIC30_DWARF2)
-void
-pic30_start_source_file(unsigned int i, const char *filename)
-{    extern void sdbout_start_source_file(unsigned int, const char *);
+void pic30_start_source_file(unsigned int i, const char *filename) {
+    extern void sdbout_start_source_file(unsigned int, const char *);
     
     sdbout_start_source_file(i, filename);
     pic30_output_file_directive(asm_out_file, filename);
 }
 #endif
 
-void
-pic30_sdb_end_prologue(unsigned int i ATTRIBUTE_UNUSED) {
+void pic30_sdb_end_prologue(unsigned int i ATTRIBUTE_UNUSED) {
    extern void sdbout_end_prologue(unsigned int);
 
    fprintf(asm_out_file, 
@@ -12908,13 +13649,12 @@ pic30_sdb_end_prologue(unsigned int i ATTRIBUTE_UNUSED) {
 /************************************************************************/
 /* Output at end of assembler file.                      */
 /************************************************************************/
-void
-pic30_asm_file_end(void)
-{
+void pic30_asm_file_end(void) {
   /*
   ** Emit SFR addresses
   */
   PSFR pSFR;
+  pic30_external_memory *m;
 
   for (pSFR = lpSFRs; pSFR; pSFR = pSFR->pNext)
   {
@@ -12922,16 +13662,58 @@ pic30_asm_file_end(void)
   }
   if (pic30_managed_psv) {
     fprintf(asm_out_file,
-           "\n\t.section __c30_info, info, bss\n__managed_psv:\n");
+            "\n\t.section __c30_info, info, bss\n__managed_psv:\n");
   }
-  fprintf(asm_out_file,"\n\t.end\n");
+  if (pic30_errata_mask & psv_address_errata) {
+    fprintf(asm_out_file,
+            "\n\t.section __c30_info, info, bss\n__psv_trap_errata:\n");
+  }
+  if (pic30_pmp_space_cs0 || pic30_pmp_space_cs1 || pic30_pmp_space_cs2) {
+
+    fprintf(asm_out_file,
+            "\n\t.section __c30_requires, info, data\n\t.long ___init_PMP\n");
+    if (pic30_pmp_space_cs0) {
+      if (pic30_pmp_space_cs0->origin + pic30_pmp_space_cs0->size > 65536) {
+        pic30_pmp_space_cs0->flags |= pem_err_reported;
+        error("PMP memory %s exceeds 64K address boundary", 
+              pic30_pmp_space_cs0->name);
+      }
+    } 
+    if (pic30_pmp_space_cs1) {
+      if (pic30_pmp_space_cs1->size > 0x4000) {
+        pic30_pmp_space_cs1->flags |= pem_err_reported;
+        error("PMP memory %s (CS 1) exceeds 16K maximum length", 
+              pic30_pmp_space_cs1->name);
+      }
+    } 
+    if (pic30_pmp_space_cs2) {
+      if ((pic30_pmp_space_cs1) && (pic30_pmp_space_cs2->size > 0x4000)) {
+        pic30_pmp_space_cs2->flags |= pem_err_reported;
+        error("PMP memory %s (CS 2) exceeds 16K maximum length", 
+              pic30_pmp_space_cs2->name);
+      } else if (pic30_pmp_space_cs2->size > 0x8000) {
+        pic30_pmp_space_cs2->flags |= pem_err_reported;
+        error("PMP memory %s (CS 2) exceeds 32K maximum length", 
+              pic30_pmp_space_cs2->name);
+      }
+    }
+  }
+  for (m = pic30_external_memory_head; m; m = m ->next) {
+    if ((m->origin + m->size) > 65536) {
+      if (!(m->flags & pem_err_reported))
+        error("Memory %s exceeds 64K address boundary", m->name);
+    }
+    fprintf(asm_out_file, "\n\t.memory _%s, size(%d), origin(%d)",
+            m->name, m->size, m->origin);
+  }
+  fprintf(asm_out_file,"\n\t.set ___PA___,0\n\t.end\n");
   if (first_invalid_isr) {
     unsigned int size = 256;
     char *buffer = xmalloc(256);
     char *p = buffer;
     *buffer = 0;
     for (; first_invalid_isr;first_invalid_isr = first_invalid_isr->next){
-      if (size  - (p - buffer)-4 < strlen(first_invalid_isr->attached_to)) {
+      if (strlen(first_invalid_isr->attached_to) + 3 + (p-buffer) > size) {
         int offset = p - buffer;
         buffer = xrealloc(buffer, size+1024);
         p = buffer+offset;
@@ -12946,9 +13728,7 @@ pic30_asm_file_end(void)
   }
 }
 
-static int
-pic30_bsearch_compare(const void *va, const void *vb)
-{
+static int pic30_bsearch_compare(const void *va, const void *vb) {
   pic30_interesting_fn *a = (pic30_interesting_fn *)va;
   pic30_interesting_fn *b = (pic30_interesting_fn *)vb;
 
@@ -12981,9 +13761,8 @@ static int mem_accesses_stack(rtx mem_access) {
   return 0;
 }
 
-static void
-conversion_info(pic30_conversion_status state,
-                       pic30_interesting_fn *fn_id) {
+static void conversion_info(pic30_conversion_status state,
+                            pic30_interesting_fn *fn_id) {
   /* dependant upon the conversion status and the setting of the smart-io
      option, set up the pic30_fn_list table. */
  
@@ -12997,8 +13776,7 @@ conversion_info(pic30_conversion_status state,
 }
 
 static pic30_conversion_status 
-pic30_convertable_output_format_string(const char *string)
-{
+pic30_convertable_output_format_string(const char *string) {
   const char *c = string;
 
   for ( ; *c; c++)
@@ -13064,8 +13842,7 @@ pic30_convertable_output_format_string(const char *string)
 }
 
 static pic30_conversion_status 
-pic30_convertable_input_format_string(const char *string)
-{
+pic30_convertable_input_format_string(const char *string) {
   const char *c = string;
 
   for ( ; *c; c++)
@@ -13198,9 +13975,8 @@ static void pic30_handle_conversion(rtx val,
                   matching_fn);
 }
 
-static void
-pic30_handle_io_conversion(rtx call_insn, 
-                                  pic30_interesting_fn *matching_fn) {
+static void pic30_handle_io_conversion(rtx call_insn, 
+                                       pic30_interesting_fn *matching_fn) {
   /* the info_I/O function calls are all varargs functions, with the format
      string pushed onto the stack as the anchor to the variable argument
      portion.  In short, the interesting_arg portion is not used.
@@ -13237,9 +14013,8 @@ pic30_handle_io_conversion(rtx call_insn,
   conversion_info(conv_indeterminate, matching_fn);
 }
 
-static void
-pic30_handle_io_conversion_v(rtx call_insn, 
-                                    pic30_interesting_fn *matching_fn) {
+static void pic30_handle_io_conversion_v(rtx call_insn, 
+                                         pic30_interesting_fn *matching_fn) {
   /* the info_O_v function calls are all normal functions, with the format
      string stored into a register identified by interesting_arg in the fn_list.  */
   rtx format_arg;
@@ -13272,8 +14047,7 @@ pic30_handle_io_conversion_v(rtx call_insn,
   conversion_info(conv_indeterminate, matching_fn);
 }
 
-static void
-pic30_handle_dbl_conversion(pic30_interesting_fn *matching_fn) {
+static void pic30_handle_dbl_conversion(pic30_interesting_fn *matching_fn) {
   /* the info_dbl function calls must be converted to the _d version if
      -fno-short-double is enabled
   */
@@ -13349,19 +14123,15 @@ rtx pic30_legitimize_address(rtx x, rtx oldx ATTRIBUTE_UNUSED,
                 return x;
               } else if ((GET_MODE(x) == P24PSVmode) && (GET_MODE(x) == mode)) {
                 return x;
+              } else if ((GET_MODE(x) == P16PMPmode) && (GET_MODE(x) == mode)) {
+                return x;
+              } else if ((GET_MODE(x) == P32EXTmode) && (GET_MODE(x) == mode)) {
+                return x;
               }
   }
   return 0;
 }
 
-int pic30_prog_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
-  return pic30_psv_operand(x, P24PROGmode);
-} 
-  
-int pic30_mpsv_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
-  return pic30_psv_operand(x, VOIDmode);
-} 
-  
 int pic30_psv_reg_operand(rtx x, enum machine_mode mode) {
   rtx inner;
 
@@ -13375,13 +14145,10 @@ int pic30_psv_reg_operand(rtx x, enum machine_mode mode) {
   return 0;
 }
      
-int pic30_psv_operand(rtx x, enum machine_mode mode) {
+int pic30_extended_pointer_operand(rtx x, enum machine_mode mode);
+int pic30_extended_pointer_operand(rtx x, enum machine_mode mode) {
   rtx lhs,rhs;
   
-  if (mode == VOIDmode) {
-    mode = GET_MODE(x);
-  } 
-  if ((mode != P24PROGmode) && (mode != P24PSVmode)) return 0;
   /* outer MEM already taken off */
   switch (GET_CODE(x)) {
     default: break;
@@ -13392,9 +14159,9 @@ int pic30_psv_operand(rtx x, enum machine_mode mode) {
     case REG: return (GET_MODE(x) == mode);
     case SUBREG:
       if (GET_MODE(x) == mode) {
-        if (GET_CODE(x) != REG) return 0;
+        if (GET_CODE(x) == REG) return 1;
       }
-      return 1;
+      return 0;
     case PLUS:
       lhs = XEXP(x,0);
       rhs = XEXP(x,1);
@@ -13402,12 +14169,26 @@ int pic30_psv_operand(rtx x, enum machine_mode mode) {
         default: return 0;
         case SYMBOL_REF:
           if (GET_MODE(lhs) != mode) return 0;
-          if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PROG_FLAG)) {
-            if (mode == P24PROGmode) return 1;
-            error("Accessing a variable in program space with a psv pointer is "
-                  "dangerous");
+          if (mode == P24PSVmode) {
+            if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PROG_FLAG)) {
+              error("Accessing a variable in program space with a psv "
+                    "pointer is dangerous");
+            } else if (!(PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PSV_FLAG))) {
+              return 0;
+            }
+            return 1;
+          } else if (mode == P24PROGmode) {
+            if ((PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PROG_FLAG)) ||
+                (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PSV_FLAG))) {
+              return 1;
+            }
+          } else if (mode == P16PMPmode) {
+            if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PMP_FLAG))
+              return 1;
+          } else if (mode == P32EXTmode) {
+            if (PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_EXT_FLAG))
+              return 1;
           }
-          if (!(PIC30_HAS_NAME_P(XSTR(lhs,0),PIC30_PSV_FLAG))) return 0;
           break;
         case SUBREG:
         case REG:  if (GET_MODE(lhs) != mode) return 0;
@@ -13423,15 +14204,29 @@ int pic30_psv_operand(rtx x, enum machine_mode mode) {
       return 1;  /* pic30_move_operand doesn't check rhs */
     case SYMBOL_REF:
       if (GET_MODE(x) != mode) return 0;
-      if (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PROG_FLAG)) {
-         if (mode == P24PROGmode) return 1;
-         error("Accessing a variable in program space with a psv pointer is "
-               "dangerous");
+      if (mode == P24PSVmode) {
+        if (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PROG_FLAG)) {
+          error("Accessing a variable in program space with a psv "
+                "pointer is dangerous");
+        } else if (!(PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PSV_FLAG))) {
+          return 0;
+        }
+        return 1;
+      } else if (mode == P24PROGmode) {
+        if ((PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PROG_FLAG)) ||
+            (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PSV_FLAG))) {
+          return 1;
+        }
+      } else if (mode == P16PMPmode) {
+        if (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PMP_FLAG))
+          return 1;
+      } else if (mode == P32EXTmode) {
+        if (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_EXT_FLAG))
+          return 1;
       }
-      if (PIC30_HAS_NAME_P(XSTR(x,0),PIC30_PSV_FLAG)) return 1;
       break;
     case CONST:
-      return pic30_psv_operand(XEXP(x,0),mode);
+      return pic30_extended_pointer_operand(XEXP(x,0),mode);
     case MEM:
       if (GET_MODE(x) == mode) return 1;
       break;
@@ -13439,21 +14234,88 @@ int pic30_psv_operand(rtx x, enum machine_mode mode) {
   return 0;
 }
 
+int pic30_prog_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
+  return pic30_extended_pointer_operand(x, P24PROGmode);
+} 
+
+int pic30_psv_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
+  return pic30_extended_pointer_operand(x, P24PSVmode);
+} 
+
+int pic30_pmp_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
+  return pic30_extended_pointer_operand(x, P16PMPmode);
+}
+
+int pic30_ext_operand(rtx x, enum machine_mode mode ATTRIBUTE_UNUSED) {
+  return pic30_extended_pointer_operand(x, P32EXTmode);
+}
+
 int pic30_psvpage_operand(rtx x, enum machine_mode mode) {
   return ((GET_CODE(x) == REG) && (REGNO(x) == PSVPAG) && (mode == QImode));
 }
 
-enum machine_mode pic30_pointer_mode(tree type) {
+enum machine_mode pic30_pointer_mode(tree type, tree decl) {
   tree actual_type;
   int prog=0;
   int psv=0;
+  int pmp=0;
+  int external=0;
   int target_qualifiers;
+  int qualifications = 0;
 
   /* not yet initialized? return Pmode */
   if (pic30_identPsv[0] == 0) return Pmode;
+  if (decl) {
+    /* selecting pointer mode for make_decl_rtl */
+    /* ie:  mem:MODE (symbol_ref:MODE2 x)
+     * where MODE is target mode and MODE2 is the access mode
+     * so:
+     *   __psv__ int foo __attribute__((space(psv)));
+     *
+     *  would need (mem:HI (symbol_ref: P24PSV (foo)))
+     *
+     *  but __psv__ int *foo
+     *
+     *  would need (mem:P24PSV (symbol_ref: Pmode (foo)))
+     *    since foo is stored in data memory (and its address is there too)
+     */
+    tree space_attr;
+
+    space_attr = lookup_attribute(IDENTIFIER_POINTER(pic30_identSpace[0]),
+                                  DECL_ATTRIBUTES(decl));
+    if (space_attr) {
+      int pmp=0;
+      int external=0;
+      int psv=0;
+      int prog=0;
+      /* declaration is in space */
+  
+      if (TREE_CODE(TREE_VALUE(TREE_VALUE(space_attr))) == CALL_EXPR) {
+        tree id;
+        id = TREE_OPERAND(TREE_OPERAND(TREE_VALUE(TREE_VALUE(space_attr)),0),0);
+        pmp = IDENT_PMP(DECL_NAME(id));
+        external = IDENT_EXTERNAL(DECL_NAME(id));
+      }
+      psv = (space_attr && IDENT_CONST(TREE_VALUE(TREE_VALUE(space_attr))));
+      psv |= (space_attr && IDENT_PSV(TREE_VALUE(TREE_VALUE(space_attr))));
+      prog = (space_attr && IDENT_PROG(TREE_VALUE(TREE_VALUE(space_attr))));
+      switch (TYPE_MODE(type)) {
+        case P24PSVmode: if (psv) return P24PSVmode;
+                         break;
+        case P24PROGmode: if (prog) return P24PROGmode;
+                         break;
+        case P16PMPmode: if (pmp) return P16PMPmode;
+                         break;
+        case P32EXTmode: if (external) return P32EXTmode;
+                         break;
+      }
+    }
+    if (TREE_CODE(type) == POINTER_TYPE) return Pmode;
+  }
   /* some other code (alias analysis, +?) forced the type to be 24bit pointer 
      type, the qualifiers might not be present, allow the force */
-  if ((TYPE_MODE(type) == P24PSVmode) || (TYPE_MODE(type) == P24PROGmode))
+  if ((TYPE_MODE(type) == P24PSVmode) || (TYPE_MODE(type) == P24PROGmode) ||
+      (TYPE_MODE(type) == P16PMPmode) || (TYPE_MODE(type) == P32EXTmode))
     return TYPE_MODE(type);
   actual_type = type;
   while (TREE_CODE(actual_type) == ARRAY_TYPE) {
@@ -13462,21 +14324,21 @@ enum machine_mode pic30_pointer_mode(tree type) {
     actual_type = TREE_TYPE(actual_type);
   }
   target_qualifiers = TYPE_TARGET_QUALIFIER(actual_type);
-  psv = target_qualifiers & 0x1;
-  prog = target_qualifiers & 0x2;
-  if (psv && prog) {
-    warning("__psv__ and __prog__ qualifiers are incompatible");
-#ifdef __C30_BETA__
-  } else if (((psv || prog) == 0) && TARGET_CONST_IN_PSV) {
-    psv = TYPE_READONLY(type);
-  } else if (((psv || prog) == 0) && TARGET_CONST_IN_PROG) {
-    prog = TYPE_READONLY(type);
-#endif
+  psv = (target_qualifiers & tq_psv) && (++qualifications);
+  prog = (target_qualifiers & tq_prog) && (++qualifications);
+  pmp = (target_qualifiers & tq_pmp) && (++qualifications);
+  external = (target_qualifiers & tq_external) && (++qualifications);
+  if (qualifications > 1) {
+    error("Incompatible mix of type qualifiers");
   }
   if (psv) {
     return P24PSVmode;
   } else if (prog) {
     return P24PROGmode;
+  } else if (pmp) {
+    return P16PMPmode;
+  } else if (external) {
+    return P32EXTmode;
   } else {
     return Pmode;
   }
@@ -13501,14 +14363,16 @@ void pic30_layout_type(tree type) {
   switch(TREE_CODE(type)) {
     default:  /* layout_type has done the right thing */
               break;
-    case ARRAY_TYPE:
-      break;
     case POINTER_TYPE: {
       int nbits;
 
-      if ((TYPE_MODE(type) == P24PSVmode) || (TYPE_MODE(type) == P24PROGmode))
+      if ((TYPE_MODE(type) == P24PSVmode) || 
+          (TYPE_MODE(type) == P24PROGmode) ||
+          (TYPE_MODE(type) == P16PMPmode) ||
+          (TYPE_MODE(type) == P32EXTmode)) {
         mode = TYPE_MODE(type);
-      else mode = pic30_pointer_mode(TREE_TYPE(type));
+      }
+      else mode = pic30_pointer_mode(TREE_TYPE(type),0);
       TYPE_MODE (type) = mode;
       nbits = GET_MODE_BITSIZE(mode);
       TYPE_SIZE (type) = bitsize_int (nbits);
@@ -13523,6 +14387,8 @@ void pic30_layout_type(tree type) {
 bool pic30_valid_pointer_mode(enum machine_mode mode) {
   switch (mode) {
     case Pmode:
+    case P32EXTmode:
+    case P16PMPmode:
     case P24PROGmode:
     case P24PSVmode:  return 1;
     default:  break;
@@ -13533,12 +14399,19 @@ bool pic30_valid_pointer_mode(enum machine_mode mode) {
 
 bool pic30_convert_pointer(rtx to, rtx from) {
   rtx result;
+  rtx result2;
 
   if (pic30_valid_pointer_mode(GET_MODE(to))) {
     switch (GET_CODE(from)) {
       default: break;
       case SYMBOL_REF:
         switch GET_MODE(to) {
+          case P16PMPmode:
+             emit_insn(
+               gen_movP16PMP_address(to,
+                                   gen_rtx_SYMBOL_REF(P16PMPmode,XSTR(from,0)))
+             );
+             return 1;
           case P24PROGmode:
              emit_insn(
                gen_movP24PROG_address(to,
@@ -13551,14 +14424,24 @@ bool pic30_convert_pointer(rtx to, rtx from) {
                                     gen_rtx_SYMBOL_REF(P24PSVmode,XSTR(from,0)))
              );
              return 1;
+          case P32EXTmode:
+             emit_insn(
+               gen_movP32EXT_address(to,
+                                    gen_rtx_SYMBOL_REF(P32EXTmode,XSTR(from,0)))
+             );
+             return 1;
           default: break;
         }
         break;
     }
   }
-  result = pic30_convert_mode(GET_MODE(to), GET_MODE(from), from, 0);
-  if (result) {
-    emit_move_insn(to, result);
+  result2 = pic30_convert_mode(GET_MODE(to), GET_MODE(from), from, 1);
+  if (result2) {
+    result = gen_reg_rtx(GET_MODE(from));
+   
+    emit_move_insn(result,from);
+    result2 = pic30_convert_mode(GET_MODE(to), GET_MODE(result), result, 1);
+    emit_move_insn(to, result2);
     return 1;
   }
   return 0;
@@ -13675,82 +14558,27 @@ static bool pic30_rtx_costs(rtx RTX, int CODE, int OUTER_CODE ATTRIBUTE_UNUSED,
 int pic30_parse_target_rid(tree qual, int *x) {
   
   if (strcmp(IDENTIFIER_POINTER(qual), "__psv__") == 0)
-    *x |= 1;
+    *x |= tq_psv;
   else if (strcmp(IDENTIFIER_POINTER(qual), "__prog__") == 0)
-    *x |= 2;
+    *x |= tq_prog;
+  else if (strcmp(IDENTIFIER_POINTER(qual), "__pmp__") == 0)
+    *x |= tq_pmp;
+  else if (strcmp(IDENTIFIER_POINTER(qual), "__external__") == 0)
+    *x |= tq_external;
   return 0;
 }
 
-rtx pic30_convert_mode(enum machine_mode newmode,
-                       enum machine_mode oldmode, rtx x, int unsignedp) {
+rtx pic30_convert_mode(enum machine_mode newmode ATTRIBUTE_UNUSED,
+                       enum machine_mode oldmode ATTRIBUTE_UNUSED, 
+                       rtx x ATTRIBUTE_UNUSED, 
+                       int unsignedp) {
   rtx result = 0;
 
-#if 0
-  if (oldmode == VOIDmode) oldmode = GET_MODE(x);
-  if ((newmode == P24PROGmode) || (newmode == P24PSVmode)) {
-    switch (oldmode) {
-      default: gcc_assert(0);
-      case QImode:
-      case HImode: {
-        rtx temp;
-
-        temp = gen_reg_rtx(oldmode);
-        convert_move(temp, x, unsignedp);
-        result = gen_reg_rtx(newmode);
-        if (newmode == P24PROGmode) {
-          emit_insn(gen_seP24PROGHI(result, temp));
-        } else {
-          emit_insn(gen_seP24PSVHI(result, temp));
-        }
-        break;
-      }
-      case SImode: {
-        rtx temp;
-  
-        temp = gen_reg_rtx(oldmode);
-        convert_move(temp, x, unsignedp);
-        result = gen_reg_rtx(newmode);
-        emit_move_insn(result, gen_rtx_SUBREG(newmode, temp, 0));
-        emit_insn(gen_rotlhi(gen_rtx_SUBREG(HImode,result,0),
-                             gen_rtx_SUBREG(HImode,result,0)));
-        break;
-      }
-/*
-      case P24PROGmode:
-      case P24PSVmode:
-        result = gen_reg_rtx(newmode);
-        convert_move(result, x, unsignedp);
-        break;
-*/
-    }
-  } else if (((oldmode == P24PROGmode) || (oldmode == P24PSVmode))) {
-    switch (newmode) {
-      default: gcc_assert(0);
-      case HImode: {
-        rtx temp;
-
-        temp = gen_reg_rtx(oldmode);
-        convert_move(temp, x, unsignedp);
-        result = gen_reg_rtx(newmode);
-        emit_move_insn(result, gen_rtx_SUBREG(newmode, temp, 0));
-        emit_insn(gen_rotrhi(result,result));
-        break;
-      }
-      case SImode: {
-        rtx temp;
-  
-        temp = gen_reg_rtx(oldmode);
-        convert_move(temp, x, unsignedp);
-        result = gen_reg_rtx(newmode);
-        emit_move_insn(result, 
-                       gen_rtx_fmt_e(unsignedp ? ZERO_EXTEND : SIGN_EXTEND, 
-                                     newmode, temp));
-        break;
-      }
+  if (newmode != oldmode) {
+    if (GET_MODE_BITSIZE(newmode) == GET_MODE_BITSIZE(oldmode)) {
+      return gen_rtx_SUBREG(newmode, x, 0);
     }
   }
-#endif
-
   return result;
 }
 
@@ -13841,21 +14669,58 @@ char *pic30_boot_secure_access(rtx call, int *slot, int *set_psv) {
 char *pic30_default_include_path(void) {
   pic30_override_options();
 
+  { char *my_space = 0;
+
+    if ((target_flags & TARGET_MASK_ARCH_PIC24F) ||
+        (target_flags & TARGET_MASK_ARCH_PIC24FK)) {
+      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH 
+                                PATH_SEPARATOR_STR
+                                MPLABC30_PIC24F_INCLUDE_PATH),1);
+      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+                                 PATH_SEPARATOR_STR,
+                                 MPLABC30_PIC24F_INCLUDE_PATH);
+    } else if (target_flags & TARGET_MASK_ARCH_PIC24H) {
+      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH 
+                                 PATH_SEPARATOR_STR
+                                 MPLABC30_PIC24H_INCLUDE_PATH),1);
+      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+                                 PATH_SEPARATOR_STR,
+                                 MPLABC30_PIC24H_INCLUDE_PATH);
+    } else if (target_flags & TARGET_MASK_ARCH_PIC30) {
+      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH
+                                 PATH_SEPARATOR_STR
+                                 MPLABC30_PIC30F_INCLUDE_PATH),1);
+      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+                                 PATH_SEPARATOR_STR,
+                                 MPLABC30_PIC30F_INCLUDE_PATH);
+    } else if (target_flags & TARGET_MASK_ARCH_PIC33) {
+      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH
+                                 PATH_SEPARATOR_STR
+                                 MPLABC30_PIC33F_INCLUDE_PATH),1);
+      sprintf(my_space,"%s%s%s", MPLABC30_COMMON_INCLUDE_PATH,
+                                 PATH_SEPARATOR_STR,
+                                 MPLABC30_PIC33F_INCLUDE_PATH);
+    } else {
+      /* generic */
+      my_space = xcalloc(sizeof(MPLABC30_COMMON_INCLUDE_PATH),1);
+      sprintf(my_space,"%s", MPLABC30_COMMON_INCLUDE_PATH);
+    }
+
+    if (my_space) {
+      char *c;
+   
+      for (c = my_space; *c; c++) {
 #ifdef __WIN32__
-  if (target_flags & TARGET_MASK_ARCH_PIC24F) {
-    return (char *) "..\\include;..\\support\\h;"
-           "..\\support\\h\\peripheral_24F";
-  } else {
-    return (char *) "..\\include;..\\support\\h;"
-           "..\\support\\h\\peripheral_30F_24H_33F";
-  }
+        if (*c == PATH_SEPARATOR_STR[0]) *c = ';';
+        else if (*c == DIR_SEPARATOR_STR[0]) *c = '\\';
 #else
-  if (target_flags & TARGET_MASK_ARCH_PIC24F) {
-    return (char *) "../include:../support/h:../support/h/peripheral_24F";
-  } else {
-    return (char*)"../include:../support/h:../support/h/peripheral_30F_24H_33F";
-  }
+        if (*c == PATH_SEPARATOR_STR[0]) *c = ':';
+        else if (*c == DIR_SEPARATOR_STR[0]) *c = '/';
 #endif
+      }
+    }
+    return my_space;
+  }
 }
 
 /* copied and modified from hp */
@@ -13934,17 +14799,226 @@ enum gimplify_status pic30_can_gimplify_expr(tree *expr_p ATTRIBUTE_UNUSED) {
 
 tree
 pic30_expand_constant(tree t) {
-  tree new_tree = t;
+  tree new_tree;
 
-  if (TREE_CODE(t) == NOP_EXPR || TREE_CODE(t) == CONVERT_EXPR || 
-      TREE_CODE(t) == NON_LVALUE_EXPR || TREE_CODE(t) == VIEW_CONVERT_EXPR) {
-    if ((TYPE_MODE(TREE_TYPE(t)) == P24PROGmode) ||
-        (TYPE_MODE(TREE_TYPE(t)) == P24PSVmode)) {
-      new_tree = copy_node(TREE_OPERAND(t,0));
-      TREE_TYPE(new_tree) = TREE_TYPE(t);
+  do {
+    new_tree = 0;
+    if (TREE_CODE(t) == NOP_EXPR || TREE_CODE(t) == CONVERT_EXPR || 
+        TREE_CODE(t) == NON_LVALUE_EXPR || TREE_CODE(t) == VIEW_CONVERT_EXPR) {
+      if ((TYPE_MODE(TREE_TYPE(t)) == P24PROGmode) ||
+          (TYPE_MODE(TREE_TYPE(t)) == P24PSVmode) ||
+          (TYPE_MODE(TREE_TYPE(t)) == P16PMPmode) ||
+          (TYPE_MODE(TREE_TYPE(t)) == P32EXTmode)) {
+        new_tree = copy_node(TREE_OPERAND(t,0));
+        TREE_TYPE(new_tree) = TREE_TYPE(t);
+        t = new_tree;
+      }
+    }
+  } while (new_tree);
+  return t;
+}
+
+void pic30_function_pre(FILE *f, tree decl, char *fnname) {
+  char *name =  pic30_strip_name_encoding(fnname);
+
+  if (lookup_attribute(IDENTIFIER_POINTER(pic30_identUserinit[0]),
+                       DECL_ATTRIBUTES(decl))) {
+    /* user_init attribute */
+    fprintf(f, "\n\t.pushsection .user_init,code\n\t%s _%s\n\t"
+               ".popsection\n\n",
+      pic30_near_function_p(decl) ? "rcall" : "call", name);
+  } else if (strcmp(name,"__init_PMP") == 0) {
+    /* known function that needs special initialization */
+    if (pic30_validate_void_fn(decl, name) == 0) { 
+      fprintf(f, "\n\t.pushsection .user_init,code\n\t%s _%s\n\t"
+                 ".popsection\n\n",
+        pic30_near_function_p(decl) ? "rcall" : "call", name);
+    }
+  } 
+}
+
+int pic30_address_of_external(rtx op0, rtx op1) {
+  rtx offset = 0;
+  tree decl = 0;
+  tree space_attr;
+  pic30_external_memory *memory = 0;
+  rtx examine_op1 = op1;
+  rtx addr_part;
+  
+  while (!decl) {
+    switch (GET_CODE(examine_op1)) {
+      default:
+        error("oopsy\n");
+        return 0;
+      case SYMBOL_REF:  decl = SYMBOL_REF_DECL(examine_op1);
+                        break;
+      case CONST: examine_op1 = XEXP(examine_op1,0);
+                  break;
+      case PLUS:  examine_op1 = XEXP(examine_op1,0);
+                  offset = XEXP(examine_op1,1);
+                  break;
     }
   }
-  return new_tree;
+  if (!decl) {
+    error("oopsy\n");
+    return 0;
+  }
+  space_attr = lookup_attribute(IDENTIFIER_POINTER(pic30_identSpace[0]),
+                                DECL_ATTRIBUTES(decl));
+  if (!space_attr) {
+    error("oopsy\n");
+    return 0;
+  }
+  if (TREE_CODE(TREE_VALUE(TREE_VALUE(space_attr))) == CALL_EXPR) {
+    tree id, id_args, attr;
+
+    id = TREE_OPERAND(TREE_OPERAND(TREE_VALUE(TREE_VALUE(space_attr)),0),0);
+    id_args = TREE_OPERAND(TREE_VALUE(TREE_VALUE(space_attr)),1);
+    if (IDENT_EXTERNAL(DECL_NAME(id))) {
+      attr = TREE_VALUE(id_args);
+      if (attr) {
+        for (memory = pic30_external_memory_head; memory; memory = memory->next)
+          if (memory->decl == attr) break;
+      }
+    }
+  }
+  if (memory == 0) {
+    error("oopsy\n");
+    return 0;
+  }
+  if (offset) {
+    addr_part = gen_reg_rtx(HImode);
+    emit_move_insn(addr_part, offset);
+    emit_insn(
+      gen_addhi3(gen_rtx_SUBREG(HImode, op0, 0), addr_part,
+                 gen_rtx_SYMBOL_REF(HImode,IDENTIFIER_POINTER(DECL_NAME(decl))))
+    );
+  } else {
+    addr_part = gen_rtx_SUBREG(HImode, op0, 0);
+    emit_move_insn(addr_part, 
+                   gen_rtx_SYMBOL_REF(HImode,
+                                      IDENTIFIER_POINTER(DECL_NAME(decl))));
+  }
+  addr_part = gen_rtx_SUBREG(HImode, op0, 2);
+  emit_move_insn(addr_part, gen_rtx_SYMBOL_REF(HImode,
+                                  IDENTIFIER_POINTER(DECL_NAME(memory->decl))));
+  return 1;
+}
+
+int pic30_output_address_of_external(FILE *output_file, rtx op1) {
+  rtx offset = 0;
+  tree decl = 0;
+  tree space_attr;
+  pic30_external_memory *memory = 0;
+  rtx examine_op1 = op1;
+  rtx addr_part;
+  
+  while (!decl) {
+    switch (GET_CODE(examine_op1)) {
+      default:
+        error("oopsy\n");
+        return 0;
+      case SYMBOL_REF:  decl = SYMBOL_REF_DECL(examine_op1);
+                        break;
+      case CONST: examine_op1 = XEXP(examine_op1,0);
+                  break;
+      case PLUS:  examine_op1 = XEXP(examine_op1,0);
+                  offset = XEXP(examine_op1,1);
+                  break;
+    }
+  }
+  if (!decl) {
+    error("oopsy\n");
+    return 0;
+  }
+  space_attr = lookup_attribute(IDENTIFIER_POINTER(pic30_identSpace[0]),
+                                DECL_ATTRIBUTES(decl));
+  if (!space_attr) {
+    error("oopsy\n");
+    return 0;
+  }
+  if (TREE_CODE(TREE_VALUE(TREE_VALUE(space_attr))) == CALL_EXPR) {
+    tree id, id_args, attr;
+
+    id = TREE_OPERAND(TREE_OPERAND(TREE_VALUE(TREE_VALUE(space_attr)),0),0);
+    id_args = TREE_OPERAND(TREE_VALUE(TREE_VALUE(space_attr)),1);
+    if (IDENT_EXTERNAL(DECL_NAME(id))) {
+      attr = TREE_VALUE(id_args);
+      if (attr) {
+        for (memory = pic30_external_memory_head; memory; memory = memory->next)
+          if (memory->decl == attr) break;
+      }
+    }
+  }
+  if (memory == 0) {
+    error("oopsy\n");
+    return 0;
+  }
+  assemble_integer(op1, 2, 2, 1);
+  assemble_integer(
+    gen_rtx_SYMBOL_REF(HImode, IDENTIFIER_POINTER(DECL_NAME(memory->decl))),
+    2,2,1);
+  return 1;
+}
+
+int pic30_emit_block_move(rtx x, rtx y, rtx size) {
+  rtx innerx = 0;
+  rtx innery = 0;
+  int result = 0;
+  tree sym;
+
+  if ((GET_CODE(x) == MEM) && (GET_MODE(x) == BLKmode)) {
+    innerx = XEXP(x,0);
+  }
+  if ((GET_CODE(y) == MEM) && (GET_MODE(y) == BLKmode)) {
+    innery = XEXP(y,0);
+  }
+  if ((innerx == 0) || (GET_MODE(innerx) == P24PSVmode) || 
+      (GET_MODE(innerx) == P24PROGmode)) {
+    /* cannot generate block move with this function */
+    return 0;
+  }
+  if (innery == 0) {
+    /* cannot generate block move with this function */
+    return 0;
+  }
+  switch (GET_MODE(innery)) {
+    default: return 0;  /* cannot support this source mode */
+    case P24PSVmode:
+    case P24PROGmode:
+      if (GET_MODE(innerx) == HImode) {
+        /* normal RAM */
+        sym = maybe_get_identifier("_memcpy_helper");
+        if (sym) sym = lookup_name(sym);
+        if (!sym) {
+          /* define it */ 
+          tree fn_type;
+          tree decl;
+
+          sym = get_identifier("_memcpy_helper");
+          fn_type = build_function_type_list(void_type_node, 
+                                             long_unsigned_type_node,
+                                             unsigned_type_node,
+                                             unsigned_type_node,
+                                             unsigned_type_node,NULL_TREE);
+          decl = build_decl(FUNCTION_DECL, sym, fn_type);
+          TREE_PUBLIC(decl) = 1;
+          DECL_EXTERNAL(decl)=1;
+          SET_DECL_ASSEMBLER_NAME(decl,sym);
+          // bind(sym,decl,external_scope,1,0);
+	  sym = decl;
+        }
+        emit_library_call(XEXP(DECL_RTL(sym),0),
+                          LCT_NORMAL, VOIDmode, 4, 
+                          innery, GET_MODE(innery),
+                          innerx, GET_MODE(innerx),
+                          size, HImode,
+                          GEN_INT(0), HImode);
+        result=1;
+      }
+      break;
+  }
+  return result;
 }
 
 /*END********************************************************************/

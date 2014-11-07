@@ -126,6 +126,19 @@
   (UNSPECV_WRITERTCWEN 46)
   (UNSPECV_PSVRDPSV    47) ; psv pointer access
   (UNSPECV_PSVRDPROG   48) ; psv pointer access
+  (UNSPECV_PMPRD       49) ; PMP read
+  (UNSPECV_PMPWT       50) ; PMP write
+  (UNSPECV_EXTRD       51) ; EXT read
+  (UNSPECV_EXTWT       52) ; EXT write
+  (UNSPECV_WHILEPMMODE 53) ; while (!PMMODEbits.busy)
+  (UNSPECV_PMDIN1RD    54) ; read PMPDIN1
+  (UNSPECV_PMDIN1WT    55) ; write PMPDIN1
+  (UNSPECV_SETPMMODE   56) 
+  (UNSPECV_CLRPMMODE   57)
+  (UNSPECV_TBLRDLB     58) ; __builtin_tblrdlb
+  (UNSPECV_TBLRDHB     59) ; __builtin_tblrdhb
+  (UNSPECV_TBLWTLB     60) ; __builtin_tblwtlb
+  (UNSPECV_TBLWTHB     61) ; __builtin_tblwthb
   (UNSPECV_TEMP        99)
  ]
 )
@@ -138,6 +151,10 @@
   (SPREG	15) ; Stack-pointer hard register number
   (RCOUNT	16) ; Repeat-count hard register number
   (PSVPAG       19) ; PSVPAG
+  (PMADDR       20) 
+  (PMMODE       21)
+  (PMDIN1       22)
+  (PMDIN2       23)
  ]
 )
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1367,6 +1384,16 @@
   "tblrdl.w [%1], %0"
 )
 
+(define_insn "tblrdlb"
+  [(set (match_operand:QI 0 "pic30_mode2_operand" "=rR<>")
+        (unspec_volatile:QI
+          [(match_operand:HI 1 "pic30_register_operand" "r")] UNSPECV_TBLRDLB
+        )
+    )]
+  ""
+  "tblrdl.b [%1], %0"
+)
+
 (define_insn "tblrdh"
   [(set (match_operand:HI 0 "pic30_mode2_operand" "=rR<>") 
         (unspec_volatile:HI 
@@ -1375,6 +1402,16 @@
     )]
   ""
   "tblrdh.w [%1], %0"
+)
+
+(define_insn "tblrdhb"
+  [(set (match_operand:QI 0 "pic30_mode2_operand" "=rR<>")
+        (unspec_volatile:QI
+          [(match_operand:HI 1 "pic30_register_operand" "r")] UNSPECV_TBLRDHB
+        )
+    )]
+  ""
+  "tblrdh.b [%1], %0"
 )
 
 (define_insn "tblwtl"
@@ -1387,6 +1424,16 @@
   "tblwtl.w %1, [%0]"
 )
 
+(define_insn "tblwtlb"
+  [(unspec_volatile:QI
+     [(match_operand:HI 0 "pic30_register_operand" "r")
+      (match_operand:QI 1 "pic30_mode2_operand" "rR<>")] UNSPECV_TBLWTLB
+   )
+  ]
+  ""
+  "tblwtl.b %1, [%0]"
+)
+
 (define_insn "tblwth"
   [(unspec_volatile:HI  
      [(match_operand:HI 0 "pic30_register_operand" "r")
@@ -1395,6 +1442,16 @@
   ]
   ""
   "tblwth.w %1, [%0]"
+)
+
+(define_insn "tblwthb"
+  [(unspec_volatile:QI
+     [(match_operand:HI 0 "pic30_register_operand" "r")
+      (match_operand:QI 1 "pic30_mode2_operand" "rR<>")] UNSPECV_TBLWTHB
+   )
+  ]
+  ""
+  "tblwth.b %1, [%0]"
 )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1650,6 +1707,7 @@
 ;  "cp0 %0"
 ;  [(set_attr "cc" "set")])
 
+
 (define_insn "tstsi"
   [(set (cc0)
         (match_operand:SI 0 "pic30_register_operand" "r"))]
@@ -1773,14 +1831,14 @@
               /* literal > 10 bits, save repeat count in reg */
               restore_with_sub_0 = 1;
               restore_with_sub_1 = 1;
-              c += sprintf(c,\"mov #%%3,%%4\;\");
+              c += sprintf(c,\"mov #%%2,%%4\;\");
               sub_value =\"%4\";
               break;
      case 5:  /* op0 is memory, take its address */
               /* literal > 10 bits, save repeat count in reg */
               c += sprintf(c,\"mov #%%0,%%4\;\");
               op0 = \"%4\";
-              c += sprintf(c,\"mov #%%3,%%5\;\");
+              c += sprintf(c,\"mov #%%2,%%5\;\");
               sub_value = \"%5\";
               restore_with_sub_1 = 1;
               break;
@@ -1789,7 +1847,7 @@
               c += sprintf(c,\"mov #%%1,%%4\;\");
               restore_with_sub_0 = 1;
               op1 = \"%4\";
-              c += sprintf(c,\"mov #%%3,%%5\;\");
+              c += sprintf(c,\"mov #%%2,%%5\;\");
               sub_value = \"%5\";
               break;
      case 7:  /* op0 and op1 are memory, take their addresses */
@@ -1926,7 +1984,7 @@
   [(set (cc0)
         (compare (match_operand:QI 0 "pic30_register_operand" "r")
                  (match_operand:QI 1 "pic30_M_operand"  "M")))
-   		 (clobber (match_dup 0))]
+   (clobber (match_dup 0))]
   ""
   "add.b #%J1,%0"
   [(set_attr "cc" "set")])
@@ -2035,7 +2093,7 @@
   [(set (cc0)
         (compare (match_operand:HI 0 "pic30_register_operand" "r")
                  (match_operand:HI 1 "pic30_M_operand"  "M")))
-   		 (clobber (match_dup 0))]
+   (clobber (match_dup 0))]
   ""
   "add #%J1,%0"
   [(set_attr "cc" "set")])
@@ -2047,7 +2105,7 @@
   ""
   "@
    cp %0
-   sub %0, %1, [w15]"
+   sub %0,%1,[w15]"
   [(set_attr "cc" "set")])
 
 (define_insn "cmphi"
@@ -2167,7 +2225,7 @@
                    (match_operand:HI 1 "pic30_register_operand" "r"))))]
   ""
   "sub %0,%1,[w15]\;subb %d0,#0,[w15]"
-  [(set_attr "cc" "math")])
+  [(set_attr "cc" "set")])
 
 ;;;;;;;;;;;;;;;;;;
 ;; double integer
@@ -2181,7 +2239,7 @@
   "@
    cp %0,%1\;cpb %d0,%d1\;cpb %t0,%t1\;cpb %q0,%q1
    sub %0,#0,[w15]\;subb %d0,#0,[w15]\;subb %t0,#0,[w15]\;subb %q0,#0,[w15]"
-  [(set_attr "cc" "clobber")])
+  [(set_attr "cc" "set")])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; truncation instructions
@@ -2213,7 +2271,7 @@
   ""
   "ze %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse")
   ]
 )
@@ -2228,7 +2286,7 @@
 		\"mov #0,%d0\");
 }"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
@@ -2245,7 +2303,7 @@
 		\"mov #0,%q0\");
 }"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "clobber")
    (set_attr "type" "def")
   ]
 )
@@ -2342,7 +2400,7 @@
   ""
   "se %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse")
   ]
 )
@@ -2716,7 +2774,7 @@
   ""
   "
 {
-	if (pic30_emit_move_sequence(operands, QImode)) DONE;
+  if (pic30_emit_move_sequence(operands, QImode)) DONE;
 }")
 
 ;; (define_expand "reload_inqi"
@@ -3014,38 +3072,6 @@
   "mov #dmaoffset(%1),%0"
   [(set_attr "cc" "change0")])
 
-;(define_insn "p24prog_psv"
-;  [(set (match_operand:QI 0 "pic30_register_operand"  "=r")
-;        (unspec:QI [(match_operand:P24PROG 1 "pic30_register_operand" "r")]
-;                    UNSPECV_P24PROG_PSV))]
-;  ""
-;  "mov %d1,%0"
-;  [(set_attr "cc" "change0")])
-;
-;(define_insn "p24prog_off"
-;  [(set (match_operand:HI 0 "pic30_register_operand"  "=r")
-;        (unspec:HI [(match_operand:P24PROG 1 "pic30_register_operand" "r")]
-;                    UNSPECV_P24PROG_OFF))]
-;  ""
-;  "rrnc %1,%0"
-;  [(set_attr "cc" "change0")])
-;
-;(define_insn "p24psv_psv"
-;  [(set (match_operand:QI 0 "pic30_register_operand"  "=r")
-;        (unspec:QI [(match_operand:P24PSV 1 "pic30_register_operand" "r")]
-;                    UNSPECV_P24PSV_PSV))]
-;  ""
-;  "mov %d1,%0"
-;  [(set_attr "cc" "change0")])
-;
-;(define_insn "p24psv_off"
-;  [(set (match_operand:HI 0 "pic30_register_operand"  "=r")
-;        (unspec:HI [(match_operand:P24PSV 1 "pic30_register_operand" "r")]
-;                    UNSPECV_P24PSV_OFF))]
-;  ""
-;  "rrnc %1,%0"
-;  [(set_attr "cc" "change0")])
-;
 ;;;;;;;;;;;;;;;
 ;; general case
 ;;;;;;;;;;;;;;;
@@ -3054,6 +3080,53 @@
            "pic30_move_operand" "=r<>, R,   r<>,R,S,S,  Q,r,r,T,a")
         (match_operand:HI 1
 	   "pic30_move_operand"  "RS<>,RS<>,r,  r,r,<>R,r,Q,T,r,U"))]
+  ""
+  "*
+   { 
+     char *format[] = {
+       \"mov %1,%0\",
+       \"mov %1,%0\",
+       \"mov %1,%0\",
+       \"mov %1,%0\",
+       \"mov %1,%0\",
+       \"mov %1,%0\",
+       \"mov %1,%0\",
+       \"mov %1,%0\",
+       \"mov %1,%0\",
+       \"mov %1,%0\",
+       \"mov %1,WREG\" 
+     };
+
+     #define IDENT_EXTERNAL(t) \
+       ((t) == pic30_identExternal[0] || (t) == pic30_identExternal[1])
+
+     if ((which_alternative == 8) || (which_alternative == 10)) {
+       tree decl = 0;
+       if (GET_CODE(XEXP(operands[1],0)) == SYMBOL_REF)
+         decl = SYMBOL_REF_DECL(XEXP(operands[1],0));
+       if (decl) {
+         tree attr = lookup_attribute(IDENTIFIER_POINTER(pic30_identSpace[0]),
+                                      DECL_ATTRIBUTES(decl));
+         if (attr &&
+             (TREE_CODE(TREE_VALUE(TREE_VALUE(attr))) == CALL_EXPR)) {
+           tree id=TREE_OPERAND(TREE_OPERAND(TREE_VALUE(TREE_VALUE(attr)),0),0);
+           if (IDENT_EXTERNAL(DECL_NAME(id))) return \"mov #%1,%0\";
+         }
+       }
+     }
+     return format[which_alternative];
+   }"
+  [(set_attr "cc"
+  "change0,change0,change0,change0,change0,change0,change0,change0,change0,change0,move")
+   (set_attr "type"
+   "defuse,use,def,etc,etc,etc,use,defuse,def,etc,def")
+  ])
+
+(define_insn "movP16PMP_gen"
+  [(set (match_operand:P16PMP 0
+           "pic30_move_operand" "=r<>, R,   r<>,R,S,S,  Q,r,r,T,a")
+        (match_operand:P16PMP 1
+           "pic30_move_operand"  "RS<>,RS<>,r,  r,r,<>R,r,Q,T,r,U"))]
   ""
   "@
    mov %1,%0
@@ -3073,7 +3146,6 @@
    "defuse,use,def,etc,etc,etc,use,defuse,def,etc,def")
   ])
 
-
 ;; If one of the operands is immediate and the other is not a register,
 ;; then we should emit two insns, using a scratch register.  This will produce
 ;; better code in loops if the source operand is invariant, since
@@ -3089,8 +3161,9 @@
         (match_operand:HI 1 "pic30_move_operand" ""))]
   ""
   "
-{
-  if (pic30_emit_move_sequence(operands, HImode)) DONE;
+{ int result = pic30_emit_move_sequence(operands, HImode);
+
+  if (result > 0) DONE;
 }")
 
 ;;
@@ -3120,7 +3193,7 @@
 (define_insn "movhi_reload_hi"
   [(set (match_operand:HI 0 "pic30_move_operand"   "=a,r")
         (subreg:HI 
-           (match_operand:SI 1 "pic30_move_operand" "U,T") 2))]
+           (match_operand:SI 1 "pic30_UT_operand" "U,T") 2))]
   ""
   "@
    mov %1+2,WREG
@@ -3175,6 +3248,25 @@
    operands[4] = gen_rtx_REG(HImode, REGNO(operands[0]));"
    
 )  
+
+(define_insn "movP16PMP_address"
+  [(set (match_operand:P16PMP 0 "pic30_move_operand"             "=rR<>QSTU")
+        (match_operand:P16PMP 1 "pic30_symbolic_address_operand" " g"))]
+  ""
+  "mov #%1,%0"
+)
+
+(define_expand "movP32EXT_address"
+  [(set (match_operand:P32EXT 0 "pic30_move_operand"             "=rR<>QSTU")
+        (match_operand:P32EXT 1 "pic30_symbolic_address_operand" " g"))]
+  ""
+  "{
+     if (pic30_address_of_external(operands[0],operands[1])) {
+       DONE;
+     } else FAIL;
+   }
+  "
+)
 
 (define_insn "movP24PROG_gen"
   [(set (match_operand:P24PROG 0 "pic30_move_operand" "=r,r,  R<>,Q,r, TU")
@@ -3261,6 +3353,24 @@
    if (pic30_emit_move_sequence(operands, P24PSVmode)) DONE;
 }")
 
+(define_expand "movp16pmp"
+  [(set (match_operand:P16PMP 0 "pic30_general_operand" "")
+        (match_operand:P16PMP 1 "pic30_general_operand" ""))]
+  ""
+  "
+{
+   if (pic30_emit_move_sequence(operands, P16PMPmode)) DONE;
+}")
+
+(define_expand "movp32ext"
+  [(set (match_operand:P32EXT 0 "pic30_general_operand" "")
+        (match_operand:P32EXT 1 "pic30_general_operand" ""))]
+  ""
+  "
+{
+   if (pic30_emit_move_sequence(operands, P32EXTmode)) DONE;
+}")
+
 (define_insn "set_P24PROG_psvpage"
    [(set (reg:QI PSVPAG)
          (subreg:QI (match_operand:P24PROG 0 "pic30_psv_operand" "r,RQ") 2))
@@ -3303,6 +3413,99 @@
    ""
    "mov _PSVPAG,%0"
 )
+
+(define_insn "set_PMADDR"
+  [(set (reg:P16PMP PMADDR)
+        (match_operand: P16PMP 0 "pic30_mode2_operand" "r,R<>"))]
+  ""
+  "@
+   mov %0,_PMADDR
+   push %0\;pop _PMADDR"
+)
+
+(define_insn "while_PMMODE_busy"
+  [
+   (unspec_volatile:HI  [(const_int 0)] UNSPECV_WHILEPMMODE)
+   (use (reg:P16PMP PMADDR))
+  ]
+  ""
+  "btsc _PMMODE, #15\;bra . - 2"
+)
+
+(define_insn "bitset_PMMODE"
+  [ 
+   (set (reg:HI PMMODE)
+        (unspec_volatile:HI 
+          [(reg:HI PMMODE)
+           (match_operand 0 "const_int_operand"      "i")] UNSPECV_SETPMMODE))
+  ]
+  "((INTVAL(operands[0]) >= 0) && (INTVAL(operands[0]) <= 15))"
+  "bset _PMMODE,#%0"
+)
+
+(define_insn "bitclr_PMMODE"
+  [ 
+   (set (reg:HI PMMODE)
+        (unspec_volatile:HI 
+          [(reg:HI PMMODE)
+           (match_operand 0 "const_int_operand"      "i")] UNSPECV_CLRPMMODE))
+   (clobber (reg:P16PMP PMADDR))
+  ]
+  "((INTVAL(operands[0]) >= 0) && (INTVAL(operands[0]) <= 15))"
+  "bclr _PMMODE,#%0"
+)
+
+(define_insn "get_PMDIN1qi"
+  [
+   (set (match_operand:QI 0 "pic30_mode2_operand" "=r,R<>")
+        (unspec_volatile:QI [ (reg:QI PMDIN1)
+                              (reg:P16PMP PMADDR) ] UNSPECV_PMDIN1RD))
+  ]
+  ""
+  "@
+   mov _PMDIN1,%0
+   push _PMDIN1\;pop %0"
+)
+
+(define_insn "get_PMDIN1hi"
+  [
+   (set (match_operand: HI 0 "pic30_mode2_operand" "=r,R<>")
+        (unspec_volatile:HI [ (reg:HI PMDIN1)
+                              (reg:P16PMP PMADDR) ] UNSPECV_PMDIN1RD))
+  ]
+  ""
+  "@
+   mov _PMDIN1,%0
+   push _PMDIN1\;pop %0"
+)
+
+(define_insn "set_PMDIN1qi"
+  [
+   (set (reg:QI PMDIN1)
+        (unspec_volatile:QI [ 
+          (match_operand:QI 0 "pic30_mode2_operand" "r,R<>")
+          (reg:P16PMP PMADDR) 
+        ] UNSPECV_PMDIN1WT))
+  ]
+  ""
+  "@
+   mov %0,_PMDIN1
+   push %0\;pop _PMDIN1"
+)
+
+(define_insn "set_PMDIN1hi"
+  [
+   (set (reg:HI PMDIN1)
+        (unspec_volatile:HI [ 
+          (match_operand:HI 0 "pic30_mode2_operand" "r,R<>")
+          (reg:P16PMP PMADDR) 
+        ] UNSPECV_PMDIN1WT))
+  ]
+  ""
+  "@
+   mov %0,_PMDIN1
+   push %0\;pop _PMDIN1"
+) 
 
 (define_insn "rotlhi"
   [(set (match_operand:HI 0 "pic30_mode2_operand" "=rR<>")
@@ -3413,17 +3616,6 @@
   "mov.b [%1],%0"
 )
 
-;(define_insn "P24PSVread_qi"
-;  [(set (match_operand:QI 0 "pic30_mode2_operand" "=rR<>")
-;        (unspec_volatile:QI
-;          [(mem:QI (match_operand:HI 1 "pic30_register_operand" "r"))
-;           (reg:QI PSVPAG)]
-;          UNSPECV_PSVRD))
-;  ]
-;  ""
-;  "mov.b [%1],%0"
-;)
-
 (define_insn "P24PROGread_hi"
   [(set (match_operand:HI 0 "pic30_mode2_operand" "=rR<>")
         (unspec_volatile:HI
@@ -3435,16 +3627,16 @@
   "mov [%1],%0"
 )
 
-;(define_insn "P24PSVread_hi"
-;  [(set (match_operand:HI 0 "pic30_mode2_operand" "=rR<>")
-;        (unspec_volatile:HI
-;          [(mem:HI (match_operand:HI 1 "pic30_register_operand" "r"))
-;           (reg:QI PSVPAG)]
-;          UNSPECV_PSVRD))
-;  ]
-;  ""
-;  "mov [%1],%0"
-;)
+(define_insn "P24PROGread_P16PMP"
+  [(set (match_operand:P16PMP 0 "pic30_mode2_operand" "=rR<>")
+        (unspec_volatile:P16PMP
+          [(mem:P16PMP (match_operand:HI 1 "pic30_register_operand" "r"))
+           (reg:QI PSVPAG)]
+          UNSPECV_PSVRDPROG))
+  ]
+  ""
+  "mov [%1],%0"
+)
 
 (define_insn "P24PROGread_si"
   [(set (match_operand:SI 0 "pic30_mode2_operand" "=&r,R")
@@ -3465,6 +3657,35 @@
   [(set (match_operand:SI 0 "pic30_mode2_operand" "=&r,R")
         (unspec_volatile:SI
           [(mem:SI (match_operand:HI 1 "pic30_register_operand" "r,r"))
+           (reg:QI PSVPAG)]
+          UNSPECV_PSVRDPSV))
+   (clobber (reg:QI PSVPAG))
+  ]
+  ""
+  "@
+   mov [%1++],%0\;mov [%1--],%d0
+   mov [%1++],%I0\;mov [%1--],%D0"
+)
+
+(define_insn "P24PROGread_P32EXT"
+  [(set (match_operand:P32EXT 0 "pic30_mode2_operand" "=&r,R")
+        (unspec_volatile:P32EXT
+          [(mem:P32EXT (match_operand:HI 1 "pic30_register_operand" "r,r"))
+           (reg:QI PSVPAG)]
+          UNSPECV_PSVRDPROG))
+   (clobber (reg:QI PSVPAG))
+   (clobber (match_dup 1))
+  ]
+  ""
+  "@
+   mov [%1++],%0\;btss %1,#15\;inc _PSVPAG\;bset %1,#15\;mov [%1],%d0
+   mov [%1++],%I0\;btss %1,#15\;inc _PSVPAG\;bset %1,#15\;mov [%1],%D0"
+)
+
+(define_insn "P24PSVread_P32EXT"
+  [(set (match_operand:P32EXT 0 "pic30_mode2_operand" "=&r,R")
+        (unspec_volatile:P32EXT
+          [(mem:P32EXT (match_operand:HI 1 "pic30_register_operand" "r,r"))
            (reg:QI PSVPAG)]
           UNSPECV_PSVRDPSV))
    (clobber (reg:QI PSVPAG))
@@ -3670,7 +3891,7 @@
            (match_operand:P24PROG 1 
              "pic30_register_operand" "%r,r,r,r,r,r,r,r,r,r,r,r,r,r,r")
            (match_operand:P24PROG 2 
-             "pic30_math_operand"     " r,<>,R,MN,PJ,r,<>,R,N,P,r,<>,R,N,P")))]
+             "pic30_math_operand"     " r,<>,R,N,P,r,<>,R,N,P,r,<>,R,N,P")))]
   ""
   "@
    add %1,%2,%0\;addc %d1,%d2,%d0
@@ -3830,11 +4051,9 @@
 {  rtx op2 = gen_reg_rtx(P24PSVmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, QImode)) {
-     op0 = gen_reg_rtx(QImode);
-   }
+   op0 = gen_reg_rtx(QImode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PSV_gen(op2, operand1)                   /* copy pointer */
@@ -3852,29 +4071,16 @@
      gen_P24PROGread_qi(op0,
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movqi(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-
-;  [
-;   (set (match_dup 2) (match_dup 1))
-;   (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;   (set (match_operand:QI 4 "pic30_psvpage_operand" "=r")
-;        (subreg:QI (match_dup 2) 2))
-;   (set (subreg:HI (match_dup 2) 0)
-;        (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;   (set (match_dup 0)
-;        (unspec_volatile:QI [(match_dup 2) (match_dup 4)]
-;         UNSPECV_PSVRD))
-;   (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;  ]
 
 (define_expand "P24PROGrd_hi"
    [(set (match_operand:HI 0 "pic30_move_operand" "=r,R,rR,r,R")
@@ -3885,11 +4091,9 @@
 {  rtx op2 = gen_reg_rtx(P24PROGmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, HImode)) {
-     op0 = gen_reg_rtx(HImode);
-   }
+   op0 = gen_reg_rtx(HImode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
@@ -3907,27 +4111,16 @@
      gen_P24PROGread_hi(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movhi(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (set (match_dup 0)
-;         (unspec_volatile:HI [(match_dup 2) (match_dup 4)] 
-;          UNSPECV_PSVRD))
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PSVrd_hi"
    [(set (match_operand:HI 0 "pic30_move_operand" "=r,R,rR,r,R")
@@ -3938,11 +4131,9 @@
 {  rtx op2 = gen_reg_rtx(P24PSVmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, HImode)) {
-     op0 = gen_reg_rtx(HImode);
-   }
+   op0 = gen_reg_rtx(HImode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PSV_gen(op2, operand1)                   /* copy pointer */
@@ -3960,27 +4151,98 @@
      gen_P24PROGread_hi(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movhi(operand0, op0)
      );
    }
+   DONE;
+}")
+
+(define_expand "P24PROGrd_P16PMP"
+   [(set (match_operand:P16PMP 0 "pic30_move_operand" "=r,R,rR,r,R")
+         (mem:P16PMP 
+           (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,RQ,ST,ST")))
+   ]
+   ""
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op1_ = gen_reg_rtx(SImode);
+   rtx op0;
+
+   op0 = gen_reg_rtx(P16PMPmode);
+   pic30_managed_psv = 1;
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
+   );
+   emit_insn(
+     gen_copy_psv(op3)                                   /* preserve PSVPAG */
+   );
+   emit_insn(
+     gen_unpack_MPROG(op1_,op2)                          /* unpack PSV ptr */
+   );
+   emit_insn(
+     gen_set_psv(gen_rtx_SUBREG(QImode, op1_, 2))        /* set PSVPAG */
+   );
+   emit_insn(
+     gen_P24PROGread_P16PMP(op0,
+                        gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
+   );
    emit_insn(
      gen_set_psv(op3)                                    /* restore PSVPAG */
    );
+   if (op0 != operand0) {
+     emit_insn(
+       gen_movp16pmp(operand0, op0)
+     );
+   }
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (set (match_dup 0)
-;         (unspec_volatile:HI [(match_dup 2) (match_dup 4)]
-;          UNSPECV_PSVRD))
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
+
+(define_expand "P24PSVrd_P16PMP"
+   [(set (match_operand:P16PMP 0 "pic30_move_operand" "=r,R,rR,r,R")
+         (mem:P16PMP
+           (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,RQ,ST,ST")))
+   ]
+   ""
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op1_ = gen_reg_rtx(SImode);
+   rtx op0;
+
+   op0 = gen_reg_rtx(P16PMPmode);
+   pic30_managed_psv = 1;
+   emit_insn(
+     gen_movP24PSV_gen(op2, operand1)                   /* copy pointer */
+   );
+   emit_insn(
+     gen_copy_psv(op3)                                   /* preserve PSVPAG */
+   );
+   emit_insn(
+     gen_unpack_MPSV(op1_,op2)                          /* unpack PSV ptr */
+   );
+   emit_insn(
+     gen_set_psv(gen_rtx_SUBREG(QImode, op1_, 2))        /* set PSVPAG */
+   );
+   emit_insn(
+     gen_P24PROGread_P16PMP(op0,
+                        gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
+   );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
+   if (op0 != operand0) {
+     emit_insn(
+       gen_movp16pmp(operand0, op0)
+     );
+   }
+   DONE;
+}")
 
 (define_expand "P24PROGrd_si"
    [(set (match_operand:SI 0 "pic30_move_operand" "=r,R,r,R")
@@ -3991,11 +4253,9 @@
 {  rtx op2 = gen_reg_rtx(P24PROGmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, SImode)) {
-     op0 = gen_reg_rtx(SImode);
-   }
+   op0 = gen_reg_rtx(SImode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
@@ -4013,29 +4273,16 @@
      gen_P24PROGread_si(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movsi(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:SI [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PSVrd_si"
    [(set (match_operand:SI 0 "pic30_move_operand" "=r,R,r,R")
@@ -4046,11 +4293,9 @@
 {  rtx op2 = gen_reg_rtx(P24PSVmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, SImode)) {
-     op0 = gen_reg_rtx(SImode);
-   }
+   op0 = gen_reg_rtx(SImode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
@@ -4068,29 +4313,96 @@
      gen_P24PSVread_si(op0,
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movsi(operand0, op0)
      );
    }
+   DONE;
+}")
+
+(define_expand "P24PROGrd_P32EXT"
+   [(set (match_operand:P32EXT 0 "pic30_move_operand" "=r,R,r,R")
+         (mem:P32EXT (match_operand:P24PROG 1 "pic30_psv_operand" "r,r,R,R")))
+   ]
+   ""
+   "
+{  rtx op2 = gen_reg_rtx(P24PROGmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op1_ = gen_reg_rtx(P32EXTmode);
+   rtx op0;
+  
+   op0 = gen_reg_rtx(P32EXTmode);
+   pic30_managed_psv = 1;
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
+   );
+   emit_insn(
+     gen_copy_psv(op3)                                   /* preserve PSVPAG */
+   );
+   emit_insn(
+     gen_unpack_MPROG(op1_,op2)                           /* unpack PSV ptr */
+   );
+   emit_insn(
+     gen_set_psv(gen_rtx_SUBREG(QImode, op1_, 2))        /* set PSVPAG */
+   );
+   emit_insn(
+     gen_P24PROGread_P32EXT(op0, 
+                        gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
+   );
    emit_insn(
      gen_set_psv(op3)                                    /* restore PSVPAG */
    );
+   if (op0 != operand0) {
+     emit_insn(
+       gen_movp32ext(operand0, op0)
+     );
+   }
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:SI [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
+
+(define_expand "P24PSVrd_P32EXT"
+   [(set (match_operand:P32EXT 0 "pic30_move_operand" "=r,R,r,R")
+         (mem:P32EXT (match_operand:P24PSV 1 "pic30_psv_operand" "r,r,R,R")))
+   ]
+   ""
+   "
+{  rtx op2 = gen_reg_rtx(P24PSVmode);
+   rtx op3 = gen_reg_rtx(QImode);
+   rtx op1_ = gen_reg_rtx(P32EXTmode);
+   rtx op0;
+  
+   op0 = gen_reg_rtx(P32EXTmode);
+   pic30_managed_psv = 1;
+   emit_insn(
+     gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
+   );
+   emit_insn(
+     gen_copy_psv(op3)                                   /* preserve PSVPAG */
+   );
+   emit_insn(
+     gen_unpack_MPSV(op1_,op2)                           /* unpack PSV ptr */
+   );
+   emit_insn(
+     gen_set_psv(gen_rtx_SUBREG(QImode, op1_, 2))        /* set PSVPAG */
+   );
+   emit_insn(
+     gen_P24PSVread_P32EXT(op0,
+                        gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
+   );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
+   if (op0 != operand0) {
+     emit_insn(
+       gen_movp32ext(operand0, op0)
+     );
+   }
+   DONE;
+}")
 
 (define_expand "P24PROGrd_sf"
    [(set (match_operand:SF 0 "pic30_move_operand" "=r,R,r,R")
@@ -4103,9 +4415,7 @@
    rtx op1_ = gen_reg_rtx(SImode);
    rtx op0 = operand0;
   
-   if (!pic30_mode2_operand(op0, SFmode)) {
-     op0 = gen_reg_rtx(SFmode);
-   }
+   op0 = gen_reg_rtx(SFmode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
@@ -4123,30 +4433,16 @@
      gen_P24PROGread_sf(op0,
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movsf(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:SF [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PSVrd_sf"
    [(set (match_operand:SF 0 "pic30_move_operand" "=r,R,r,R")
@@ -4157,11 +4453,9 @@
 {  rtx op2 = gen_reg_rtx(P24PSVmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, SFmode)) {
-     op0 = gen_reg_rtx(SFmode);
-   }
+   op0 = gen_reg_rtx(SFmode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PSV_gen(op2, operand1)                   /* copy pointer */
@@ -4179,29 +4473,16 @@
      gen_P24PSVread_sf(op0,
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movsf(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:SF [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PROGrd_P24PROG"
    [(set (match_operand:P24PROG 0 "pic30_move_operand" "=r,R,r,R")
@@ -4212,11 +4493,9 @@
 {  rtx op2 = gen_reg_rtx(P24PROGmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, P24PROGmode)) {
-     op0 = gen_reg_rtx(P24PROGmode);
-   }
+   op0 = gen_reg_rtx(P24PROGmode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
@@ -4234,27 +4513,16 @@
      gen_P24PROGread_P24PROG(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movp24prog(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:P24PROG [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PSVrd_P24PROG"
    [(set (match_operand:P24PROG 0 "pic30_move_operand" "=r,R,r,R")
@@ -4265,11 +4533,9 @@
 {  rtx op2 = gen_reg_rtx(P24PSVmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, P24PROGmode)) {
-     op0 = gen_reg_rtx(P24PROGmode);
-   }
+   op0 = gen_reg_rtx(P24PROGmode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PSV_gen(op2, operand1)                   /* copy pointer */
@@ -4287,30 +4553,16 @@
      gen_P24PSVread_P24PROG(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movp24prog(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:P24PROG [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PROGrd_P24PSV"
    [(set (match_operand:P24PSV 0 "pic30_move_operand" "=r,R,r,R")
@@ -4321,11 +4573,9 @@
 {  rtx op2 = gen_reg_rtx(P24PROGmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, P24PSVmode)) {
-     op0 = gen_reg_rtx(P24PSVmode);
-   }
+   op0 = gen_reg_rtx(P24PSVmode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
@@ -4343,30 +4593,16 @@
      gen_P24PROGread_P24PSV(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movp24psv(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:P24PSV [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PSVrd_P24PSV"
    [(set (match_operand:P24PSV 0 "pic30_move_operand" "=r,R,r,R")
@@ -4377,11 +4613,9 @@
 {  rtx op2 = gen_reg_rtx(P24PSVmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, P24PSVmode)) {
-     op0 = gen_reg_rtx(P24PSVmode);
-   }
+   op0 = gen_reg_rtx(P24PSVmode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PSV_gen(op2, operand1)                   /* copy pointer */
@@ -4399,30 +4633,16 @@
      gen_P24PSVread_P24PSV(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movp24psv(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:P24PSV [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PROGrd_di"
    [(set (match_operand:DI 0 "pic30_move_operand" "=r,R,r,R")
@@ -4433,11 +4653,9 @@
 {  rtx op2 = gen_reg_rtx(P24PROGmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, DImode)) {
-     op0 = gen_reg_rtx(DImode);
-   }
+   op0 = gen_reg_rtx(DImode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
@@ -4455,30 +4673,16 @@
      gen_P24PROGread_di(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movdi(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:DI [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PSVrd_di"
    [(set (match_operand:DI 0 "pic30_move_operand" "=r,R,r,R")
@@ -4491,11 +4695,9 @@
 {  rtx op2 = gen_reg_rtx(P24PSVmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, DImode)) {
-     op0 = gen_reg_rtx(DImode);
-   }
+   op0 = gen_reg_rtx(DImode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PSV_gen(op2, operand1)                   /* copy pointer */
@@ -4513,30 +4715,16 @@
      gen_P24PSVread_di(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movdi(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:DI [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PROGrd_df"
    [(set (match_operand:DF 0 "pic30_move_operand" "=r,R,r,R")
@@ -4547,11 +4735,9 @@
 {  rtx op2 = gen_reg_rtx(P24PROGmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, DFmode)) {
-     op0 = gen_reg_rtx(DFmode);
-   }
+   op0 = gen_reg_rtx(DFmode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PROG_gen(op2, operand1)                   /* copy pointer */
@@ -4569,30 +4755,16 @@
      gen_P24PROGread_df(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movdf(operand0, op0)
      );
    }
-   emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
-   );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:DF [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
 
 (define_expand "P24PSVrd_df"
    [(set (match_operand:DF 0 "pic30_move_operand" "=r,R,r,rR")
@@ -4603,11 +4775,9 @@
 {  rtx op2 = gen_reg_rtx(P24PSVmode);
    rtx op3 = gen_reg_rtx(QImode);
    rtx op1_ = gen_reg_rtx(SImode);
-   rtx op0 = operand0;
+   rtx op0;
   
-   if (!pic30_mode2_operand(op0, DFmode)) {
-     op0 = gen_reg_rtx(DFmode);
-   }
+   op0 = gen_reg_rtx(DFmode);
    pic30_managed_psv = 1;
    emit_insn(
      gen_movP24PSV_gen(op2, operand1)                   /* copy pointer */
@@ -4625,30 +4795,1726 @@
      gen_P24PSVread_df(op0, 
                         gen_rtx_SUBREG(HImode, op1_, 0)) /* read value */
    );
+   emit_insn(
+     gen_set_psv(op3)                                    /* restore PSVPAG */
+   );
    if (op0 != operand0) {
      emit_insn(
        gen_movdf(operand0, op0)
      );
    }
+   DONE;
+}")
+
+;;;;;;;;;;;;;;;;;;;;;;; PMP
+
+(define_expand "P16PMPrd_qi"
+   [(set (match_operand:QI 0 "pic30_move_operand"       "=rR")
+         (mem:QI
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0])); 
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
    emit_insn(
-     gen_set_psv(op3)                                    /* restore PSVPAG */
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1qi(result)                           // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1qi(result)                           // real read
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+(define_expand "P16PMPwt_qi"
+   [(set (mem:QI (match_operand:P16PMP 0 "pic30_pmp_operand" "r"))
+         (match_operand:QI 1 "pic30_move_operand"       "rR"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1qi(result)                           // write
    );
    DONE;
 }")
-;   [
-;    (set (match_dup 2) (match_dup 1))
-;    (set (match_dup 3) (match_operand:QI 4 "pic30_psvpage_operand" "r"))
-;    (set (match_operand:QI 4) (subreg:QI (match_dup 2) 2))
-;    (set (match_dup 4) (subreg:QI (match_dup 2) 2))
-;    (set (subreg:HI (match_dup 2) 0)
-;         (rotatert:HI (subreg:HI (match_dup 2) 0) (const_int 1)))
-;    (parallel [(set (match_dup 0)
-;               (unspec_volatile:DF [(match_dup 2) (match_dup 4)]
-;                  UNSPECV_PSVRD))
-;               (clobber (reg:QI PSVPAG))
-;              ])
-;    (set (match_dup 4) (unspec_volatile:QI [(match_dup 3)] UNSPECV_SETPSV))
-;   ]
+
+(define_expand "P16PMPrd_hi"
+   [(set (match_operand:HI 0 "pic30_move_operand"       "=rR")
+         (mem:HI
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(result)                           // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(result)                          // real read
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+(define_expand "P16PMPwt_hi"
+   [(set (mem:HI (match_operand:P16PMP 0 "pic30_pmp_operand" "r"))
+         (match_operand:HI 1 "pic30_move_operand"       "rR"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                              // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1hi(result)                          // write
+   );
+   DONE;
+}")
+
+(define_expand "P16PMPrd_P16PMP"
+   [(set (match_operand:P16PMP 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:P16PMP
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // real read
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+(define_expand "P16PMPwt_P16PMP"
+   [(set (mem:P16PMP 
+           (match_operand:P16PMP 0 "pic30_pmp_operand" "r,r,RQ,ST,ST"))
+         (match_operand:P16PMP 1 "pic30_move_operand"       "=r,R,rR,r,R"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // write
+   );
+   DONE;
+}")
+
+
+(define_expand "P16PMPrd_P24PSV"
+   [(set (match_operand:P24PSV 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:P24PSV
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // real read, pt1
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // real read, pt2
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+(define_expand "P16PMPwt_P24PSV"
+   [(set (mem:P24PSV 
+           (match_operand:P16PMP 0 "pic30_pmp_operand" "r,r,RQ,ST,ST"))
+         (match_operand:P24PSV 1 "pic30_move_operand"       "=r,R,rR,r,R"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                   // set auto inc  mode
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // write       
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // write       
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc  mode
+   );
+   DONE;
+}")
+
+(define_expand "P16PMPrd_P24PROG"
+   [(set (match_operand:P24PROG 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:P24PROG
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // real read, pt1
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // real read, pt2
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+(define_expand "P16PMPwt_P24PROG"
+   [(set (mem:P24PROG
+           (match_operand:P16PMP 0 "pic30_pmp_operand" "r,r,RQ,ST,ST"))
+         (match_operand:P24PROG 1 "pic30_move_operand"       "=r,R,rR,r,R"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // write
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   DONE;
+}")
+
+(define_expand "P16PMPrd_si"
+   [(set (match_operand:SI 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:SI
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc  mode
+   );
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // real read, pt1
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // real read, pt2
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+(define_expand "P16PMPwt_si"
+   [(set (mem:SI
+           (match_operand:P16PMP 0 "pic30_pmp_operand" "r,r,RQ,ST,ST"))
+         (match_operand:SI 1 "pic30_move_operand"       "=r,R,rR,r,R"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc  mode
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // write
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   DONE;
+}")
+
+(define_expand "P16PMPrd_P32EXT"
+   [(set (match_operand:P32EXT 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:P32EXT
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // real read, pt1
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // real read, pt2
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+(define_expand "P16PMPwt_P32EXT"
+   [(set (mem:P32EXT
+           (match_operand:P16PMP 0 "pic30_pmp_operand" "r,r,RQ,ST,ST"))
+         (match_operand:P32EXT 1 "pic30_move_operand"       "=r,R,rR,r,R"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                   // set auto inc mode
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // write
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   DONE;
+}")
+
+(define_expand "P16PMPrd_sf"
+   [(set (match_operand:SF 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:SF
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // real read, pt1
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // real read, pt2
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+(define_expand "P16PMPwt_sf"
+   [(set (mem:SF
+           (match_operand:P16PMP 0 "pic30_pmp_operand" "r,r,RQ,ST,ST"))
+         (match_operand:SF 1 "pic30_move_operand"       "=r,R,rR,r,R"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // write
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   DONE;
+}")
+
+(define_expand "P16PMPrd_di"
+   [(set (match_operand:DI 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:DI
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // real read, pt1
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // real read, pt2
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,4)) // real read, pt3
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,6)) // real read, pt4
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+
+(define_expand "P16PMPwt_di"
+   [(set (mem:DI
+           (match_operand:P16PMP 0 "pic30_pmp_operand" "r,r,RQ,ST,ST"))
+         (match_operand:DI 1 "pic30_move_operand"       "=r,R,rR,r,R"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,4)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,6)) // write
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))       // clr auto increment mode
+   );
+   DONE;
+}")
+
+(define_expand "P16PMPrd_df"
+   [(set (match_operand:DF 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:DF
+           (match_operand:P16PMP 1 "pic30_pmp_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[0]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[1]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[1])
+     );
+   } else {
+     emit_move_insn(addr,operands[1]);
+   }
+
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // dummy read
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // real read, pt1
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // real read, pt2
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,4)) // real read, pt3
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_get_PMDIN1hi(gen_rtx_SUBREG(HImode,result,6)) // real read, pt4
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   emit_move_insn(operands[0],result);
+   DONE;
+}")
+
+(define_expand "P16PMPwt_df"
+   [(set (mem:DF
+           (match_operand:P16PMP 0 "pic30_pmp_operand" "r,r,RQ,ST,ST"))
+         (match_operand:DF 1 "pic30_move_operand"       "=r,R,rR,r,R"))]
+   ""
+   "
+{  rtx result = gen_reg_rtx(GET_MODE(operands[1]));
+   rtx addr;
+
+   addr = gen_reg_rtx(P16PMPmode);
+   if (GET_CODE(operands[0]) == SYMBOL_REF) {
+     emit_insn(
+       gen_movP16PMP_address(addr,operands[0])
+     );
+   } else {
+     emit_move_insn(addr,operands[0]);
+   }
+
+   emit_insn(
+     gen_set_PMADDR(addr)                               // set up address
+   );
+   emit_insn(
+     gen_bitset_PMMODE(GEN_INT(11))                    // set auto inc mode
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_move_insn(result,operands[1]);
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,0)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,2)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,4)) // write
+   );
+   emit_insn(
+     gen_while_PMMODE_busy()
+   );
+   emit_insn(
+     gen_set_PMDIN1hi(gen_rtx_SUBREG(HImode,result,6)) // write
+   );
+   emit_insn(
+     gen_bitclr_PMMODE(GEN_INT(11))                    // clr auto inc mode
+   );
+   DONE;
+}")
+
+
+;;;;;;;;;;;;;;;;;;;;;;; EXT
+
+;;
+
+(define_expand "P32EXTrd_qi"
+   [(set (match_operand:QI 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:QI
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_8)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_8)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1, 
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+  
+        emit_move_insn(input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(1));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        warning(\"Cannot access external memory space;\n\"
+              \"\tdeclare __read_external or __read_external8\");
+        DONE;
+      }
+    }"
+)
+
+(define_expand "P32EXTwt_qi"
+   [(set (mem:QI (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:QI 1 "pic30_move_operand"            "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_8)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_8)),0),
+                          LCT_NORMAL, VOIDmode, 2, 
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+  
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(1));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        warning(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external8\");
+        DONE;
+      }
+    }"
+)
+
+(define_expand "P32EXTrd_hi"
+   [(set (match_operand:HI 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:HI
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_16)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_16)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1, 
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+  
+        emit_move_insn(input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(2));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __read_external or __read_external16\");
+      }
+    }"
+)
+
+(define_expand "P32EXTwt_hi"
+   [(set (mem:HI (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:HI 1 "pic30_move_operand"            "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_16)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_16)),0),
+                          LCT_NORMAL, VOIDmode, 2,
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(2));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external16\");
+      }
+    }"
+)
+
+(define_expand "P32EXTrd_P16PMP"
+   [(set (match_operand:P16PMP 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:P16PMP
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_16)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_16)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1,
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(2));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __read_external or __read_external16\");
+      }
+    }"
+
+)
+
+(define_expand "P32EXTwt_P16PMP"
+   [(set (mem:P16PMP 
+           (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:P16PMP 1 "pic30_move_operand"  "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_16)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_16)),0),
+                          LCT_NORMAL, VOIDmode, 2,
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(2));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external16\");
+      }
+    }"
+)
+
+(define_expand "P32EXTrd_P24PSV"
+   [(set (match_operand:P24PSV 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:P24PSV
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_32)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1,
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+
+        emit_move_insn(input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTwt_P24PSV"
+   [(set (mem:P24PSV 
+           (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:P24PSV 1 "pic30_move_operand"  "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_32)),0),
+                          LCT_NORMAL, VOIDmode, 2,
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTrd_P24PROG"
+   [(set (match_operand:P24PROG 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:P24PROG
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_32)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1,
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+
+        emit_move_insn(input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTwt_P24PROG"
+   [(set (mem:P24PROG 
+           (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:P24PROG 1 "pic30_move_operand" "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_32)),0),
+                          LCT_NORMAL, VOIDmode, 2,
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTrd_si"
+   [(set (match_operand:SI 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:SI
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_32)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1,
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+
+        emit_move_insn(input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __read_external or __read_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTwt_si"
+   [(set (mem:SI (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:SI 1 "pic30_move_operand"       "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_32)),0),
+                          LCT_NORMAL, VOIDmode, 2,
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTrd_P32EXT"
+   [(set (match_operand:P32EXT 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:P32EXT
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_32)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1,
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+
+        emit_move_insn(input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __read_external or __read_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTwt_P32EXT"
+   [(set (mem:P32EXT 
+           (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:P32EXT 1 "pic30_move_operand"  "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_32)),0),
+                          LCT_NORMAL, VOIDmode, 2,
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTrd_sf"
+   [(set (match_operand:SF 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:SF
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_32)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1,
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+
+        (input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __read_external or __read_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTwt_sf"
+   [(set (mem:SF (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:SF 1 "pic30_move_operand"            "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_32)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_32)),0),
+                          LCT_NORMAL, VOIDmode, 2,
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external32\");
+      }
+    }"
+)
+
+(define_expand "P32EXTrd_di"
+   [(set (match_operand:DI 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:DI
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_64)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_64)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1,
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+
+        emit_move_insn(input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(8));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __read_external or __read_external64\");
+      }
+    }"
+)
+
+(define_expand "P32EXTwt_di"
+   [(set (mem:DI (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:DI 1 "pic30_move_operand"            "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_64)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_64)),0),
+                          LCT_NORMAL, VOIDmode, 2,
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(8));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external64\");
+      }
+    }"
+)
+
+(define_expand "P32EXTrd_df"
+   [(set (match_operand:DF 0 "pic30_move_operand"       "=r,R,rR,r,R")
+         (mem:DF
+           (match_operand:P32EXT 1 "pic30_ext_operand" "r,r,RQ,ST,ST")))]
+   ""
+   "{
+      if (pic30_read_externals(pst_64)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+
+        emit_move_insn(input, operands[1]);
+        emit_library_call_value(XEXP(DECL_RTL(pic30_read_externals(pst_64)),0),
+                          operands[0], LCT_NORMAL, GET_MODE(operands[0]), 1,
+                          input, P32EXTmode);
+        DONE;
+      } else if (pic30_read_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[0]),
+                                     GET_MODE_SIZE(GET_MODE(operands[0])), 0);
+        rtx param2,param3;
+
+        emit_move_insn(input, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(4));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_read_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        emit_move_insn(operands[0], temp);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __read_external or __read_external64\");
+      }
+    }"
+)
+
+(define_expand "P32EXTwt_df"
+   [(set (mem:DF (match_operand:P32EXT 0 "pic30_ext_operand" "r,r,RQ,ST,ST"))
+         (match_operand:DF 1 "pic30_move_operand"            "r,R,rR,r,R"))]
+   ""
+   "{
+      if (pic30_write_externals(pst_64)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx input1 = gen_reg_rtx(GET_MODE(operands[1]));
+
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(input1, operands[1]);
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_64)),0),
+                          LCT_NORMAL, VOIDmode, 2,
+                          input, P32EXTmode,
+                          input1, GET_MODE(operands[1]));
+        DONE;
+      } else if (pic30_write_externals(pst_any)) {
+        rtx input = gen_reg_rtx(P32EXTmode);
+        rtx temp = assign_stack_temp(GET_MODE(operands[1]),
+                                     GET_MODE_SIZE(GET_MODE(operands[1])), 0);
+        rtx param2,param3;
+ 
+        emit_move_insn(input, operands[0]);
+        emit_move_insn(temp, operands[1]);
+        param3 = gen_reg_rtx(HImode);
+        param2 = gen_reg_rtx(Pmode);
+        emit_move_insn(param3, GEN_INT(8));
+        emit_move_insn(param2, XEXP(temp,0));
+        emit_library_call(XEXP(DECL_RTL(pic30_write_externals(pst_any)),0),
+                          LCT_NORMAL, GET_MODE(operands[0]), 3,
+                          input, P32EXTmode,
+                          param2, Pmode,
+                          param3, HImode);
+        DONE;
+      } else {
+        error(\"Cannot access external memory space;\n\"
+              \"\tdeclare __write_external or __write_external64\");
+      }
+    }"
+)
 
 (define_insn "movhi_P24PROGaddress_low"
   [(set (match_operand:HI 0 "pic30_register_operand"              "=r")
@@ -4662,42 +6528,14 @@
  ]
 )
 
-;(define_insn "movhi_P24PSVaddress_low"
-;  [(set (match_operand:HI 0 "pic30_register_operand"              "=r")
-;        (subreg:HI
-;          (match_operand:P24PSV 1 "pic30_symbolic_address_operand" "g") 0))]
-;  ""
-;  "mov #psvptr(%1),%0"
-; [
-;  (set_attr "cc" "change0")
-;  (set_attr "type" "def")
-; ]
-;)
-;
-;(define_insn "movhi_P24PROGaddress_high"
-;  [(set (match_operand:HI 0 "pic30_register_operand"              "=r")
-;        (subreg:HI
-;          (match_operand:P24PROG 1 "pic30_symbolic_address_operand" "g") 2))]
-;  ""
-;  "mov #psvpage(%1),%0"
-; [
-;  (set_attr "cc" "change0")
-;  (set_attr "type" "def")
-; ]
-;)
-;
-;(define_insn "movhi_P24PSVaddress_high"
-;  [(set (match_operand:HI 0 "pic30_register_operand"              "=r")
-;        (subreg:HI
-;          (match_operand:P24PSV 1 "pic30_symbolic_address_operand" "g") 2))]
-;  ""
-;  "mov #psvpage(%1),%0"
-; [
-;  (set_attr "cc" "change0")
-;  (set_attr "type" "def")
-; ]
-;)
-;
+(define_insn "movP16PMP_lit"
+  [(set (match_operand:P16PMP 0 "pic30_register_operand"          "=r")
+        (match_operand:P16PMP 1 "immediate_operand"               "i"))]
+  ""
+  "mov #%1,%0"
+  [(set_attr "type" "def")]
+)
+
 (define_insn "movP24PSV_lit"
   [(set (match_operand:P24PSV 0 "pic30_register_operand"          "=r")
         (match_operand:P24PSV 1 "immediate_operand"               "i"))]
@@ -4737,25 +6575,6 @@
 "
   [(set_attr "type" "def")]
 )
-;(define_insn "movP24PROG_lit"
-; [(set (match_operand:P24PROG 0 "pic30_register_operand"          "=r")
-;       (match_operand:P24PROG 1 "immediate_operand"               "i"))]
-;  ""
-;  "* 
-;{ static char buffer[80];
-;  long i = INTVAL(operands[1]);
-;
-;  if (pic30_symbolic_address_operand(operands[1],P24PSVmode)) {
-;    sprintf(buffer,\"mov #psvptr(%%1),%%0\;mov #psvpage(%%1),%%d0\");
-;  } else {
-;    sprintf(buffer,\"mov #%d,%%0\;mov #%d,%%d0\",((i & 0x7FFF) << 1), 
-;                   (i & 0x7F8000) >> 15);
-;  }
-;  return buffer;
-;}
-;"
-;  [(set_attr "type" "def")]
-;)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 32-bit integer moves
@@ -4855,6 +6674,81 @@
 (define_insn "movsi_gen"
   [(set (match_operand:SI 0 "pic30_move_operand" "=r,r,r,r,R,>,>,Q,r,<,r,T")
         (match_operand:SI 1 "pic30_move_operand"  "r,R,>,Q,r,r,>,r,<,r,T,r"))]
+  ""
+  "*
+{
+        int idDst, idSrc, pre;
+
+	switch (which_alternative)
+	{
+	case 0: /* r = r */
+		return \"mov.d %1,%0\";
+	case 1: /* r = R */
+		return \"mov.d %1,%0\";
+	case 2: /* r = > */
+		if ((pre = pic30_pp_modify_valid(operands[1])) == 0) 
+			return \"mov.d %1,%0\";
+ 		else if (pre == -1) /* pre increment */
+			return \"add %r1,#4,%r1\;mov.d %s1,%0\";
+		else if (pre == 1)  /* post increment */
+			return \"mov.d %s1,%0\;add %r1,#4,%r1\";
+	case 3: /* r = Q */
+		idDst = REGNO(operands[0]);
+		idSrc = REGNO(XEXP(XEXP(operands[1],0),0));
+		if (idDst == idSrc)
+		{
+			return \"mov %Q1,%d0\;mov %1,%0\";
+		} else {
+			return \"mov %1,%0\;mov %Q1,%d0\";
+		}
+	case 4: /* R = r */
+		return \"mov.d %1,%0\";
+	case 5: /* > = r */
+		return \"mov.d %1,%0\";
+	case 6: /* > = > */
+		return \"mov %1,%0\;mov %1,%0\";
+	case 7: /* Q = r */
+		return \"mov %1,%0\;mov %d1,%Q0\";
+	case 8: /* r = < */
+		if ((pre = pic30_pp_modify_valid(operands[1])) == 0) 
+			return \"mov.d %1,%0\";
+ 		else if (pre == -1) /* pre decrement */
+			return \"sub %r1,#4,%r1\;mov.d %s1,%0\";
+		else if (pre == 1)  /* post decrement */
+			return \"mov.d %s1,%0\;sub %r1,#4,%r1\";
+	case 9: /* < = r */
+		return \"mov.d %1,%0\";
+	case 10: /* r = T */
+		return \"mov %1,%0\;mov %Q1,%d0\";
+	case 11: /* T = r */
+		return \"mov %1,%0\;mov %d1,%Q0\";
+	default:
+		return \";\";
+	}
+}"
+  [
+   (set_attr "cc" "clobber")
+   (set_attr "type"
+             "def,defuse,defuse,def,etc,def,defuse,etc,defuse,def,def,etc")
+  ]
+)
+
+(define_insn "movp32ext_rimm"
+  [(set (match_operand:P32EXT 0 "pic30_register_operand" "=r,r")
+        (match_operand:P32EXT 1 "immediate_operand" "O,i"))]
+  ""
+  "@
+   mul.uu %0,#0,%0
+   mov #%z1,%0\;mov #%y1,%d0"
+  [
+   (set_attr "cc" "clobber")
+   (set_attr "type" "def")
+  ]
+)
+
+(define_insn "movP32EXT_gen"
+  [(set (match_operand:P32EXT 0 "pic30_move_operand" "=r,r,r,r,R,>,>,Q,r,<,r,T")
+        (match_operand:P32EXT 1 "pic30_move_operand"  "r,R,>,Q,r,r,>,r,<,r,T,r"))]
   ""
   "*
 {
@@ -5074,9 +6968,9 @@
   "*
 {
 	int idSrc, idDst;
-	char temp[48];
-	char save[48];
-	static char szInsn[48];
+	char temp[49];
+	char save[49];
+	static char szInsn[49];
 
 	szInsn[0] = 0;
 	temp[0] = 0;
@@ -5464,9 +7358,9 @@
   ""
   {
 	int idSrc, idDst;
-	char temp[48];
-	char save[48];
-static	char insn[48];
+	char temp[49];
+	char save[49];
+   static char insn[49];
 
 	insn[0] = 0;
 	temp[0] = 0;
@@ -5681,43 +7575,25 @@ static	char insn[48];
  "(-2<=INTVAL(operands[2]))&&(INTVAL(operands[2])!=0)&&(INTVAL(operands[2])<=2)"
   "*
 {
-	switch (INTVAL(operands[2]))
-	{
-	case -2:
-		switch (which_alternative)
-		{
-		case 0:
-			return(\"dec2.b %0\");
-		case 1:
-			return(\"dec2.b %1,WREG\");
-		}
-	case -1:
-		switch (which_alternative)
-		{
-		case 0:
-			return(\"dec.b %0\");
-		case 1:
-			return(\"dec.b %1,WREG\");
-		}
-	case 1:
-		switch (which_alternative)
-		{
-		case 0:
-			return(\"inc.b %0\");
-		case 1:
-			return(\"inc.b %1,WREG\");
-		}
-	case 2:
-		switch (which_alternative)
-		{
-		case 0:
-			return(\"inc2.b %0\");
-		case 1:
-			return(\"inc2.b %1,WREG\");
-		}
-	default:
-		abort();
-	}
+  switch (INTVAL(operands[2])) {
+    case -2: switch (which_alternative) {
+               case 0: return(\"dec2.b %0\");
+               case 1: return(\"dec2.b %1,WREG\");
+             }
+    case -1: switch (which_alternative) {
+               case 0: return(\"dec.b %0\");
+               case 1: return(\"dec.b %1,WREG\");
+             }
+    case 1: switch (which_alternative) {
+               case 0: return(\"inc.b %0\");
+               case 1: return(\"inc.b %1,WREG\");
+             }
+    case 2: switch (which_alternative) {
+               case 0: return(\"inc2.b %0\");
+               case 1: return(\"inc2.b %1,WREG\");
+             }
+    default: abort();
+  }
 }"
   [
    (set_attr "cc" "math")
@@ -5756,6 +7632,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*addqi3_sfr0"
   [(set (match_operand:QI 0 "pic30_near_operand"         "=U")
         (plus:QI (match_dup 0)
@@ -5877,8 +7754,10 @@ static	char insn[48];
    (set_attr "type" "def,defuse,etc,use,def,etc,def,etc,etc,def,use,defuse,def,etc,def,etc,def,def,def,def")
   ])
 
+; this match_can cause issues iff operand 1 is dies in this instruction and
+;   we decide to use it to reload operand 0 (CAW)
 (define_insn "*addhi3_sfr0"
-  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"   "=U,r")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"   "+U,r")
         (plus:HI (match_dup 0)
                  (match_operand:HI 1 "pic30_wreg_operand" "a,a")))]
   ""
@@ -5887,8 +7766,10 @@ static	char insn[48];
    add %0,%1,%0"
   [(set_attr "cc" "math")])
 
+; this match_can cause issues iff operand 1 is dies in this instruction and
+;   we decide to use it to reload operand 0 (CAW)
 (define_insn "*addhi3_sfr1"
-  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"   "=U,r")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"   "+U,r")
         (plus:HI (match_operand:HI 1 "pic30_wreg_operand" "a,a")
                  (match_dup 0)))]
   ""
@@ -5935,65 +7816,74 @@ static	char insn[48];
  "(-2<=INTVAL(operands[2]))&&(INTVAL(operands[2])!=0)&&(INTVAL(operands[2])<=2)"
   "*
 {
-	switch (INTVAL(operands[2]))
-	{
-	case -2:
-		switch (which_alternative)
-		{
-		case 0:
-			return(\"dec2 %0\");
-		case 1:
-			return(\"dec2 %1,WREG\");
-		case 2:
-			return(\"mov %1,%0\;dec2 %0,%0\");
-		default:
-			abort();
-		}
-	case -1:
-		switch (which_alternative)
-		{
-		case 0:
-			return(\"dec %0\");
-		case 1:
-			return(\"dec %1,WREG\");
-		case 2:
-			return(\"mov %1,%0\;dec %0,%0\");
-		default:
-			abort();
-		}
-	case 1:
-		switch (which_alternative)
-		{
-		case 0:
-			return(\"inc %0\");
-		case 1:
-			return(\"inc %1,WREG\");
-		case 2:
-			return(\"mov %1,%0\;inc %0,%0\");
-		default:
-			abort();
-		}
-	case 2:
-		switch (which_alternative)
-		{
-		case 0:
-			return(\"inc2 %0\");
-		case 1:
-			return(\"inc2 %1,WREG\");
-		case 2:
-			return(\"mov %1,%0\;inc2 %0,%0\");
-		default:
-			abort();
-		}
-	default:
-		abort();
-	}
+  switch (INTVAL(operands[2])) {
+    case -2: switch (which_alternative) {
+               case 0: return(\"dec2 %0\");
+               case 1: return(\"dec2 %1,WREG\");
+               case 2: return(\"mov %1,%0\;dec2 %0,%0\");
+               default: abort();
+             }
+    case -1: switch (which_alternative) {
+               case 0: return(\"dec %0\");
+               case 1: return(\"dec %1,WREG\");
+               case 2: return(\"mov %1,%0\;dec %0,%0\");
+               default: abort();
+             }
+    case 1: switch (which_alternative) {
+               case 0: return(\"inc %0\");
+               case 1: return(\"inc %1,WREG\");
+               case 2: return(\"mov %1,%0\;inc %0,%0\");
+               default: abort();
+             }
+    case 2: switch (which_alternative) {
+               case 0: return(\"inc2 %0\");
+               case 1: return(\"inc2 %1,WREG\");
+               case 2: return(\"mov %1,%0\;inc2 %0,%0\");
+               default: abort();
+             }
+    default: abort();
+  }
 }"
   [
    (set_attr "cc" "math")
    (set_attr "type" "etc,def,def")
   ]
 )
+
+(define_insn "addp16pmp3"
+  [(set (match_operand:P16PMP 0 "pic30_mode2_operand"
+                "=r<>,r<>,R,R,  r<>,R,r<>,R,R,r<>,R,  r<>,r<>,R,r<>,R,r,r,r,!?r")
+        (plus:P16PMP (match_operand:P16PMP 1 "pic30_math_operand"
+                "%r,  r,  r,r,  r,  r,r,  r,r,r,  R<>,R<>,N,  N,P,  P,0,J,NPJ,  J")
+                 (match_operand:P16PMP 2 "pic30_math_operand"
+                 "r,  R<>,r,R<>,N,  N,P,  P,r,r,  r,  r,  r,  r,r,  r,J,0,NPJ, r"))
+  )]
+  ""
+  "@
+   add %1,%2,%0
+   add %1,%2,%0
+   add %1,%2,%0
+   add %1,%2,%0
+   sub %1,#%J2,%0
+   sub %1,#%J2,%0
+   add %1,#%2,%0
+   add %1,#%2,%0
+   add %2,%1,%0
+   add %2,%1,%0
+   add %2,%1,%0
+   add %2,%1,%0
+   sub %2,#%J1,%0
+   sub %2,#%J1,%0
+   add %2,#%1,%0
+   add %2,#%1,%0
+   add #%2,%0
+   add #%1,%0
+   mov #(%1+%2),%0
+   mov #%1,%0\;add %0,%2,%0"
+  [(set_attr "cc" "math")
+   (set_attr "type" "def,defuse,etc,use,def,etc,def,etc,etc,def,use,defuse,def,etc,def,etc,def,def,def,def")
+  ])
+
 
 ;;;;;;;;;;;;;;;;;
 ;; single integer
@@ -6194,6 +8084,99 @@ static	char insn[48];
   [(set_attr "cc" "math")])
 
 
+;; EXT
+
+(define_insn "*addp32ext3_imm"
+  [(set (match_operand:P32EXT 0 "pic30_register_operand"          "=r,r,r,r")
+        (plus:P32EXT 
+                 (match_operand:P32EXT 1 "pic30_register_operand" "%r,r,0,0")
+                 (match_operand:P32EXT 2 "pic30_JM_operand"       " P,N,J,M")))]
+  ""
+  "@
+   add %1,#%2,%0\;addc %d1,#0,%d0
+   sub %1,#%J2,%0\;subb %d1,#0,%d0
+   add #%2,%0\;addc #0,%d0
+   sub %0,#%J2\;subb %d0,#0"
+  [
+   (set_attr "cc" "math")
+   (set_attr "type" "def")
+  ]
+)
+
+(define_insn "addp32ext3_errata"
+ [(set (match_operand:P32EXT   0 "pic30_rR_or_near_operand" "=r,r,r,&r,r,r,r,R,R,R")
+   (plus:P32EXT
+     (match_operand:P32EXT 1 "pic30_rR_or_near_operand" "%r,0,r, R,r,r,0,r,r,r")
+     (match_operand:P32EXT 2 "pic30_rR_or_JN_operand"    "r,r,0, r,P,N,J,r,0,R")
+  ))
+  (clobber (match_scratch:HI 3                         "=X,X,X,&r,X,X,X,X,X,&r")
+  )
+ ]
+  "(pic30_errata_mask & psv_errata)"
+  "*
+{
+  static char *patterns[] = {
+    \"add %2,%1,%0\;addc %d2,%d1,%d0\",
+    \"add %2,%1,%0\;addc %d2,%d1,%d0\",
+    \"add %2,%1,%0\;addc %d2,%d1,%d0\",
+    \"add %2,%I1,%0\;mov %D1,%3\;addc %d2,%3,%d0\",
+    \"add %1,#%2,%0\;addc %d1,#0,%d0\",
+    \"sub %1,#%J2,%0\;subb %d1,#0,%d0\",
+    \"add #%2,%0\;addc #%y2,%d0\",
+    \"add %1,%2,%I0\;addc %d1,%d2,%D0\",
+    \"add %1,%2,%0\;addc %d1,%P2,%D0\",
+    \"add %1,%I2,%I0\;mov %D2,%3\;addc %d1,%3,%D0\",
+    0};
+
+  return patterns[which_alternative];
+}"
+  [(set_attr "cc" "math,math,math,math,math,math,math,math,math,math")]
+)
+
+(define_insn "addp32ext3_noerrata"
+ [(set (match_operand:P32EXT   0 "pic30_rR_or_near_operand" "=r,r,r,&r,r,r,r,R,R,R")
+       (plus:P32EXT
+         (match_operand:P32EXT 1 "pic30_rR_or_near_operand" "%r,0,r, R,r,r,0,r,r,r")
+         (match_operand:P32EXT 2 "pic30_rR_or_JN_operand"    "r,r,0, r,P,N,J,r,0,R")  ))
+ ]
+  "(!(pic30_errata_mask & psv_errata))"
+  "*
+{
+  static char *patterns[] = {
+    \"add %2,%1,%0\;addc %d2,%d1,%d0\",
+    \"add %2,%1,%0\;addc %d2,%d1,%d0\",
+    \"add %2,%1,%0\;addc %d2,%d1,%d0\",
+    \"add %2,%I1,%0\;addc %d2,%D1,%d0\",
+    \"add %1,#%2,%0\;addc %d1,#0,%d0\",
+    \"sub %1,#%J2,%0\;subb %d1,#0,%d0\",
+    \"add #%2,%0\;addc #%y2,%d0\",
+    \"add %1,%2,%I0\;addc %d1,%d2,%D0\",
+    \"add %1,%2,%0\;addc %d1,%P2,%D0\",
+    \"add %1,%I2,%I0\;addc %d1,%D2,%D0\",
+    0};
+
+  return patterns[which_alternative];
+}"
+  [(set_attr "cc" "math,math,math,math,math,math,math,math,math,math")]
+)
+
+(define_expand "addp32ext"
+  [(set (match_operand:P32EXT 0 "pic30_rR_or_near_operand" "")
+        (plus:P32EXT
+          (match_operand:P32EXT 1 "pic30_rR_or_near_operand" "")
+          (match_operand:P32EXT 2 "pic30_rR_or_JN_operand" "")))]
+  ""
+  "
+{
+  if (pic30_errata_mask & psv_errata) {
+    emit_insn(gen_addsi3_errata(operands[0], operands[1], operands[2]));
+  } else {
+    emit_insn(gen_addsi3_noerrata(operands[0], operands[1], operands[2]));
+  }
+  DONE;
+}")
+
+
 ;;;;;;;;;;;;;;;;;
 ;; double integer
 ;;;;;;;;;;;;;;;;;
@@ -6275,6 +8258,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*subqi3_sfr0"
   [(set (match_operand:QI 0 "pic30_near_operand"          "=U")
         (minus:QI (match_dup 0)
@@ -6303,6 +8287,7 @@ static	char insn[48];
 ;; half integer
 ;;;;;;;;;;;;;;;
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "*subhi3_imm"
   [(set (match_operand:HI 0 "pic30_register_operand"          "=r,r")
         (minus:HI (match_dup 0)
@@ -6345,8 +8330,10 @@ static	char insn[48];
   	 "def,etc,defuse,use,def,etc,defuse,use,def,etc,def,etc,def,etc")
   ])
 
+; this match_can cause issues iff operand 1 is dies in this instruction and
+;   we decide to use it to reload operand 0 (CAW)
 (define_insn "subhi3_sfr0"
-  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"    "=U,r")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"    "+U,r")
         (minus:HI (match_dup 0)
                   (match_operand:HI 1 "pic30_wreg_operand" "a,a")))]
   ""
@@ -6687,7 +8674,7 @@ static	char insn[48];
      sl %1,%0
      sl %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,def,defuse,etc,use")
   ]
 )
@@ -6778,9 +8765,9 @@ static	char insn[48];
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define_insn "mulsu"
-  [(set (match_operand:SI 0 "pic30_register_operand"                    "=r,r,  r")
+  [(set (match_operand:SI 0 "pic30_register_operand"               "=r,r,  r")
         (unspec:SI [
-	            (match_operand:HI 1 "pic30_register_operand"         "r,r,  r")
+	            (match_operand:HI 1 "pic30_register_operand"   "r,r,  r")
 	            (match_operand:HI 2 "pic30_mode2_or_P_operand" "r,R<>,P")
 	           ]
 		    UNSPECV_MULSU))
@@ -6797,9 +8784,9 @@ static	char insn[48];
 )
 
 (define_insn "muluu"
-  [(set (match_operand:SI 0 "pic30_register_operand"                    "=r,r,  r")
+  [(set (match_operand:SI 0 "pic30_register_operand"               "=r,r,  r")
         (unspec:SI [
-	            (match_operand:HI 1 "pic30_register_operand"         "r,r,  r")
+	            (match_operand:HI 1 "pic30_register_operand"   "r,r,  r")
 	            (match_operand:HI 2 "pic30_mode2_or_P_operand" "r,R<>,P")
 	           ]
 		    UNSPECV_MULUU))
@@ -7155,11 +9142,14 @@ static	char insn[48];
 (define_insn "divmodsd"
   [(set (match_operand:HI 0 "pic30_register_operand"              "=a,?b,??e")
         (unspec_volatile:HI [
-                    (match_operand:SI 1 "pic30_register_operand"   "r, r,  r")
-                    (match_operand:HI 2 "pic30_ereg_operand" "e, e,  e")
-                    (match_operand:HI 3 "pic30_register_operand" "e,e,e")
-                   ]
-                    UNSPECV_DIVMODSD))
+                  (match_operand:SI 1 "pic30_register_operand"   "r, r,  r")
+                  (match_operand:HI 2 "pic30_ereg_operand" "e, e,  e")
+                 ] UNSPECV_DIVMODSD))
+   (set (mem:HI (match_operand:HI 3 "pic30_register_operand" "e,e,e"))
+        (unspec_volatile:HI [
+                  (match_dup 1)
+                  (match_dup 2)
+                 ] UNSPECV_DIVMODSD))
    (clobber (reg:HI RCOUNT))
   ]
   ""
@@ -7199,7 +9189,7 @@ static	char insn[48];
      }
   }
   [
-    (set_attr "cc" "math")
+    (set_attr "cc" "clobber")
     (set_attr "type" "def")
   ]
 )
@@ -7207,11 +9197,14 @@ static	char insn[48];
 (define_insn "divmodud"
   [(set (match_operand:HI 0 "pic30_register_operand"              "=a,?b,??e")
         (unspec_volatile:HI [
-                    (match_operand:SI 1 "pic30_register_operand"   "r, r,  r")
-                    (match_operand:HI 2 "pic30_ereg_operand" "e, e,  e")
-                    (match_operand:HI 3 "pic30_register_operand" "e,e,e")
-                   ]
-                    UNSPECV_DIVMODUD))
+                  (match_operand:SI 1 "pic30_register_operand"   "r, r,  r")
+                  (match_operand:HI 2 "pic30_ereg_operand" "e, e,  e")
+                 ] UNSPECV_DIVMODUD))
+   (set (mem:HI (match_operand:HI 3 "pic30_register_operand" "e,e,e"))
+        (unspec_volatile:HI [
+                  (match_dup 1)
+                  (match_dup 2)
+                 ] UNSPECV_DIVMODUD))
    (clobber (reg:HI RCOUNT))
   ]
   ""
@@ -7251,7 +9244,7 @@ static	char insn[48];
      }
   }
   [
-    (set_attr "cc" "math")
+    (set_attr "cc" "clobber")
     (set_attr "type" "def")
   ]
 )
@@ -7417,6 +9410,7 @@ static	char insn[48];
    }
 }"
   [
+   (set_attr "cc" "clobber")
    (set_attr "type" "def")
   ]
 )
@@ -7438,6 +9432,7 @@ static	char insn[48];
          );
 }"
   [
+   (set_attr "cc" "clobber")
    (set_attr "type" "def")
   ]
 )
@@ -7465,6 +9460,7 @@ static	char insn[48];
             \"exch w0,w1\";
 }"
   [
+   (set_attr "cc" "clobber")
    (set_attr "type" "def")
   ]
 )
@@ -7629,6 +9625,7 @@ static	char insn[48];
    }
 }"
   [
+   (set_attr "cc" "clobber")
    (set_attr "type" "def")
   ]
 )
@@ -7650,6 +9647,7 @@ static	char insn[48];
          );
 }"
   [
+   (set_attr "cc" "clobber")
    (set_attr "type" "def")
   ]
 )
@@ -7677,6 +9675,7 @@ static	char insn[48];
            \"exch w0,w1\";
 }"
   [
+   (set_attr "cc" "clobber")
    (set_attr "type" "def")
   ]
 )
@@ -7764,6 +9763,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*negqi2_sfr1"
   [(set (match_operand:QI 0 "pic30_near_operand"        "=U")
         (neg:QI (match_dup 0)))]
@@ -7799,6 +9799,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, there is no operand 2 to interfere with a reload (CAW)
 (define_insn "*neghi2_sfr1"
   [(set (match_operand:HI 0 "pic30_reg_or_near_operand"        "=Ur")
         (neg:HI (match_dup 0)))]
@@ -7839,6 +9840,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*negsf2sfr"
   [(set (match_operand:SF 0        "pic30_near_operand" "=U")
         (neg:SF (match_dup 0)))]
@@ -7884,6 +9886,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "bitsetqi_sfr"
   [(set (match_operand:QI 0 "pic30_near_operand"        "=U")
         (ior:QI  (match_dup 0)
@@ -7906,6 +9909,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "bitclrqi_sfr"
   [(set (match_operand:QI 0 "pic30_near_operand"        "=U")
         (and:QI  (match_dup 0)
@@ -7929,6 +9933,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "bittogqi_sfr"
   [(set (match_operand:QI 0 "pic30_near_operand"        "=U")
         (xor:QI  (match_dup 0)
@@ -7984,6 +9989,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "bitsethi_sfr"
   [(set (match_operand:HI 0 "pic30_near_operand"         "=U")
         (ior:HI  (match_dup 0)
@@ -8015,6 +10021,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 ;        (and:HI  (match_operand:HI 1 "pic30_near_operand"  "0")
 (define_insn "bitclrhi_sfr"
   [(set (match_operand:HI 0 "pic30_near_operand"           "=U")
@@ -8047,6 +10054,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "bittoghi_sfr"
   [(set (match_operand:HI 0 "pic30_near_operand"           "=U")
         (xor:HI  (match_dup 0)
@@ -8162,6 +10170,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "*bitsetsi_sfr"
   [(set (match_operand:SI 0 "pic30_near_operand"         "=U")
         (ior:SI  (match_dup 0)
@@ -8169,7 +10178,7 @@ static	char insn[48];
   "pic30_one_bit_set_p(INTVAL(operands[1]))"
   "*
 {
-	int n = INTVAL(operands[1]);
+	unsigned int n = INTVAL(operands[1]);
 
 	if (n >= 0x1000000)
 		return(\"bset.b %0+3,#%b1-24\");
@@ -8185,6 +10194,7 @@ static	char insn[48];
 ;; Reset Bit ;;
 ;;;;;;;;;;;;;;;
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "*bitclrsi_sfr"
   [(set (match_operand:SI 0 "pic30_near_operand"         "=U")
         (and:SI  (match_dup 0)
@@ -8245,6 +10255,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "bittogsi_sfr"
   [(set (match_operand:SI 0 "pic30_near_operand"         "=U")
         (xor:SI  (match_dup 0)
@@ -8373,7 +10384,7 @@ static	char insn[48];
    and.b %2,#%1,%0
    and.b #%2,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use,def,etc,defuse,use,def,etc,def")
   ]
 )
@@ -8412,21 +10423,23 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "*andqi3_sfr2"
   [(set (match_operand:QI 0 "pic30_near_operand"        "=U")
         (and:QI (match_dup 0)
                 (match_operand:QI 1 "pic30_wreg_operand" "a")))]
   ""
   "and.b %0"
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "*andqi3_sfr3"
   [(set (match_operand:QI 0 "pic30_near_operand"        "=U")
         (and:QI (match_operand:QI 1 "pic30_wreg_operand" "a")
                 (match_dup 0)))]
   ""
   "and.b %0"
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
 ;;;;;;;;;;;;;;;
 ;; half integer
@@ -8452,7 +10465,7 @@ static	char insn[48];
    and %2,#%1,%0
    and %2,#%1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use,def,etc,use,defuse,etc,def")
   ]
 )
@@ -8464,7 +10477,7 @@ static	char insn[48];
   ""
   "and #%2,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
@@ -8485,7 +10498,7 @@ static	char insn[48];
      case 2: return \"mov %2,%3\;and %3,%1,%3\;mov %3,%0\";
    }
   "
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
 (define_insn "*andhi3_sfr1"
   [(set (match_operand:HI 0 "pic30_near_operand"         "=U,??U,??U")
@@ -8503,7 +10516,7 @@ static	char insn[48];
      case 2: return \"mov %1,%3\;and %3,%2,%3\;mov %3,%0\";
    }
   "
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
 ;;;;
 ;;    gcc will FORCE a reload for a memory operation if it is a SUBREG -
@@ -8597,35 +10610,12 @@ static	char insn[48];
 
 }")
 
-;(define_insn "andsi3"
-; [(set (match_operand:SI 0 "pic30_mode2_operand"
-;			"=r<>,r<>,&r<>,R,R,R,R, R, r<>")
-;       (and:SI (match_operand:SI 1 "pic30_mode1P_operand"
-;			"%r,  r,   r,  r,r,r,r, r, r")
-;               (match_operand:SI 2 "pic30_mode1P_operand"
-;			 "r  ,<>,  R,  0,R,r,<>,P, P")))]
-; ""
-; "@
-;  and %1,%2,%0\;and %d1,%d2,%d0
-;  and %1,%2,%0\;and %d1,%d2,%d0
-;  and %1,%I2,%0\;and %d1,%D2,%d0
-;  and %1,%2,%0\;and %d1,%P2,%D0
-;  and %1,%I2,%I0\;and %d1,%D2,%D0
-;  and %1,%2,%I0\;and %d1,%d2,%D0
-;  and %1,%2,%I0\;and %d1,%2,%D0
-;  and %1,#%2,%I0\;clr %D0
-;  and %1,#%2,%0\;clr %d0"
-; [
-;  (set_attr "cc" "clobber")
-;  (set_attr "type" "def,defuse,defuse,use,use,etc,use,etc,def")
-; ]
-;)
-
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn_and_split "*andsi3_sfr0"
   [(set (match_operand:SI 0 "pic30_data_operand"      "=T")
         (and:SI (match_dup 0)
                 (match_operand:SI 1 "pic30_register_operand" "r")))
-		(clobber (match_scratch:HI 2         "=&r"))]
+   (clobber (match_scratch:HI 2 "=&r"))]
   ""
   "mov #%0,%2\;and %1,[%2],[%2]\;and %d1,[++%2],[%2]"
   "reload_completed"
@@ -8643,11 +10633,12 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn_and_split "*andsi3_sfr1"
   [(set (match_operand:SI 0 "pic30_data_operand"      "=T")
         (and:SI (match_operand:SI 1 "pic30_register_operand" "r")
                 (match_dup 0)))
-		(clobber (match_scratch:HI 2         "=&r"))]
+   (clobber (match_scratch:HI 2         "=&r"))]
   ""
   "mov #%0,%2\;and %1,[%2],[%2]\;and %d1,[++%2],[%2]"
   "reload_completed"
@@ -8696,7 +10687,7 @@ static	char insn[48];
   ""
   "ior.b #%2,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
@@ -8721,7 +10712,7 @@ static	char insn[48];
    ior.b %2,#%1,%0
    ior.b %2,#%1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use,def,etc,defuse,use,def,etc")
   ]
 )
@@ -8755,28 +10746,31 @@ static	char insn[48];
   }
 }
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
  (define_insn "*iorqi3_sfr1"
    [(set (match_operand:QI 0 "pic30_near_operand"      "=U, U")
          (ior:QI (match_dup 0)
                  (match_operand:QI 1 "pic30_register_operand" "a, !d")))
-               (clobber (match_scratch:HI 2          "=X, &r"))]
+    (clobber (match_scratch:HI 2          "=X, &r"))]
    ""
    "@
     ior.b %0
     mov #%0,%2\;ior.b %1,[%2],[%2]"
-   [(set_attr "cc" "set")])
+   [(set_attr "cc" "math")])
 
 ;;;;;;;;;;;;;;;
 ;; half integer
 ;;;;;;;;;;;;;;;
 
+; this match_can cause issues iff operand 1 is dies in this instruction and
+;   we decide to use it to reload operand 0 (CAW)
 (define_insn "iorhi3_sfr0"
-  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"        "=U,r")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"        "+U,r")
         (ior:HI (match_operand:HI 1 "pic30_register_operand"   "a,r")
                 (match_dup 0)))
   ]
@@ -8784,10 +10778,12 @@ static	char insn[48];
   "@
    ior %0
    ior %0,%1,%0"
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
+; this match_can cause issues iff operand 1 is dies in this instruction and
+;   we decide to use it to reload operand 0 (CAW)
 (define_insn "iorhi3_sfr0a"
-  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"        "=U,r")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"        "+U,r")
         (ior:HI (match_dup 0)
                 (match_operand:HI 1 "pic30_register_operand"   "a,r")))
   ]
@@ -8795,7 +10791,7 @@ static	char insn[48];
   "@
    ior %0
    ior %0,%1,%0"
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
 
 (define_insn "*iorhi3_sfr1"
@@ -8809,22 +10805,23 @@ static	char insn[48];
    mov %1,w0\;ior %2,WREG
    mov %2,%3\;ior %3,%1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
 
+; leave this match_dup, operand 1 cannot interfere with reload (CAW)
 (define_insn "*iorhi3_sfr1a"
   [(set (match_operand:HI 0 "pic30_register_operand"          "=a, ?r")
         (ior:HI (match_operand:HI 1 "pic30_near_operand" "U,  U")
                 (match_dup 0)))
-                (clobber (match_scratch:HI 2            "=X,  &r"))]
+   (clobber (match_scratch:HI 2 "=X,  &r"))]
   ""
   "@
    ior %1,WREG
    mov %1,%2\;ior %2,%0,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
@@ -8874,7 +10871,7 @@ static	char insn[48];
    ior %2,#%1,%0
    ior %2,#%1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "defuse,def,use,etc,def,etc,defuse,use,def,etc")
   ]
 )
@@ -8907,15 +10904,17 @@ static	char insn[48];
  ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*iorsi3_sfr0"
-  [(set (match_operand:SI 0 "pic30_data_operand"         "=T")
+  [(set (match_operand:SI 0 "pic30_data_operand" "=T")
         (ior:SI (match_dup 0)
-                (match_operand:SI 1 "pic30_register_operand"    "r")))
-		(clobber (match_scratch:HI 2             "=&r"))]
+                (match_operand:SI 1 "pic30_register_operand" "r")))
+   (clobber (match_scratch:HI 2 "=&r"))]
   ""
   "mov #%0,%2\;ior %1,[%2],[%2]\;ior %d1,[++%2],[%2]"
   [(set_attr "cc" "clobber")])
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*iorsi3_sfr1"
   [(set (match_operand:SI 0 "pic30_data_operand"        "=T")
         (ior:SI (match_operand:SI 1 "pic30_register_operand"  "r")
@@ -8957,7 +10956,7 @@ static	char insn[48];
   ""
   "xor.b #%2,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
@@ -8982,7 +10981,7 @@ static	char insn[48];
    xor.b %2,#%1,%0
    xor.b %2,#%1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use,def,etc,defuse,use,def,etc")
   ]
 )
@@ -9016,11 +11015,12 @@ static	char insn[48];
   }
 }
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*xorqi3_sfr1"
   [(set (match_operand:QI 0 "pic30_near_operand"       "=U,!???U")
         (xor:QI (match_dup 0)
@@ -9035,7 +11035,7 @@ static	char insn[48];
                return \"exch w0,%1\;xor.b %0\;exch w0,%1\";
    }
   "
-[(set_attr "cc" "set")])
+[(set_attr "cc" "math")])
 
 ;;;;;;;;;;;;;;;
 ;; half integer
@@ -9061,11 +11061,12 @@ static	char insn[48];
    xor %2,#%1,%0
    xor %2,#%1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use,def,etc,defuse,use,def,etc")
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "xorhi3_sfr2"
   [(set (match_operand:HI 0 "pic30_near_operand" "=U")
         (xor:HI (match_dup 0)
@@ -9091,8 +11092,9 @@ static	char insn[48];
    } else abort();
 }
 "
- [(set_attr "cc" "set")])
+ [(set_attr "cc" "clobber")])
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "xorhi3_sfr3"
   [(set (match_operand:HI 0 "pic30_near_operand" "=U")
         (xor:HI (match_operand:HI 1 "pic30_immediate_1bit_operand" "i")
@@ -9118,7 +11120,7 @@ static	char insn[48];
    } else abort();
 }
 "
- [(set_attr "cc" "set")])
+ [(set_attr "cc" "clobber")])
 
 (define_insn "*xorhi3_imm"
   [(set (match_operand:HI 0 "pic30_register_operand"         "=r")
@@ -9127,14 +11129,15 @@ static	char insn[48];
   ""
   "xor #%2,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
 
+; this match_can cause issues iff operand 1 is dies in this instruction and
+;   we decide to use it to reload operand 0 (CAW)
 (define_insn "*xorhi3_sfr0"
-  [(set (match_operand:HI 0 "pic30_reg_or_near_operand"
-                                                        "=a,U,!???d,!???U")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand" "+a,U,!???d,!???U")
         (xor:HI (match_dup 0)
                 (match_operand:HI 1 "pic30_reg_or_near_operand"
                                                         "U,a,!???U,!???d")))]
@@ -9153,10 +11156,12 @@ static	char insn[48];
                return \"exch w0,%1\;xor %0\;exch w0,%1\";
    }
   "
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "clobber")])
 
+; this match_can cause issues iff operand 1 is dies in this instruction and
+;   we decide to use it to reload operand 0 (CAW)
 (define_insn "*xorhi3_sfr1"
-  [(set (match_operand:HI 0 "pic30_reg_or_near_operand" "=a,U,!???d,!???U")
+  [(set (match_operand:HI 0 "pic30_reg_or_near_operand" "+a,U,!???d,!???U")
         (xor:HI (match_operand:HI 1 "pic30_reg_or_near_operand"
                                                         "U,a,!???U,!???d")
                 (match_dup 0)))]
@@ -9175,8 +11180,7 @@ static	char insn[48];
                return \"exch w0,%1\;xor %0\;exch w0,%1\";
    }
   "
-[(set_attr "cc" "set")])
-
+[(set_attr "cc" "clobber")])
 
 ;;;;;;;;;;;;;;;;;
 ;; single integer
@@ -9236,17 +11240,18 @@ static	char insn[48];
   ""
   "com.b %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*one_cmplqi2_sfr"
   [(set (match_operand:QI 0 "pic30_near_operand"        "=U")
         (not:QI (match_dup 0)))]
   ""
   "com.b %0"
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
 ;;;;;;;;;;;;
 ;; HImode ;;
@@ -9258,17 +11263,18 @@ static	char insn[48];
   ""
   "com %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*one_cmplhi2_sfr"
   [(set (match_operand:HI 0 "pic30_near_operand"        "=U")
         (not:HI (match_dup 0)))]
   ""
   "com %0"
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
 ;;;;;;;;;;;;
 ;; SImode ;;
@@ -9285,6 +11291,7 @@ static	char insn[48];
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*one_cmplsi2_sfr"
   [(set (match_operand:SI 0 "pic30_near_operand"        "=U")
         (not:SI (match_dup 0)))]
@@ -9309,7 +11316,11 @@ static	char insn[48];
 {
   return \"ff1r %1,%0\";
 }"
-  [(set_attr "type" "def,defuse")])
+  [
+   (set_attr "cc" "clobber")
+   (set_attr "type" "def,defuse")
+  ]
+)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Shift instructions
@@ -9330,7 +11341,7 @@ static	char insn[48];
   ""
   "sl.b %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
@@ -9344,7 +11355,7 @@ static	char insn[48];
     sl.b %1,WREG
     sl.b %0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,etc")
   ]
 )
@@ -9386,7 +11397,7 @@ static	char insn[48];
     sl %1,%0
     sl %1,%0"
  [
-  (set_attr "cc" "set")
+  (set_attr "cc" "math")
   (set_attr "type" "def,defuse,etc,use")
  ]
 )
@@ -9414,18 +11425,19 @@ static	char insn[48];
   }
 }
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*ashlhi3_sfr1"
   [(set (match_operand:HI 0 "pic30_near_operand"           "=U")
         (ashift:HI (match_dup 0)
                    (match_operand:HI 1 "pic30_I_operand"    "I")))]
   ""
   "sl %0"
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
 (define_insn "ashlhi3"
   [(set (match_operand:HI 0 "pic30_register_operand"                   "=r,r,r")
@@ -9992,7 +12004,7 @@ static	char insn[48];
   ""
   "lsr.b %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
@@ -10006,18 +12018,19 @@ static	char insn[48];
     lsr.b %1,WREG
     mov #%1,%0\;lsr.b [%0],%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*lshrqi3_sfr1"
   [(set (match_operand:QI 0 "pic30_near_operand"          "=U")
         (lshiftrt:QI (match_dup 0)
                      (match_operand:QI 1 "pic30_I_operand" "I")))]
   ""
   "lsr %0"
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
 ;;;;;;;;;;;;
 ;; HImode ;;
@@ -10030,7 +12043,7 @@ static	char insn[48];
   ""
   "lsr %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
@@ -10044,18 +12057,19 @@ static	char insn[48];
    lsr %1,WREG
    mov %1,%0\;lsr %0,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def")
   ]
 )
 
+; leave this match_dup, operand 0 will not require a reload (CAW)
 (define_insn "*lshrhi3_sfr1"
   [(set (match_operand:HI 0 "pic30_near_operand"          "=U")
         (lshiftrt:HI (match_dup 0)
                      (match_operand:HI 1 "pic30_I_operand" "I")))]
   ""
   "lsr %0"
-  [(set_attr "cc" "set")])
+  [(set_attr "cc" "math")])
 
 (define_insn "lshrhi3"
   [(set (match_operand:HI 0 "pic30_register_operand"                     "=r,r,r")
@@ -10609,7 +12623,7 @@ static	char insn[48];
   ""
   "asr.b %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
@@ -10620,10 +12634,10 @@ static	char insn[48];
                    (match_operand:QI 2 "pic30_I_operand"      "I,I")))]
   ""
   "@
-    asr.b %1,%0
+    asr.b %1,WREG
     asr.b %0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,etc")
   ]
 )
@@ -10639,7 +12653,7 @@ static	char insn[48];
   ""
   "asr %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
@@ -10653,7 +12667,7 @@ static	char insn[48];
     asr %1,WREG
     asr %0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,etc")
   ]
 )
@@ -11220,7 +13234,7 @@ static	char insn[48];
   ""
   "rlnc.b %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
@@ -11231,10 +13245,10 @@ static	char insn[48];
                    (match_operand:QI 2 "pic30_I_operand"    "I,I")))]
   ""
   "@
-    rlnc.b %1,%0
+    rlnc.b %1,WREG
     rlnc.b %1"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,etc")
   ]
 )
@@ -11250,7 +13264,7 @@ static	char insn[48];
   ""
   "rlnc %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
@@ -11261,10 +13275,10 @@ static	char insn[48];
                    (match_operand:HI 2 "pic30_I_operand"    "I,I")))]
   ""
   "@
-    rlnc %1,%0
+    rlnc %1,WREG
     rlnc %1"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,etc")
   ]
 )
@@ -11284,7 +13298,7 @@ static	char insn[48];
   ""
   "rrnc.b %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
@@ -11295,10 +13309,10 @@ static	char insn[48];
                    (match_operand:QI 2 "pic30_I_operand"      "I,I")))]
   ""
   "@
-    rrnc.b %1,%0
+    rrnc.b %1,WREG
     rrnc.b %1"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,etc")
   ]
 )
@@ -11314,7 +13328,7 @@ static	char insn[48];
   ""
   "rrnc %1,%0"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,defuse,etc,use")
   ]
 )
@@ -11325,10 +13339,10 @@ static	char insn[48];
                    (match_operand:HI 2 "pic30_I_operand"      "I,I")))]
   ""
   "@
-    rrnc %1,%0
+    rrnc %1,WREG
     rrnc %1"
   [
-   (set_attr "cc" "set")
+   (set_attr "cc" "math")
    (set_attr "type" "def,etc")
   ]
 )
@@ -12989,7 +15003,7 @@ static	char szInsn[48];
    (set (match_dup 1)
         (match_dup 0))]
   "pic30_dead_or_set_p(NEXT_INSN(insn),operands[0])"
-  "; move deleted"
+  "\\; move deleted"
   [(set_attr "cc" "unchanged")])
 
 (define_peephole
@@ -12998,7 +15012,7 @@ static	char szInsn[48];
    (set (match_dup 1)
         (match_dup 0))]
   "pic30_dead_or_set_p(NEXT_INSN(insn),operands[0])"
-  "; move deleted"
+  "\\; move deleted"
   [(set_attr "cc" "unchanged")])
 
 (define_peephole
@@ -13007,7 +15021,7 @@ static	char szInsn[48];
    (set (match_dup 1)
         (match_dup 0))]
   "pic30_dead_or_set_p(NEXT_INSN(insn),operands[0])"
-  "\; move deleted"
+  "\\; move deleted"
   [(set_attr "cc" "unchanged")])
 
 ;

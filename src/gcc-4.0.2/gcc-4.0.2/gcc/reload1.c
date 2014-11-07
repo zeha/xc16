@@ -7563,7 +7563,9 @@ emit_reload_insns (struct insn_chain *chain)
 	{
 	  rtx out = (REG_P (rld[r].out)
 		     ? rld[r].out : rld[r].out_reg);
-	  int nregno = REGNO (out);
+	  int nregno = GET_CODE(out) == SUBREG ? 
+                         REGNO(SUBREG_REG(out)) :
+                         REGNO (out);
 	  if (nregno >= FIRST_PSEUDO_REGISTER)
 	    {
 	      rtx src_reg, store_insn = NULL_RTX;

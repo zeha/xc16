@@ -1429,8 +1429,14 @@ default_conversion (tree exp)
       /* If it's thinner than an int, promote it like a
 	 c_promoting_integer_type_p, otherwise leave it alone.  */
       && 0 > compare_tree_int (DECL_SIZE (TREE_OPERAND (exp, 1)),
-			       TYPE_PRECISION (integer_type_node)))
+			       TYPE_PRECISION (integer_type_node))) {
+    /* no idea why we don't preserve sign here, according to the standard
+       we can have an unsigned bit-field... (CW) */
+    if (TYPE_UNSIGNED (type))
+      return convert (unsigned_type_node, exp);
+
     return convert (integer_type_node, exp);
+  }
 
   if (c_promoting_integer_type_p (type))
     {
@@ -1788,6 +1794,13 @@ build_array_ref (tree array, tree index)
       type = TREE_TYPE (TREE_TYPE (array));
       if (TREE_CODE (type) != ARRAY_TYPE)
 	type = TYPE_MAIN_VARIANT (type);
+      if (TYPE_TARGET_QUALIFIER(TREE_TYPE(TREE_TYPE(array)))) {
+        type = 
+          build_qualified_type(
+            type, 
+            TYPE_TARGET_QUALIFIER(TREE_TYPE(TREE_TYPE(array))) << 
+              TYPE_QUAL_TARGET_SHIFT);
+      }
       rval = build4 (ARRAY_REF, type, array, index, NULL_TREE, NULL_TREE);
       /* Array ref is const/volatile if the array elements are
          or if the array is.  */

@@ -166,11 +166,17 @@ enum pic30_builtins
    PIC30_BUILTIN_WRITEOSCCONH,
    PIC30_BUILTIN_WRITERTCWEN,
    PIC30_BUILTIN_WRITENVM,
+   PIC30_BUILTIN_TBLRDLB,
+   PIC30_BUILTIN_TBLRDHB,
    PIC30_BUILTIN_TBLRDL,
    PIC30_BUILTIN_TBLRDH,
    PIC30_BUILTIN_TBLWTL,
    PIC30_BUILTIN_TBLWTH,
-   PIC30_BUILTIN_DIVF
+   PIC30_BUILTIN_TBLWTLB,
+   PIC30_BUILTIN_TBLWTHB,
+   PIC30_BUILTIN_DIVF,
+   PIC30_BUILTIN_READ_EXT8,
+   PIC30_BUILTIN_WRITE_EXT8
 };
 
 #define       TARGET_USE_PA   1
@@ -312,25 +318,41 @@ enum pic30_builtins
 extern char * pic30_default_include_path(void) __attribute__((weak));
 #define DEFAULT_INCLUDE_PATH (pic30_default_include_path ? \
             pic30_default_include_path() : \
-            "../include:../support/h:../support/peripheral_30F_24H_33F:" \
-            "../support/peripheral_24F")
-
+            MPLABC30_COMMON_INCLUDE_PATH ":" \
+            MPLABC30_PIC24F_INCLUDE_PATH ":" \
+            MPLABC30_PIC24H_INCLUDE_PATH ":" \
+            MPLABC30_PIC30F_INCLUDE_PATH ":" \
+            MPLABC30_PIC33F_INCLUDE_PATH )
 #ifndef TARGET_EXTRA_INCLUDES
 extern void pic30_system_include_paths(const char *root, const char *system, 
                                        int nostdinc);
 
 #define TARGET_EXTRA_INCLUDES pic30_system_include_paths
 #endif
-#define DEFAULT_LIB_PATH (concat(make_relative_prefix(argv[0], \
-                                                      standard_bindir_prefix, \
-                                                      standard_exec_prefix), \
-                                 ".." , dir_separator_str, "lib", \
-                                 path_separator_str, \
-                                 make_relative_prefix(argv[0], \
-                                                      standard_bindir_prefix, \
-                                                      standard_exec_prefix), \
-                                 ".." , dir_separator_str, "support", \
-                                 dir_separator_str, "gld", 0))
+
+#ifdef PATH_SEPARATOR
+#if PATH_SEPARATOR == ';'
+#define PATH_SEPARATOR_STR ";"
+#else 
+#define PATH_SEPARATOR_STR ":"
+#endif
+#endif
+
+#ifdef DIR_SEPARATOR
+#if DIR_SEPARATOR == '\\'
+#define DIR_SEPARATOR_STR "\\"
+#else 
+#define DIR_SEPARATOR_STR "/"
+#endif
+#endif
+
+#define DEFAULT_LIB_PATH  \
+         MPLABC30_COMMON_LIB_PATH PATH_SEPARATOR_STR \
+         MPLABC30_PIC24F_LIB_PATH PATH_SEPARATOR_STR \
+         MPLABC30_PIC24H_LIB_PATH PATH_SEPARATOR_STR \
+         MPLABC30_PIC30F_LIB_PATH PATH_SEPARATOR_STR \
+         MPLABC30_PIC33F_LIB_PATH
+        
 
 /*----------------------------------------------------------------------*/
 /* Run-time compilation parameters selecting different hardware subsets.*/
@@ -352,13 +374,14 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 #define TARGET_MASK_OLD_OMF             0x0200
 #define TARGET_MASK_ARCH_PIC24F         0x0400
 #define TARGET_MASK_ARCH_PIC33          0x0800
-#define TARGET_MASK_ARCH_PIC80          0x1000
 #define TARGET_MASK_ARCH_PIC30F202X     0x2000
 #define TARGET_MASK_ARCH_PIC24H         0x4000
 #define TARGET_MASK_ARCH_GENERIC        0x8000
 #define TARGET_MASK_CONST_IN_PSV        0x10000
 #define TARGET_MASK_CONST_IN_PROG       0x20000
-#define TARGET_MASK_ABI_CHECK           0x40000
+#define TARGET_MASK_SKIP_DOT_FILE       0x40000
+#define TARGET_MASK_ARCH_PIC24FK        0x80000
+#define TARGET_MASK_ABI_CHECK           0xC0000
 
 /*
 ** Small data model means that data objects can be
@@ -436,6 +459,8 @@ extern void pic30_system_include_paths(const char *root, const char *system,
 
 #define TARGET_ISR_WARN (!(target_flags&TARGET_MASK_NO_ISRW))
 
+#define TARGET_SKIP_DOT_FILE (target_flags & TARGET_MASK_SKIP_DOT_FILE)
+
 #define TARGET_ABI_CHECK (target_flags & TARGET_MASK_ABI_CHECK)
 
 /*
@@ -512,6 +537,9 @@ extern void pic30_system_include_paths(const char *root, const char *system,
  {"no-isr-warn", \
     TARGET_MASK_NO_ISRW, \
     "Disable warning for inappropriate use of ISR function names"}, \
+ { "no-file", \
+    TARGET_MASK_SKIP_DOT_FILE, \
+    "Disable placing file directive in assembly output"}, \
  { "", TARGET_DEFAULT,NULL} \
 }
 #else
@@ -533,7 +561,7 @@ extern void pic30_system_include_paths(const char *root, const char *system,
     -TARGET_MASK_LARGE_AGG, \
     "Use small aggregate data model"}, \
  {"large-aggregate", \
-    TARGET_MASK_LARGE_AGG, \ 
+    TARGET_MASK_LARGE_AGG, \
     "Use large aggregate data model"}, \
  {"small-code", \
     -TARGET_MASK_LARGE_CODE, \
@@ -560,6 +588,9 @@ extern void pic30_system_include_paths(const char *root, const char *system,
  {"no-isr-warn", \
     TARGET_MASK_NO_ISRW, \
     "Disable warning for inappropriate use of ISR function names"}, \
+ { "no-file", \
+    TARGET_MASK_SKIP_DOT_FILE, \
+    "Disable placing file directive in assembly output"}, \
  { "", TARGET_DEFAULT,NULL} \
 }
 #endif
@@ -589,7 +620,8 @@ enum errata_mask {
   retfie_errata = 1,
   retfie_errata_disi = 2,
   psv_errata = 4,
-  exch_errata = 8
+  exch_errata = 8,
+  psv_address_errata = 16,
 };
 extern int pic30_errata_mask;
 
@@ -821,6 +853,10 @@ extern int         pic30_clear_fn_list;
 #define A_REGNO      17
 #define B_REGNO      18
 #define PSVPAG       19
+#define PMADDR       20
+#define PMMODE       21
+#define PMDIN1       22
+#define PMDIN2       23
 
 /*
 ** Number of actual hardware registers.
@@ -829,7 +865,7 @@ extern int         pic30_clear_fn_list;
 ** All registers that the compiler knows about must be given numbers,
 ** even those that are not normally considered general registers.
 */
-#define FIRST_PSEUDO_REGISTER 20
+#define FIRST_PSEUDO_REGISTER 24
 
 /* Mappings for dsPIC registers */
 
@@ -854,7 +890,7 @@ extern int         pic30_clear_fn_list;
 { \
    /* WREG0 */  0, 0, 0, 0, 0, 0, 0, 0,   \
    /* WREG8 */  0, 0, 0, 0, 0, 0, 0, 1,   \
-   /* RCOUNT */ 1, 0, 0, 0                \
+   /* RCOUNT */ 1, 0, 0, 0, 0, 0, 0, 0    \
 }
 
 /*
@@ -884,7 +920,7 @@ extern int         pic30_clear_fn_list;
 { \
  /* WREG0 */  1, 1, 1, 1, 1, 1, 1, 1,   \
  /* WREG8 */  0, 0, 0, 0, 0, 0, 0, 1,   \
- /* RCOUNT */ 1, 0, 0, 0                \
+ /* RCOUNT */ 1, 0, 0, 0, 0, 0, 0, 0    \
 }
 
 /*
@@ -1001,7 +1037,7 @@ extern int         pic30_clear_fn_list;
 /*
 ** Define this to be 1 if all structure return values must be in memory.
 */
-#define DEFAULT_PCC_STRUCT_RETURN 0
+#define DEFAULT_PCC_STRUCT_RETURN 1
 
 /************************************************************************/
 
@@ -1289,7 +1325,8 @@ enum reg_class
 { \
  "w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7",   \
  "w8", "w9","w10","w11","w12","w13","w14","w15",   \
- "_RCOUNT", "A", "B", "PSVPAG" \
+ "_RCOUNT", "A", "B", "PSVPAG", "PMADDR", "PMMODE",\
+ "PMDIN1", "PMDIN2" \
 }
 
 /*
@@ -1724,8 +1761,12 @@ typedef struct pic30_args
 */
 #define ELIMINABLE_REGS { \
    { ARG_POINTER_REGNUM, STACK_POINTER_REGNUM },  \
-   { ARG_POINTER_REGNUM, FRAME_POINTER_REGNUM },  \
    { FRAME_POINTER_REGNUM, STACK_POINTER_REGNUM } }
+
+/* why this ? */
+#if 0
+   { ARG_POINTER_REGNUM, FRAME_POINTER_REGNUM },  
+#endif
 
 /*
 ** A C expression that returns non-zero if the compiler is allowed to try to
@@ -1943,6 +1984,8 @@ typedef struct pic30_args
 #define PIC30_DATA_FLAG       PIC30_EXTENDED_FLAG "dm" PIC30_EXTENDED_FLAG
 #define PIC30_X_FLAG          PIC30_EXTENDED_FLAG "xm" PIC30_EXTENDED_FLAG
 #define PIC30_Y_FLAG          PIC30_EXTENDED_FLAG "ym" PIC30_EXTENDED_FLAG
+#define PIC30_EXT_FLAG        PIC30_EXTENDED_FLAG "ext" PIC30_EXTENDED_FLAG
+#define PIC30_PMP_FLAG        PIC30_EXTENDED_FLAG "pmp" PIC30_EXTENDED_FLAG
 #define PIC30_APSV_FLAG       PIC30_EXTENDED_FLAG "apsv" PIC30_EXTENDED_FLAG
 #define PIC30_PRST_FLAG       PIC30_EXTENDED_FLAG "persist" PIC30_EXTENDED_FLAG
 #define PIC30_PSV_FLAG        PIC30_EXTENDED_FLAG "psv" PIC30_EXTENDED_FLAG
@@ -2277,7 +2320,7 @@ enum pic30_memory_space {
   case ASHIFTRT:                  \
   case LSHIFTRT:                  \
    /* An immediate count is preferable to a variable one */\
-   if (GET_MODE(X) == SImode)            \
+   if (GET_MODE(X) >= SImode)            \
    {                     \
       if (GET_CODE(XEXP(X, 1)) == CONST_INT)      \
       {                  \
@@ -2308,7 +2351,7 @@ enum pic30_memory_space {
 ** Compute extra cost of moving data between one register class
 ** and another.
 */
-#define REGISTER_MOVE_COST(MODE,FROM,TO)  ((MODE == SImode) ? 2 : 1)
+#define REGISTER_MOVE_COST(MODE,FROM,TO)  ((MODE > P16PMPmode) ? 2 : 1)
 
 /*
 ** A C expression for the cost of moving data of mode MODE between a register
@@ -3271,17 +3314,21 @@ extern int pic30_license_valid;
 
 #define TARGET_LAYOUT_DECL(DECL)  pic30_layout_decl(DECL)
 #define TARGET_LAYOUT_TYPE(TYPE)  pic30_layout_type(TYPE)
-#define TARGET_POINTER_MODE(TYPE) (pic30_pointer_mode(TYPE))
+#define TARGET_POINTER_MODE(TYPE,DECL) (pic30_pointer_mode(TYPE,DECL))
 #define TARGET_POINTER_SIZE(TYPE) (GET_MODE_SIZE(pic30_pointer_mode(TYPE)))
 #define TARGET_CONVERT_POINTER    pic30_convert_pointer
 #define TARGET_IS_POINTER_MODE(MODE) ((MODE == Pmode) || \
                                       (MODE == P24PROGmode) || \
+                                      (MODE == P16PMPmode) || \
+                                      (MODE == P32EXTmode) || \
                                       (MODE == P24PSVmode))
 
 
 /*                               keyword         mapping          disable */
 #define TARGET_RESERVED_WORDS { "__psv__", RID_TARGET_QUAL, 0 }, \
-                              { "__prog__", RID_TARGET_QUAL, 0 }, 
+                              { "__prog__", RID_TARGET_QUAL, 0 }, \
+                              { "__pmp__", RID_TARGET_QUAL, 0}, \
+                              { "__external__", RID_TARGET_QUAL, 0 },
 
 #define TARGET_PARSE_TARGET_RID(qual, x)  pic30_parse_target_rid(qual,x)
 
@@ -3300,5 +3347,27 @@ extern tree pic30_expand_constant(tree);
 #define POINTERS_EXTEND_UNSIGNED 1
 
 #define TARGET_CAN_GIMPLIFY_EXPR(x) pic30_can_gimplify_expr(x)
+
+#define ASM_OUTPUT_FUNCTION_PRE(FILE, DECL, FNNAME) \
+  pic30_function_pre(FILE,DECL,FNNAME)
+
+enum pic30_special_trees {
+  pst_none,
+  pst_8,
+  pst_16,
+  pst_32,
+  pst_64,
+  pst_any,
+  pst_length
+};
+
+extern tree pic30_read_externals(enum pic30_special_trees);
+extern tree pic30_write_externals(enum pic30_special_trees);
+
+extern void pic30_target_bind(tree name, tree decl);
+#define TARGET_BIND pic30_target_bind
+
+extern int pic30_emit_block_move(rtx x, rtx y, rtx size);
+#define TARGET_EMIT_BLOCK_MOVE pic30_emit_block_move
 
 #endif

@@ -578,23 +578,23 @@ delete_alias_info (struct alias_info *ai)
   for (i = 0; i < ai->num_addressable_vars; i++)
     {
       sbitmap_free (ai->addressable_vars[i]->may_aliases);
-      free (ai->addressable_vars[i]);
+      if (ai->addressable_vars[i]) free (ai->addressable_vars[i]);
     }
-  free (ai->addressable_vars);
+  if (ai->addressable_vars) free (ai->addressable_vars);
 
   for (i = 0; i < ai->num_pointers; i++)
     {
       sbitmap_free (ai->pointers[i]->may_aliases);
-      free (ai->pointers[i]);
+      if (ai->pointers[i]) free (ai->pointers[i]);
     }
-  free (ai->pointers);
+  if (ai->pointers) free (ai->pointers);
 
   ai->num_references = NULL;
   BITMAP_FREE (ai->written_vars);
   BITMAP_FREE (ai->dereferenced_ptrs_store);
   BITMAP_FREE (ai->dereferenced_ptrs_load);
 
-  free (ai);
+  if (ai) free (ai);
 }
 
 

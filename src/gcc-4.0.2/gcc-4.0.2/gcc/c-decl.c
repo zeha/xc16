@@ -453,6 +453,10 @@ bind (tree name, tree decl, struct c_scope *scope, bool invisible, bool nested)
 {
   struct c_binding *b, **here;
 
+#ifdef TARGET_BIND
+  TARGET_BIND(name,decl);
+#endif
+
   if (binding_freelist)
     {
       b = binding_freelist;

@@ -33,7 +33,7 @@ static unsigned int read_byte_used = 0;
 static int total_record_size = 0;
 static struct stat fileinfo;
 
-enum error_codes resource_error = 0;
+enum error_codes resource_error = ec_none;
 
 int resource_data_size(struct resource_data *d) {
 
@@ -65,7 +65,29 @@ struct resource_introduction_block *read_rib(const char *name) {
   unsigned int i;
 
   buffer_size = 80;
-  stat(name,&fileinfo);
+  if (stat(name,&fileinfo) == -1) {
+    /* name cannot be statted */
+    /* this could be because of the reoganization of the install directory 
+     * some of the binaries are in the same directory as the resource file,
+     * some are one directory below it... try moving one up and looking again
+     */
+    char *c;
+    char *ultimate = (char *)name,
+         *penultimate = (char *)name;
+    char *temp;
+
+    for (c = (char *)name; *c; c++) {
+      if ((*c == '/') || (*c == '\\')) {
+        penultimate = ultimate;
+        ultimate = c;
+        while (c[1] == *c) c++;  /* ignore duplicate slashes */
+      }
+    }
+    temp = (char *)xcalloc(strlen(ultimate)+1,1);
+    strcpy(temp, ultimate);
+    strcpy(penultimate,ultimate);
+    stat(name,&fileinfo);
+  }
   /* under WINDOZE, the "b" is required because text files are subject to
      translation and ftell and fseek might not agree */
   input_file = fopen(name,"rb");
@@ -74,14 +96,16 @@ struct resource_introduction_block *read_rib(const char *name) {
     res_error(ec_cannot_open_file);
   }
   resource_start_read = 0;
-  buffer = xcalloc(1, buffer_size);
-  rib = xcalloc(1, sizeof(struct resource_introduction_block));
+  buffer = (unsigned char *)xcalloc(1, buffer_size);
+  rib = (struct resource_introduction_block *)xcalloc(1, 
+                                    sizeof(struct resource_introduction_block));
 
   /* tool_chain */
   i = 0;
   do {
     if (i >= buffer_size) {
-      unsigned char *new_buffer = xrealloc(buffer, buffer_size+80);
+      unsigned char *new_buffer = (unsigned char *)xrealloc(buffer, 
+                                                            buffer_size+80);
       buffer_size += 80;
       if (buffer != new_buffer) {
         free(buffer);
@@ -104,7 +128,7 @@ struct resource_introduction_block *read_rib(const char *name) {
   read_word(&rib->field_count);
 
   /* field_sizes */
-  rib->field_sizes = xcalloc(rib->field_count, sizeof(int));
+  rib->field_sizes = (unsigned int *)xcalloc(rib->field_count, sizeof(int));
   total_record_size = 0;
   for (i = 0; i < rib->field_count; i++) {
     read_word(&rib->field_sizes[i]);
@@ -216,7 +240,7 @@ int read_value(enum resource_information_kind kind,
                       if (read_short(&data->v.version.minor)) return 0;
                       size-=4; 
                       break;
-    case rik_string:  data->v.s = xcalloc(size, 1);
+    case rik_string:  data->v.s = (char *)xcalloc(size, 1);
                       c = data->v.s;
                       while (size) {
                         if (read_byte((unsigned char *)c) == 0) return 0;

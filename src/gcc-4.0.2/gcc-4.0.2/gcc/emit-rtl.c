@@ -5298,6 +5298,8 @@ init_emit_once (int line_numbers)
 	const_tiny_rtx[i][(int) mode] = GEN_INT (i);
 
 #ifdef _PIC30_H_
+      const_tiny_rtx[i][P16PMPmode] = GEN_INT(i);
+      const_tiny_rtx[i][P32EXTmode] = GEN_INT(i);
       const_tiny_rtx[i][P24PSVmode] = GEN_INT(i);
       const_tiny_rtx[i][P24PROGmode] = GEN_INT(i);
 #endif

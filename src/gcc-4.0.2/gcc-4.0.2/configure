@@ -2002,7 +2002,7 @@ if test -z "`${CC-cc} -g -c conftest.c 2>&1`"; then
 else
   ac_cv_prog_cc_g=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 
@@ -2276,7 +2276,7 @@ else
   rm -rf conftest*
   echo "$ac_t""no" 1>&6; have_gmp=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 if test x"$have_gmp" = xyes; then
   echo $ac_n "checking for MPFR""... $ac_c" 1>&6
@@ -2302,7 +2302,7 @@ else
   rm -rf conftest*
   echo "$ac_t""no" 1>&6; have_gmp=no
 fi
-rm -f conftest*
+rm -rf conftest*
   LIBS="$saved_LIBS"
   CFLAGS="$saved_CFLAGS"
 fi
@@ -3027,11 +3027,11 @@ case $we_are_ok in
   no)
     echo 1>&2 "*** The command '${CC} -o conftest ${CFLAGS} ${CPPFLAGS} ${LDFLAGS} conftest.c' failed."
     echo 1>&2 "*** You must set the environment variable CC to a working compiler."
-    rm -f conftest*
+    rm -rf conftest*
     exit 1
     ;;
 esac
-rm -f conftest*
+rm -rf conftest*
 
 # The Solaris /usr/ucb/cc compiler does not appear to work.
 case "${host}" in

@@ -1127,6 +1127,12 @@ emit_block_move (rtx x, rtx y, rtx size, enum block_op_methods method)
   rtx retval = 0;
   unsigned int align;
 
+#ifdef TARGET_EMIT_BLOCK_MOVE
+  if (TARGET_EMIT_BLOCK_MOVE(x,y,size)) { 
+    return 0;
+  }
+#endif
+
   switch (method)
     {
     case BLOCK_OP_NORMAL:
@@ -3817,6 +3823,7 @@ expand_assignment (tree to, tree from)
 {
   rtx to_rtx = 0;
   rtx result;
+  enum machine_mode this_Pmode = Pmode;
 
   /* Don't crash if the lhs of the assignment was erroneous.  */
 
@@ -3857,9 +3864,10 @@ expand_assignment (tree to, tree from)
 
 	  gcc_assert (MEM_P (to_rtx));
 
+          this_Pmode = GET_MODE(XEXP(to_rtx,0));
 #ifdef POINTERS_EXTEND_UNSIGNED
-	  if (GET_MODE (offset_rtx) != Pmode)
-	    offset_rtx = convert_to_mode (Pmode, offset_rtx, 0);
+	  if (GET_MODE (offset_rtx) != this_Pmode)
+	    offset_rtx = convert_to_mode (this_Pmode, offset_rtx, 0);
 #else
 	  if (GET_MODE (offset_rtx) != ptr_mode)
 	    offset_rtx = convert_to_mode (ptr_mode, offset_rtx, 0);
@@ -4013,8 +4021,8 @@ expand_assignment (tree to, tree from)
       from_rtx = expand_expr (from, NULL_RTX, VOIDmode, 0);
 
       emit_library_call (memmove_libfunc, LCT_NORMAL,
-			 VOIDmode, 3, XEXP (to_rtx, 0), Pmode,
-			 XEXP (from_rtx, 0), Pmode,
+			 VOIDmode, 3, XEXP (to_rtx, 0), this_Pmode,
+			 XEXP (from_rtx, 0), this_Pmode,
 			 convert_to_mode (TYPE_MODE (sizetype),
 					  size, TYPE_UNSIGNED (sizetype)),
 			 TYPE_MODE (sizetype));
@@ -4054,6 +4062,7 @@ store_expr (tree exp, rtx target, int call_param_p)
   rtx temp;
   rtx alt_rtl = NULL_RTX;
   int dont_return_target = 0;
+  enum machine_mode this_Pmode = Pmode;
 
   if (VOID_TYPE_P (TREE_TYPE (exp)))
     {
@@ -4234,6 +4243,7 @@ store_expr (tree exp, rtx target, int call_param_p)
 	     type of the string, which is actually the size of the target.  */
 	  rtx size = expr_size (exp);
 
+          this_Pmode = GET_MODE(XEXP(temp,0));
 	  if (GET_CODE (size) == CONST_INT
 	      && INTVAL (size) < TREE_STRING_LENGTH (exp))
 	    emit_block_move (target, temp, size,
@@ -6281,7 +6291,11 @@ expand_expr_addr_expr (tree exp, rtx target, enum machine_mode tmode,
      like "(short) &a".  In that case, convert_memory_address won't do
      the right thing, so ignore the given target mode.  */
   if (!targetm.valid_pointer_mode(tmode))
-    tmode = Pmode;
+    /* in this case we should probably try to use  "whatever's natural", as if
+       VOIDmode was passed in.  IMHO (CW) */
+    tmode = TYPE_MODE (TREE_TYPE (exp));
+    if (!targetm.valid_pointer_mode(tmode))
+      tmode = Pmode;
 
   result = expand_expr_addr_expr_1 (TREE_OPERAND (exp, 0), target,
 				    tmode, modifier);

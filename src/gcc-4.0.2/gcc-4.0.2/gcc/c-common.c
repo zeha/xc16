@@ -4484,7 +4484,15 @@ handle_section_attribute (tree *node, tree ARG_UNUSED (name), tree args,
 	}
       else
 	{
-	  error ("%Jsection attribute not allowed for %qD", *node, *node);
+          if ((TREE_CODE (decl) == FUNCTION_DECL
+	       || TREE_CODE (decl) == VAR_DECL))
+	    {
+	      error ("%Jsection attribute expects string literal argument for %qD", *node, *node);
+	    }
+	  else
+	    {
+	      error ("%Jsection attribute not allowed for %qD", *node, *node);
+	    }
 	  *no_add_attrs = true;
 	}
     }

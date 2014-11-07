@@ -2843,7 +2843,7 @@ sed 's/^/| /' conftest.$ac_ext >&5
 fi
 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
 done
-rm -f conftest*
+rm -rf conftest*
 if test -n "$ac_declaration"; then
   echo '#ifdef __cplusplus' >>confdefs.h
   echo $ac_declaration      >>confdefs.h
@@ -3425,7 +3425,7 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
 else
   ac_cv_header_stdc=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 
@@ -3446,7 +3446,7 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
 else
   ac_cv_header_stdc=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 

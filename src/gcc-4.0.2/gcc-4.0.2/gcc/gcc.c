@@ -3359,10 +3359,14 @@ process_command (int argc, const char **argv)
   {
     const char *library_paths[] = { LIBRARY_PATH_ENV, "LPATH", 
                                     (const char *)-1 };
+    char *base_path;
+
     int pathNo = 0;
   
+    base_path = make_relative_prefix(argv[0], standard_bindir_prefix,
+                                              standard_exec_prefix);
     while ((int) library_paths[pathNo] != -1)
-    {
+    { 
       GET_ENV_PATH_LIST (temp, library_paths[pathNo]);
 #ifdef DEFAULT_LIB_PATH
       if ((temp == 0) && (pathNo == 0))
@@ -3387,16 +3391,19 @@ process_command (int argc, const char **argv)
             {
               if (*endp == PATH_SEPARATOR || *endp == 0)
                 {
-                  strncpy (nstore, startp, endp - startp);
                   if (endp == startp)
                     strcpy (nstore, concat (".", dir_separator_str, NULL));
-                  else if (!IS_DIR_SEPARATOR (endp[-1]))
-                    {
-                      nstore[endp - startp] = DIR_SEPARATOR;
-                      nstore[endp - startp + 1] = 0;
+                  else if (IS_DIR_SEPARATOR(*startp)) {
+                    strncpy (nstore, startp, endp - startp);
+                  } else {
+                    nstore[0] = 0;
+                    strcat(nstore, base_path);
+                    strncat(nstore, startp, endp-startp); 
                   }
-                  else
-                  nstore[endp - startp] = 0;
+                  if (!IS_DIR_SEPARATOR (endp[-1]))
+                  {
+                    strcat(nstore, dir_separator_str);
+                  }
                   add_prefix (&startfile_prefixes, nstore, NULL,
                               PREFIX_PRIORITY_LAST, 0, 1);
                   if (*endp == 0)

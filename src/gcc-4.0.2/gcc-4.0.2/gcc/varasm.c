@@ -1003,7 +1003,7 @@ make_decl_rtl (tree decl)
   if (TREE_CODE (decl) == VAR_DECL && DECL_WEAK (decl))
     DECL_COMMON (decl) = 0;
 
-  x = gen_rtx_SYMBOL_REF (TARGET_POINTER_MODE(TREE_TYPE(decl)), name);
+  x = gen_rtx_SYMBOL_REF (TARGET_POINTER_MODE(TREE_TYPE(decl),decl), name);
   SYMBOL_REF_WEAK (x) = DECL_WEAK (decl);
   SYMBOL_REF_DECL (x) = decl;
 
@@ -1239,6 +1239,10 @@ assemble_start_function (tree decl, const char *fnname)
   
   unlikely_section_label = reconcat (unlikely_section_label, 
 				     fnname, ".unlikely_section", NULL);
+
+#ifdef ASM_OUTPUT_FUNCTION_PRE
+  ASM_OUTPUT_FUNCTION_PRE(asm_out_file, decl, fnname);
+#endif
   
   /* The following code does not need preprocessing in the assembler.  */
 
@@ -1717,9 +1721,6 @@ assemble_variable (tree decl, int top_level ATTRIBUTE_UNUSED,
 #endif
       reloc = compute_reloc_for_constant (DECL_INITIAL (decl));
       output_addressed_constants (DECL_INITIAL (decl));
-#ifdef _PIC30_H_
-      pic30_pop_constant_section(decl);
-#endif
     }
 
   /* Switch to the appropriate section.  */
@@ -1761,6 +1762,11 @@ assemble_variable (tree decl, int top_level ATTRIBUTE_UNUSED,
     }
 #ifdef _PIC30_H_
   pic30_emit_fillupper(decl,0);
+#endif
+#ifdef _PIC30_H_
+  if ((DECL_INITIAL(decl)) &&
+      (DECL_INITIAL (decl) != error_mark_node))
+    pic30_pop_constant_section(decl);
 #endif
 }
 
@@ -2306,6 +2312,10 @@ struct constant_descriptor_tree GTY(())
      hashfn is called can't work properly, as that means recursive
      use of the hash table during hash table expansion.  */
   hashval_t hash;
+
+  /* section_name... on some targets strings need to be in the same
+     section to be accessible */
+  const char *section_name;
 };
 
 static GTY((param_is (struct constant_descriptor_tree)))
@@ -2418,6 +2428,13 @@ const_desc_eq (const void *p1, const void *p2)
   const struct constant_descriptor_tree *c2 = p2;
   if (c1->hash != c2->hash)
     return 0;
+  if (c1->section_name || c2->section_name) {
+    if (c1->section_name != c2->section_name) {
+      if (!(c1->section_name && c2->section_name && 
+          (strcmp(c1->section_name,c2->section_name) == 0))) return 0;
+    }
+    /* else names equal by default */
+  } /* else no named section */
   return compare_constant (c1->value, c2->value);
 }
 
@@ -2686,21 +2703,18 @@ output_constant_def (tree exp, int defer)
 {
   struct constant_descriptor_tree *desc;
   struct constant_descriptor_tree key;
+  const char *section_name = 0;
   void **loc = 0;
 
 #ifdef _PIC30_H_
-      /* we don't want to call add this to the hash table
-         if we have placed it into a named psv section ...
-         pic30_pushed_constant_section will tell us if we are in one
-         keeping loc == 0 will make us not add it to the hash table */ 
-  if (pic30_pushed_constant_section()) desc = 0;
-  else
+  section_name = pic30_pushed_constant_section();
 #endif
   {
     /* Look up EXP in the table of constant descriptors.  If we didn't find
        it, create a new one.  */
     key.value = exp;
     key.hash = const_hash_1 (exp);
+    key.section_name = section_name;
     loc = htab_find_slot_with_hash (const_desc_htab, &key, key.hash, INSERT);
 
     desc = *loc;
@@ -2709,6 +2723,7 @@ output_constant_def (tree exp, int defer)
     {
       desc = build_constant_desc (exp);
       desc->hash = key.hash;
+      desc->section_name = section_name;
       if (loc) *loc = desc;
     }
 

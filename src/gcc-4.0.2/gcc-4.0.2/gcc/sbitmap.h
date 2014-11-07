@@ -114,8 +114,8 @@ do {									\
     }									\
 } while (0)
 
-#define sbitmap_free(MAP)		free(MAP)
-#define sbitmap_vector_free(VEC)	free(VEC)
+#define sbitmap_free(MAP)		if (MAP) free(MAP)
+#define sbitmap_vector_free(VEC)	if (VEC) free(VEC)
 
 struct int_list;
 

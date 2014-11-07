@@ -770,7 +770,7 @@ shorten_branches (rtx first ATTRIBUTE_UNUSED)
   max_uid = get_max_uid ();
 
   /* Free uid_shuid before reallocating it.  */
-  free (uid_shuid);
+  if (uid_shuid) free (uid_shuid);
   
   uid_shuid = xmalloc (max_uid * sizeof *uid_shuid);
 

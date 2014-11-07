@@ -2546,7 +2546,7 @@ sed 's/^/| /' conftest.$ac_ext >&5
 fi
 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
 done
-rm -f conftest*
+rm -rf conftest*
 if test -n "$ac_declaration"; then
   echo '#ifdef __cplusplus' >>confdefs.h
   echo $ac_declaration      >>confdefs.h
@@ -2907,7 +2907,7 @@ sed 's/^/| /' conftest.$ac_ext >&5
 fi
 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
 done
-rm -f conftest*
+rm -rf conftest*
 if test -n "$ac_declaration"; then
   echo '#ifdef __cplusplus' >>confdefs.h
   echo $ac_declaration      >>confdefs.h
@@ -5546,7 +5546,7 @@ then
 else
   eval ac_cv_prog_cc_${ac_cc}_c_o=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 if eval "test \"`echo '$ac_cv_prog_cc_'${ac_cc}_c_o`\" = yes"; then
@@ -5784,7 +5784,7 @@ if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   fi
 fi
 CXXFLAGS="$old_CXXFLAGS"
-rm -f conftest*
+rm -rf conftest*
 fi;
 if test x$enable_sjlj_exceptions = xyes; then
 
@@ -6219,7 +6219,7 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 cat >conftest.$ac_ext <<_ACEOF
 /* confdefs.h.  */
@@ -6238,7 +6238,7 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 cat >conftest.$ac_ext <<_ACEOF
 /* confdefs.h.  */
@@ -6257,7 +6257,7 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 cat >conftest.$ac_ext <<_ACEOF
 /* confdefs.h.  */
@@ -6276,7 +6276,7 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 
 
@@ -6344,7 +6344,7 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 cat >conftest.$ac_ext <<_ACEOF
 /* confdefs.h.  */
@@ -6363,7 +6363,7 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 
 # Create the subdirectory for natFile.cc, or the attempt
@@ -8859,7 +8859,7 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
 else
   ac_cv_header_stdc=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 
@@ -8880,7 +8880,7 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
 else
   ac_cv_header_stdc=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 
@@ -10695,7 +10695,7 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 
      case " $GCINCS " in
@@ -11041,13 +11041,13 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 done
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 
 
@@ -11177,7 +11177,7 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 done
@@ -11305,7 +11305,7 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 done
@@ -14967,7 +14967,7 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
 else
   ac_cv_os_cray=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 echo "$as_me:$LINENO: result: $ac_cv_os_cray" >&5

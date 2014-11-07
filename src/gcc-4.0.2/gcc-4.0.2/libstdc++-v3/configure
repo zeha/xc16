@@ -2974,7 +2974,7 @@ sed 's/^/| /' conftest.$ac_ext >&5
 fi
 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
 done
-rm -f conftest*
+rm -rf conftest*
 if test -n "$ac_declaration"; then
   echo '#ifdef __cplusplus' >>confdefs.h
   echo $ac_declaration      >>confdefs.h
@@ -3335,7 +3335,7 @@ sed 's/^/| /' conftest.$ac_ext >&5
 fi
 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
 done
-rm -f conftest*
+rm -rf conftest*
 if test -n "$ac_declaration"; then
   echo '#ifdef __cplusplus' >>confdefs.h
   echo $ac_declaration      >>confdefs.h
@@ -5034,7 +5034,7 @@ EOF
       fi
     fi
     CXXFLAGS="$old_CXXFLAGS"
-    rm -f conftest*
+    rm -rf conftest*
   fi
 
   # This is a tad weird, for hysterical raisins.  We have to map enable/disable
@@ -5114,7 +5114,7 @@ ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
        else
          glibcxx_cv_prog_CXX_pch=no
        fi
-       rm -f conftest*
+       rm -rf conftest*
        CXXFLAGS=$ac_save_CXXFLAGS
        ac_ext=c
 ac_cpp='$CPP $CPPFLAGS'
@@ -5498,7 +5498,7 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
 else
   ac_cv_header_stdc=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 
@@ -5519,7 +5519,7 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
 else
   ac_cv_header_stdc=no
 fi
-rm -f conftest*
+rm -rf conftest*
 
 fi
 
@@ -5717,7 +5717,7 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
 else
   enable_clocale_flag=generic
 fi
-rm -f conftest*
+rm -rf conftest*
 
 
         # Test for bugs early in glibc-2.2.x series
