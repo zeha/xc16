@@ -81781,20 +81781,20 @@ zlib/zutil.c
 zlib/zutil.h
 project-name: XC16 GCC
 repository:   /Users/cawilkie/.fossil_clone//XC_GCC.fsl
-local-root:   /Users/cawilkie/dev/builds/build_20140819/src/XC_GCC/
+local-root:   /Users/cawilkie/dev/builds/build_20140925/src/XC_GCC/
 project-code: 8d44fcc88f560d1a54501ec642262650ef904476
-checkout:     8273da04918b183822b53893f97b3623e1a40d5f 2014-08-19 18:20:27 UTC
-parent:       95950f2ef600197129357a004aaf4a11722a0a6f 2014-08-18 19:13:47 UTC
-tags:         XC16_v1_22_release_branch
-comment:      fix for XC16-712 (user: cawilkie)
+checkout:     48f1e06ebef41e9caaa9b3ee522f3d3413a967a7 2014-09-25 20:02:01 UTC
+parent:       2aaa5abee0efeab1382f1937308ed73a264cffe4 2014-09-10 17:31:15 UTC
+tags:         XC16_v1_23_release_branch
+comment:      Fix for XC16-733 incorporate mastervolt changes (user: cawilkie)
 Autosync:  http://cawilkie@chn-vm-tinypm/repos.cgi/XC_GCC
                 Bytes      Cards  Artifacts     Deltas
 Sent:             130          1          0          0
-waiting for server...processed: 1%         processed: 3%         processed: 5%         processed: 7%         processed: 9%         processed: 11%         processed: 13%         processed: 15%         processed: 17%         processed: 19%         processed: 21%         processed: 23%         processed: 25%         processed: 27%         processed: 29%         processed: 31%         processed: 33%         processed: 35%         processed: 37%         processed: 39%         processed: 41%         processed: 43%         processed: 45%         processed: 47%         processed: 49%         processed: 51%         processed: 53%         processed: 55%         processed: 57%         processed: 59%         processed: 61%         processed: 63%         processed: 65%         processed: 67%         processed: 69%         processed: 71%         processed: 72%         processed: 74%         processed: 76%         processed: 78%         processed: 80%         processed: 82%         processed: 84%         processed: 86%         processed: 88%         processed: 90%         processed: 92%         processed: 94%         processed: 96%         processed: 98%         /Users/cawilkie/fossil_bin/fossil: *** time skew *** server is slow by 61.3 seconds
-Received:        2332         51          0          0
-Total network traffic: 361 bytes sent, 1499 bytes received
+waiting for server...processed: 1%         processed: 2%         processed: 3%         processed: 4%         processed: 6%         processed: 7%         processed: 8%         processed: 9%         processed: 11%         processed: 12%         processed: 13%         processed: 14%         processed: 15%         processed: 17%         processed: 18%         processed: 19%         processed: 20%         processed: 22%         processed: 23%         processed: 24%         processed: 25%         processed: 26%         processed: 28%         processed: 29%         processed: 30%         processed: 31%         processed: 33%         processed: 34%         processed: 35%         processed: 36%         processed: 37%         processed: 39%         processed: 40%         processed: 41%         processed: 42%         processed: 44%         processed: 45%         processed: 46%         processed: 47%         processed: 48%         processed: 50%         processed: 51%         processed: 52%         processed: 53%         processed: 55%         processed: 56%         processed: 57%         processed: 58%         processed: 59%         processed: 61%         processed: 62%         processed: 63%         processed: 64%         processed: 66%         processed: 67%         processed: 68%         processed: 69%         processed: 70%         processed: 72%         processed: 73%         processed: 74%         processed: 75%         processed: 77%         processed: 78%         processed: 79%         processed: 80%         processed: 82%         processed: 83%         processed: 84%         processed: 85%         processed: 86%         processed: 88%         processed: 89%         processed: 90%         processed: 91%         processed: 93%         processed: 94%         processed: 95%         processed: 96%         processed: 97%         processed: 99%         /Users/cawilkie/fossil_bin/fossil: *** time skew *** server is slow by 3.0 minutes
+Received:        3758         82          0          0
+Total network traffic: 360 bytes sent, 2270 bytes received
 -------------------------------------------------------------------------------
-checkout:     8273da04918b183822b53893f97b3623e1a40d5f 2014-08-19 18:20:27 UTC
-tags:         XC16_v1_22_release_branch
-comment:      fix for XC16-712 (user: cawilkie)
+checkout:     48f1e06ebef41e9caaa9b3ee522f3d3413a967a7 2014-09-25 20:02:01 UTC
+tags:         XC16_v1_23_release_branch
+comment:      Fix for XC16-733 incorporate mastervolt changes (user: cawilkie)
 changes:      None. Already up-to-date
