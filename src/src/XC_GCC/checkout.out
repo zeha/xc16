@@ -15355,6 +15355,10 @@ gcc/gcc/config/mchp-cci/cci-backend.c
 gcc/gcc/config/mchp-cci/cci-backend.h
 gcc/gcc/config/mchp-cci/cci.c
 gcc/gcc/config/mchp-cci/cci.h
+gcc/gcc/config/mchp-cci/mchp_sha.c
+gcc/gcc/config/mchp-cci/mchp_sha.h
+gcc/gcc/config/mchp-cci/sha256.c
+gcc/gcc/config/mchp-cci/sha256.h
 gcc/gcc/config/mcore/crti.asm
 gcc/gcc/config/mcore/crtn.asm
 gcc/gcc/config/mcore/lib1.asm
@@ -81777,9 +81781,20 @@ zlib/zutil.c
 zlib/zutil.h
 project-name: XC16 GCC
 repository:   /Users/cawilkie/.fossil_clone//XC_GCC.fsl
-local-root:   /Users/cawilkie/dev/builds/build_20140102/src/XC_GCC/
+local-root:   /Users/cawilkie/dev/builds/build_20140819/src/XC_GCC/
 project-code: 8d44fcc88f560d1a54501ec642262650ef904476
-checkout:     65174511600155a516bf1491c4511858439337e3 2014-01-02 19:02:52 UTC
-parent:       1ca9b541afd854f2e8ca5ff9aa58b7dbffc198c6 2013-12-20 21:02:51 UTC
-tags:         XC16_v1_21_branch
-comment:      Fix for xc16-619 (user: cawilkie)
+checkout:     8273da04918b183822b53893f97b3623e1a40d5f 2014-08-19 18:20:27 UTC
+parent:       95950f2ef600197129357a004aaf4a11722a0a6f 2014-08-18 19:13:47 UTC
+tags:         XC16_v1_22_release_branch
+comment:      fix for XC16-712 (user: cawilkie)
+Autosync:  http://cawilkie@chn-vm-tinypm/repos.cgi/XC_GCC
+                Bytes      Cards  Artifacts     Deltas
+Sent:             130          1          0          0
+waiting for server...processed: 1%         processed: 3%         processed: 5%         processed: 7%         processed: 9%         processed: 11%         processed: 13%         processed: 15%         processed: 17%         processed: 19%         processed: 21%         processed: 23%         processed: 25%         processed: 27%         processed: 29%         processed: 31%         processed: 33%         processed: 35%         processed: 37%         processed: 39%         processed: 41%         processed: 43%         processed: 45%         processed: 47%         processed: 49%         processed: 51%         processed: 53%         processed: 55%         processed: 57%         processed: 59%         processed: 61%         processed: 63%         processed: 65%         processed: 67%         processed: 69%         processed: 71%         processed: 72%         processed: 74%         processed: 76%         processed: 78%         processed: 80%         processed: 82%         processed: 84%         processed: 86%         processed: 88%         processed: 90%         processed: 92%         processed: 94%         processed: 96%         processed: 98%         /Users/cawilkie/fossil_bin/fossil: *** time skew *** server is slow by 61.3 seconds
+Received:        2332         51          0          0
+Total network traffic: 361 bytes sent, 1499 bytes received
+-------------------------------------------------------------------------------
+checkout:     8273da04918b183822b53893f97b3623e1a40d5f 2014-08-19 18:20:27 UTC
+tags:         XC16_v1_22_release_branch
+comment:      fix for XC16-712 (user: cawilkie)
+changes:      None. Already up-to-date
