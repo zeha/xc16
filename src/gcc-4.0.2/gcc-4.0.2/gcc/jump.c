@@ -1998,7 +1998,7 @@ true_regnum (rtx x)
     {
       int base = true_regnum (SUBREG_REG (x));
       if (base >= 0 && base < FIRST_PSEUDO_REGISTER)
-	return base + subreg_regno_offset (REGNO (SUBREG_REG (x)),
+	return base + subreg_regno_offset (base,
 					   GET_MODE (SUBREG_REG (x)),
 					   SUBREG_BYTE (x), GET_MODE (x));
     }

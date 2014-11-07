@@ -11064,7 +11064,8 @@ int pic30_check_legit_addr(enum machine_mode mode, rtx addr, int fStrict) {
                pic30_has_space_operand_p(addr, PIC30_EE_FLAG) ||
                pic30_data_space_operand_p(mode,addr,fStrict);
       case P16APSVmode:
-        return pic30_has_space_operand_p(addr, PIC30_APSV_FLAG);
+        return pic30_has_space_operand_p(addr, PIC30_APSV_FLAG) ||
+               pic30_data_space_operand_p(mode,addr,fStrict);
       case P16PMPmode:
         return pic30_has_space_operand_p(addr, PIC30_PMP_FLAG);
       case P32EXTmode:
@@ -15335,7 +15336,7 @@ enum machine_mode pic30_pointer_mode(tree type, tree decl) {
     }
   }
   if (TREE_CODE(type) == FUNCTION_TYPE) return HImode;
-  if (TYPE_READONLY(type) && (TARGET_CONST_IN_CODE)) return P16APSVmode;
+  if (!decl && TYPE_READONLY(type) && (TARGET_CONST_IN_CODE)) return P16APSVmode;
   return Pmode;
 }
 
@@ -16682,6 +16683,23 @@ void pic30_validate_dsp_instructions(void) {
     }
     if (err_cnt) delete_insn(x); // to prevent crash later
   }
+}
+
+enum machine_mode pic30_pmode_for(rtx x) {
+  enum machine_mode mode = Pmode;
+
+  switch (GET_CODE(x)) {
+    case MINUS:
+    case PLUS:
+    case LABEL_REF:
+    case SYMBOL_REF:
+    case REG:  mode = GET_MODE(x);
+               break;
+    case CONST:  mode =  pic30_pmode_for(XEXP(x,0));
+                 break;
+    default: break;
+  }
+  return mode;
 }
 
 /*END********************************************************************/

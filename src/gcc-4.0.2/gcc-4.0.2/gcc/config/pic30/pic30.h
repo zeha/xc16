@@ -2220,6 +2220,7 @@ enum pic30_memory_space {
 #define STACK_Pmode HImode
 #endif
 #define TARGET_CONSTANT_PMODE P16APSVmode
+#define Pmode_for pic30_pmode_for
 
 
 /*

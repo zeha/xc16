@@ -586,7 +586,7 @@ copy_to_reg (rtx x)
 rtx
 copy_addr_to_reg (rtx x)
 {
-  return copy_to_mode_reg (Pmode, x);
+  return copy_to_mode_reg (Pmode_for(x), x);
 }
 
 /* Like copy_to_reg but always give the new register mode MODE
@@ -865,11 +865,11 @@ round_push (rtx size)
       /* CEIL_DIV_EXPR needs to worry about the addition overflowing,
 	 but we know it can't.  So add ourselves and then do
 	 TRUNC_DIV_EXPR.  */
-      size = expand_binop (Pmode, add_optab, size, GEN_INT (align - 1),
+      size = expand_binop (STACK_Pmode, add_optab, size, GEN_INT (align - 1),
 			   NULL_RTX, 1, OPTAB_LIB_WIDEN);
-      size = expand_divmod (0, TRUNC_DIV_EXPR, Pmode, size, GEN_INT (align),
+      size = expand_divmod (0, TRUNC_DIV_EXPR, STACK_Pmode, size, GEN_INT (align),
 			    NULL_RTX, 1);
-      size = expand_mult (Pmode, size, GEN_INT (align), NULL_RTX, 1);
+      size = expand_mult (STACK_Pmode, size, GEN_INT (align), NULL_RTX, 1);
     }
 
   return size;
@@ -1146,8 +1146,8 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
   current_function_calls_alloca = 1;
 
   /* Ensure the size is in the proper mode.  */
-  if (GET_MODE (size) != VOIDmode && GET_MODE (size) != Pmode)
-    size = convert_to_mode (Pmode, size, 1);
+  if (GET_MODE (size) != VOIDmode && GET_MODE (size) != STACK_Pmode)
+    size = convert_to_mode (STACK_Pmode, size, 1);
 
   /* We can't attempt to minimize alignment necessary, because we don't
      know the final value of preferred_stack_boundary yet while executing
@@ -1214,19 +1214,19 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
 	  {
 	    /* Since we know overflow is not possible, we avoid using
 	       CEIL_DIV_EXPR and use TRUNC_DIV_EXPR instead.  */
-	    setjmpless_size = expand_divmod (0, TRUNC_DIV_EXPR, Pmode, size,
+	    setjmpless_size = expand_divmod (0, TRUNC_DIV_EXPR, STACK_Pmode, size,
 					     GEN_INT (align), NULL_RTX, 1);
-	    setjmpless_size = expand_mult (Pmode, setjmpless_size,
+	    setjmpless_size = expand_mult (STACK_Pmode, setjmpless_size,
 					   GEN_INT (align), NULL_RTX, 1);
 	  }
 	/* Our optimization works based upon being able to perform a simple
 	   transformation of this RTL into a (set REG REG) so make sure things
 	   did in fact end up in a REG.  */
-	if (!register_operand (setjmpless_size, Pmode))
-	  setjmpless_size = force_reg (Pmode, setjmpless_size);
+	if (!register_operand (setjmpless_size, STACK_Pmode))
+	  setjmpless_size = force_reg (STACK_Pmode, setjmpless_size);
       }
 
-    size = expand_binop (Pmode, add_optab, size, dynamic_offset,
+    size = expand_binop (STACK_Pmode, add_optab, size, dynamic_offset,
 			 NULL_RTX, 1, OPTAB_LIB_WIDEN);
   }
 #endif /* SETJMP_VIA_SAVE_AREA */
@@ -1267,8 +1267,8 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
   /* Don't use a TARGET that isn't a pseudo or is the wrong mode.  */
   if (target == 0 || !REG_P (target)
       || REGNO (target) < FIRST_PSEUDO_REGISTER
-      || GET_MODE (target) != Pmode)
-    target = gen_reg_rtx (Pmode);
+      || GET_MODE (target) != STACK_Pmode)
+    target = gen_reg_rtx (STACK_Pmode);
 
   mark_reg_pointer (target, known_align);
 
@@ -1315,7 +1315,7 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
 				    stack_limit_rtx, stack_pointer_rtx,
 				    NULL_RTX, 1, OPTAB_WIDEN);
 #endif
-	  emit_cmp_and_jump_insns (available, size, GEU, NULL_RTX, Pmode, 1,
+	  emit_cmp_and_jump_insns (available, size, GEU, NULL_RTX, STACK_Pmode, 1,
 				   space_available);
 #ifdef HAVE_trap
 	  if (HAVE_trap)
@@ -1349,13 +1349,13 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
       /* CEIL_DIV_EXPR needs to worry about the addition overflowing,
 	 but we know it can't.  So add ourselves and then do
 	 TRUNC_DIV_EXPR.  */
-      target = expand_binop (Pmode, add_optab, target,
+      target = expand_binop (STACK_Pmode, add_optab, target,
 			     GEN_INT (BIGGEST_ALIGNMENT / BITS_PER_UNIT - 1),
 			     NULL_RTX, 1, OPTAB_LIB_WIDEN);
-      target = expand_divmod (0, TRUNC_DIV_EXPR, Pmode, target,
+      target = expand_divmod (0, TRUNC_DIV_EXPR, STACK_Pmode, target,
 			      GEN_INT (BIGGEST_ALIGNMENT / BITS_PER_UNIT),
 			      NULL_RTX, 1);
-      target = expand_mult (Pmode, target,
+      target = expand_mult (STACK_Pmode, target,
 			    GEN_INT (BIGGEST_ALIGNMENT / BITS_PER_UNIT),
 			    NULL_RTX, 1);
     }
@@ -1410,8 +1410,8 @@ void
 probe_stack_range (HOST_WIDE_INT first, rtx size)
 {
   /* First ensure SIZE is Pmode.  */
-  if (GET_MODE (size) != VOIDmode && GET_MODE (size) != Pmode)
-    size = convert_to_mode (Pmode, size, 1);
+  if (GET_MODE (size) != VOIDmode && GET_MODE (size) != STACK_Pmode)
+    size = convert_to_mode (STACK_Pmode, size, 1);
 
   /* Next see if the front end has set up a function for us to call to
      check the stack.  */
@@ -1439,8 +1439,8 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 			 NULL_RTX);
 
       pred = insn_data[(int) CODE_FOR_check_stack].operand[0].predicate;
-      if (pred && ! ((*pred) (last_addr, Pmode)))
-	last_addr = copy_to_mode_reg (Pmode, last_addr);
+      if (pred && ! ((*pred) (last_addr, STACK_Pmode)))
+	last_addr = copy_to_mode_reg (STACK_Pmode, last_addr);
 
       emit_insn (gen_check_stack (last_addr));
     }
@@ -1491,7 +1491,7 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 
       if (!REG_P (test_addr)
 	  || REGNO (test_addr) < FIRST_PSEUDO_REGISTER)
-	test_addr = force_reg (Pmode, test_addr);
+	test_addr = force_reg (STACK_Pmode, test_addr);
 
       emit_jump (test_lab);
 
@@ -1500,11 +1500,11 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 
 #ifdef STACK_GROWS_DOWNWARD
 #define CMP_OPCODE GTU
-      temp = expand_binop (Pmode, sub_optab, test_addr, incr, test_addr,
+      temp = expand_binop (STACK_Pmode, sub_optab, test_addr, incr, test_addr,
 			   1, OPTAB_WIDEN);
 #else
 #define CMP_OPCODE LTU
-      temp = expand_binop (Pmode, add_optab, test_addr, incr, test_addr,
+      temp = expand_binop (STACK_Pmode, add_optab, test_addr, incr, test_addr,
 			   1, OPTAB_WIDEN);
 #endif
 
@@ -1512,7 +1512,7 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 
       emit_label (test_lab);
       emit_cmp_and_jump_insns (test_addr, last_addr, CMP_OPCODE,
-			       NULL_RTX, Pmode, 1, loop_lab);
+			       NULL_RTX, STACK_Pmode, 1, loop_lab);
       emit_jump (end_lab);
       emit_label (end_lab);
 

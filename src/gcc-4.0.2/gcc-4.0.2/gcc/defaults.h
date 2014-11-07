@@ -845,5 +845,10 @@ do { fputs (integer_asm_op (POINTER_SIZE / BITS_PER_UNIT, TRUE), FILE); \
 #define SECTION_FLAGS_INT unsigned int
 #endif
 
+#ifndef Pmode_for
+#define Pmode_for(X) Pmode
+#endif
+
+
 
 #endif  /* ! GCC_DEFAULTS_H */
